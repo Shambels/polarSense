@@ -34,16 +34,34 @@ class CompletionList {
   }
 }
 
+class DocumentLink {
+  constructor(range, target) {
+    this.range = range;
+    this.target = target;
+  }
+}
+
 class MarkdownString {
   constructor(value) {
-    this.value = value;
+    this.value = value ?? '';
+  }
+  appendMarkdown(text) {
+    this.value += text;
+    return this;
+  }
+}
+
+class Hover {
+  constructor(contents, range) {
+    this.contents = contents;
+    this.range = range;
   }
 }
 
 const noopEvent = () => ({ dispose() {} });
 
 export function makeVscode(settings = {}, workspaceFolders = []) {
-  const registered = { providers: [], commands: new Map() };
+  const registered = { providers: [], linkProviders: [], hoverProviders: [], commands: new Map() };
   const defaults = {
     enable: true,
     pathRoots: [],
@@ -63,12 +81,15 @@ export function makeVscode(settings = {}, workspaceFolders = []) {
     Range,
     CompletionItem,
     CompletionList,
+    DocumentLink,
+    Hover,
     MarkdownString,
     CompletionItemKind: { Field: 4 },
     NotebookCellKind: { Markup: 1, Code: 2 },
     StatusBarAlignment: { Left: 1, Right: 2 },
     Uri: {
-      file: (p) => ({ scheme: 'file', fsPath: p, path: p, toString: () => `file://${p}` })
+      file: (p) => ({ scheme: 'file', fsPath: p, path: p, toString: () => `file://${p}` }),
+      parse: (u) => ({ scheme: u.split(':')[0], fsPath: u, path: u, toString: () => u })
     },
     window: {
       activeTextEditor: undefined,
@@ -90,6 +111,14 @@ export function makeVscode(settings = {}, workspaceFolders = []) {
     languages: {
       registerCompletionItemProvider: (selector, provider, ...triggers) => {
         registered.providers.push({ selector, provider, triggers });
+        return { dispose() {} };
+      },
+      registerDocumentLinkProvider: (selector, provider) => {
+        registered.linkProviders.push({ selector, provider });
+        return { dispose() {} };
+      },
+      registerHoverProvider: (selector, provider) => {
+        registered.hoverProviders.push({ selector, provider });
         return { dispose() {} };
       }
     },
