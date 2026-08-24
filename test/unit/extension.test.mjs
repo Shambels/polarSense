@@ -376,3 +376,153 @@ test('dtypes survive propagation', async () => {
   const result = await complete(`${HEAD_PY}n = df.select("revenue")\nn.select("|")\n`);
   assert.equal(result.items[0].detail, 'f64');
 });
+
+// --- diagnostics: only speak when sure ---
+async function diagnose(marked, fileDir = DATA) {
+  const collection = vscode._registered.diagnostics;
+  assert.ok(collection, 'no diagnostic collection was created');
+  const { document } = makeDocument(marked, path.join(fileDir, 'script.py'));
+  // Reach the provider through the same object activation registered.
+  const provider = vscode._registered.codeActionProviders[0]?.provider;
+  assert.ok(provider, 'no code action provider was registered');
+  await provider.diagnostics.refresh(document);
+  return { document, items: collection.get(document.uri), provider };
+}
+
+test('a misspelled column is flagged, with the right name suggested', async () => {
+  const { items } = await diagnose(
+    'import polars as pl\ndf = pl.scan_parquet("sales.parquet")\ndf.select("regoin")\n'
+  );
+  assert.equal(items.length, 1);
+  assert.match(items[0].message, /No column "regoin"/);
+  assert.match(items[0].message, /Did you mean "region"/);
+  assert.equal(items[0].severity, 1, 'should be a warning, not an error');
+});
+
+test('a correct column is not flagged', async () => {
+  const { items } = await diagnose(
+    'import polars as pl\ndf = pl.scan_parquet("sales.parquet")\ndf.select("region", "revenue")\n'
+  );
+  assert.deepEqual(items, []);
+});
+
+test('the flag lands on the column text, not the whole call', async () => {
+  const { document, items } = await diagnose(
+    'import polars as pl\ndf = pl.scan_parquet("sales.parquet")\ndf.select("regoin")\n'
+  );
+  const text = document.getText();
+  const start = document.offsetAt(items[0].range.start);
+  const end = document.offsetAt(items[0].range.end);
+  assert.equal(text.slice(start, end), 'regoin');
+});
+
+test('a column dropped upstream is flagged downstream', async () => {
+  const { items } = await diagnose(
+    'import polars as pl\n' +
+    'df = pl.scan_parquet("sales.parquet")\n' +
+    'n = df.select("region", "revenue")\n' +
+    'n.sort("units")\n'
+  );
+  assert.equal(items.length, 1);
+  assert.match(items[0].message, /No column "units"/);
+});
+
+test('a column created upstream is not flagged', async () => {
+  const { items } = await diagnose(
+    'import polars as pl\n' +
+    'df = pl.scan_parquet("sales.parquet")\n' +
+    'w = df.with_columns(pl.col("revenue").sum().alias("total"))\n' +
+    'w.select("total")\n'
+  );
+  assert.deepEqual(items, []);
+});
+
+test('a renamed column is flagged under its old name', async () => {
+  const { items } = await diagnose(
+    'import polars as pl\n' +
+    'df = pl.scan_parquet("sales.parquet")\n' +
+    'r = df.rename({"region": "zone"})\n' +
+    'r.select("region")\n'
+  );
+  assert.equal(items.length, 1);
+  assert.match(items[0].message, /No column "region"/);
+});
+
+/** Everything below must stay silent — these are the false positives that would kill it. */
+test('silent: an unmodelled reshape', async () => {
+  const { items } = await diagnose(
+    'import polars as pl\n' +
+    'df = pl.scan_parquet("sales.parquet")\n' +
+    'p = df.explode("tags")\n' +
+    'p.select("anything_at_all")\n'
+  );
+  assert.deepEqual(items, [], 'must not accuse after a step it cannot model');
+});
+
+test('silent: a selector it cannot read', async () => {
+  const { items } = await diagnose(
+    'import polars as pl\n' +
+    'df = pl.scan_parquet("sales.parquet")\n' +
+    'w = df.select(cs.numeric())\n' +
+    'w.select("region")\n'
+  );
+  assert.deepEqual(items, []);
+});
+
+test('silent: a frame it cannot identify', async () => {
+  const { items } = await diagnose(
+    'import polars as pl\ndef f(df):\n    return df.select("nonsense")\n'
+  );
+  assert.deepEqual(items, []);
+});
+
+test('silent: a file it cannot read', async () => {
+  const { items } = await diagnose(
+    'import polars as pl\ndf = pl.scan_parquet("missing.parquet")\ndf.select("nonsense")\n'
+  );
+  assert.deepEqual(items, []);
+});
+
+test('silent: the path argument is not a column', async () => {
+  const { items } = await diagnose('import polars as pl\ndf = pl.scan_parquet("sales.parquet")\n');
+  assert.deepEqual(items, []);
+});
+
+test('silent: strings that are not column sites', async () => {
+  const { items } = await diagnose(
+    'import polars as pl\n' +
+    'df = pl.scan_parquet("sales.parquet")\n' +
+    'print("hello")\n' +
+    'x = "just a string"\n' +
+    'df.rename({"region": "a brand new name"})\n'
+  );
+  assert.deepEqual(items, []);
+});
+
+test('the quick fix replaces the typo with the suggestion', async () => {
+  const { document, items, provider } = await diagnose(
+    'import polars as pl\ndf = pl.scan_parquet("sales.parquet")\ndf.select("regoin")\n'
+  );
+  const actions = provider.provideCodeActions(document, items[0].range, { diagnostics: items });
+  assert.ok(actions.length >= 1, 'no quick fix offered');
+  assert.equal(actions[0].title, 'Change to "region"');
+  assert.equal(actions[0].edit.edits[0].newText, 'region');
+  assert.equal(actions[0].isPreferred, true);
+});
+
+test('diagnostics can be turned off', async () => {
+  vscode._settings['diagnostics.enable'] = false;
+  try {
+    const { items } = await diagnose(
+      'import polars as pl\ndf = pl.scan_parquet("sales.parquet")\ndf.select("regoin")\n'
+    );
+    assert.deepEqual(items, []);
+  } finally {
+    vscode._settings['diagnostics.enable'] = true;
+  }
+  // And back on again.
+  const { items } = await diagnose(
+    'import polars as pl\ndf = pl.scan_parquet("sales.parquet")\ndf.select("regoin")\n'
+  );
+  assert.equal(items.length, 1);
+});

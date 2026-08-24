@@ -45,6 +45,18 @@ joined.select("␣")           # both frames' columns, collisions suffixed _righ
 df.group_by("region").agg(pl.col("revenue").sum()).select("␣")   # region, revenue
 ```
 
+Column names that do not exist are flagged as you type, with a one-click fix:
+
+```python
+df.select("regoin")
+#          ~~~~~~   No column "regoin" in this frame. Did you mean "region"?
+```
+
+The check only speaks when it is sure. If anything between the file and the cursor
+could not be modelled — an unmodelled reshape, a selector, a frame it could not
+identify, a file it could not read — it stays silent rather than guessing. A
+diagnostic that cries wolf gets switched off and never switched back on.
+
 It finds the frame by tracking assignments within the file:
 
 ```python
@@ -86,6 +98,7 @@ so a frame defined in cell 1 completes in cell 8.
 | `polarsense.csv.inferDtypes` | `false` | Guess CSV dtypes from the first rows |
 | `polarsense.https.enabled` | `false` | Allow reading schemas over `https://` |
 | `polarsense.cacheSize` | `200` | File schemas held in memory |
+| `polarsense.diagnostics.enable` | `true` | Warn about column names that don't exist |
 | `polarsense.trace` | `false` | Log every resolution to the PolarSense output channel |
 
 The status bar shows what the frame at your cursor resolved to, or why it didn't.
@@ -110,7 +123,11 @@ reshapes are beyond what static reading can predict.
 - **Some reshapes are not modelled.** `pivot`, `unpivot`, `explode`, `transpose`
   and friends change the columns in ways this does not attempt to predict. The
   extension keeps offering the columns it had and marks them as a guess — they
-  sort below certain answers and say so in the tooltip.
+  sort below certain answers and say so in the tooltip — and the unknown-column
+  warning goes quiet entirely.
+- **A warning means the file on disk disagrees with the code**, which is usually
+  a typo but occasionally means the data is older than the script that writes it.
+  That is why it is a warning rather than an error: polars has the last word.
 - **Selectors are opaque.** `cs.numeric()`, regex patterns like `"^total_.*$"` and
   computed names cannot be read statically, so a `select` using them widens rather
   than narrows, and is again marked uncertain.

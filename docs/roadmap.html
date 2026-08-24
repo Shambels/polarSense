@@ -63,6 +63,22 @@
   .sechead .num{font-family:"IBM Plex Mono",monospace;font-size:.7rem;color:var(--muted);letter-spacing:.1em}
   .sechead p{font-size:.95rem;color:var(--muted);max-width:62ch}
 
+  /* ---- scoreboard ---- */
+  .score{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:1px;
+    background:var(--line);border:1px solid var(--line);border-radius:6px;overflow:hidden;
+    box-shadow:var(--shadow);
+  }
+  .score div{background:var(--surface);padding:.9rem 1rem;display:flex;flex-direction:column;gap:.2rem}
+  .score b{
+    font-family:"Archivo",sans-serif;font-size:1.7rem;font-weight:700;line-height:1;
+    letter-spacing:-.02em;font-variant-numeric:tabular-nums;
+  }
+  .score span{font-family:"IBM Plex Mono",monospace;font-size:.66rem;letter-spacing:.11em;
+    text-transform:uppercase;color:var(--muted)}
+  .score .hi b{color:var(--accent)}
+
+  /* ---- items ---- */
   .items{display:flex;flex-direction:column;gap:0}
   .item{
     display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.5rem 1.4rem;
@@ -70,11 +86,23 @@
   }
   .item:last-child{border-bottom:1px solid var(--line)}
   .item .body{display:flex;flex-direction:column;gap:.4rem;min-width:0}
+  .item h3{display:flex;align-items:baseline;gap:.55rem;flex-wrap:wrap}
   .item h3 .where{
-    font-family:"IBM Plex Mono",monospace;font-size:.72rem;font-weight:400;
-    color:var(--muted);margin-left:.5rem;
+    font-family:"IBM Plex Mono",monospace;font-size:.72rem;font-weight:400;color:var(--muted);
   }
   .item p{font-size:.92rem;color:var(--ink-2)}
+  .item.shipped{background:linear-gradient(90deg,var(--accent-soft) 0 3px,transparent 3px)}
+  .item.shipped h3{color:var(--accent-ink)}
+  .item.shipped p{color:var(--muted)}
+  .tick{
+    font-family:"IBM Plex Mono",monospace;font-size:.62rem;letter-spacing:.1em;text-transform:uppercase;
+    background:var(--accent);color:var(--surface);padding:.1rem .42rem;border-radius:3px;font-weight:600;
+    white-space:nowrap;
+  }
+  :root[data-theme="dark"] .tick,
+  :root:not([data-theme="light"]) .tick{color:#0B1211}
+  @media (prefers-color-scheme: light){ :root:not([data-theme="dark"]) .tick{color:#FFFFFF} }
+
   .chips{display:flex;flex-direction:column;gap:.35rem;align-items:flex-end;white-space:nowrap}
   .chip{
     font-family:"IBM Plex Mono",monospace;font-size:.66rem;letter-spacing:.06em;
@@ -82,6 +110,7 @@
   }
   .chip.hi{background:var(--accent-soft);border-color:transparent;color:var(--accent-ink);font-weight:600}
   .chip.med{background:var(--surface-2);border-color:transparent;color:var(--ink-2)}
+  .chip.blocked{background:var(--signal-soft);border-color:transparent;color:var(--signal);font-weight:600}
   @media (max-width:620px){
     .item{grid-template-columns:minmax(0,1fr)}
     .chips{flex-direction:row;align-items:center;flex-wrap:wrap}
@@ -124,9 +153,17 @@
 <div class="wrap">
 
   <header style="display:flex;flex-direction:column;gap:1.1rem">
-    <p class="eyebrow">Roadmap · PolarSense 0.1.0</p>
+    <p class="eyebrow">Roadmap · PolarSense · updated 24 Aug 2026</p>
     <h1>What PolarSense doesn't do yet</h1>
-    <p class="lede">Everything the build plan scoped but v1 didn't ship, every limitation that was a deliberate trade rather than an oversight, and the features worth adding that weren't in the plan at all.</p>
+    <p class="lede">Everything the build plan scoped but v1 didn't ship, every limitation that was a deliberate trade, and the features worth adding that weren't in the plan at all — with what has since been built marked <span class="tick">shipped</span>.</p>
+
+    <div class="score">
+      <div class="hi"><b>6</b><span>shipped</span></div>
+      <div><b>16</b><span>remaining</span></div>
+      <div><b>1</b><span>blocked on a decision</span></div>
+      <div><b>170</b><span>tests</span></div>
+    </div>
+
     <p class="lede" style="font-size:.95rem;color:var(--muted)">Effort figures are focused working days. <strong>Impact</strong> is my read on how many users would notice, not how interesting the work is.</p>
   </header>
 
@@ -144,7 +181,7 @@
           <h3>Object storage: s3:// and gs:// <span class="where">plan M6 · src/storage/</span></h3>
           <p>The one you said was real. <code>Storage</code> already abstracts <code>stat</code>/<code>readAll</code>/<code>list</code>/<code>asyncBuffer</code>, and hyparquet only ever asks for byte ranges — so S3 is <code>GetObject</code> with a <code>Range</code> header plus <code>ListObjectsV2</code>, and the credential chain comes free from <code>@aws-sdk/client-s3</code>. Needs ETag-keyed caching, a persistent <code>globalStorage</code> cache, and per-scheme opt-in so completions never issue billable calls unasked.</p>
         </div>
-        <div class="chips"><span class="chip hi">impact high</span><span class="chip">2 d</span></div>
+        <div class="chips"><span class="chip blocked">needs a decision</span><span class="chip hi">impact high</span><span class="chip">2 d</span></div>
       </div>
 
       <div class="item">
@@ -166,25 +203,25 @@
       <div class="item">
         <div class="body">
           <h3>Release CI <span class="where">plan M9</span></h3>
-          <p>Tag → run tests → <code>vsce publish</code> + <code>ovsx publish</code>. The fixtures are generated and gitignored, so the workflow has to install polars and run <code>npm run fixtures</code> before the reader tests can run — worth getting right once.</p>
+          <p>Tag → run tests → <code>vsce publish</code> + <code>ovsx publish</code>. Partly overtaken: <code>npm version</code> now runs the tests, bumps, commits, tags and packages in one command, and <code>RELEASING.md</code> documents the rest. What is left is doing it on a runner instead of a laptop — which mainly buys you the guarantee that nobody ever ships from a dirty tree.</p>
         </div>
-        <div class="chips"><span class="chip med">impact med</span><span class="chip">0.5 d</span></div>
+        <div class="chips"><span class="chip">impact low</span><span class="chip">0.5 d</span></div>
       </div>
 
       <div class="item">
         <div class="body">
           <h3>Real editor integration tests <span class="where">plan M8</span></h3>
-          <p>The current suite activates the bundled extension against a hand-written stub of the VS Code API — good enough to catch bundling and activation failures, which it did. It cannot catch anything about the real editor: whether quick suggestions actually fire inside strings, whether the replace range behaves against real auto-closing quotes. That needs <code>@vscode/test-cli</code> driving <code>executeCompletionItemProvider</code> in a real host.</p>
+          <p>The suite activates the bundled extension against a hand-written stub of the VS Code API — good enough to catch bundling and activation failures, which it has done twice. It cannot catch anything about the real editor: whether quick suggestions actually fire inside strings, whether the replace range behaves against real auto-closing quotes, whether the quick fix appears in the lightbulb. That needs <code>@vscode/test-cli</code> driving a real host.</p>
         </div>
         <div class="chips"><span class="chip med">impact med</span><span class="chip">0.5 d</span></div>
       </div>
 
-      <div class="item">
+      <div class="item shipped">
         <div class="body">
-          <h3>A demo GIF <span class="where">plan M9</span></h3>
-          <p>The whole pitch is a two-second visual. Marketplace listings live or die on the first image, and there isn't one.</p>
+          <h3>A demo GIF <span class="tick">shipped</span></h3>
+          <p>Recorded and in the README, with <code>scripts/make-gif.sh</code> for the next one.</p>
         </div>
-        <div class="chips"><span class="chip hi">impact high</span><span class="chip">1 h</span></div>
+        <div class="chips"><span class="chip">1 h</span></div>
       </div>
 
       <div class="item">
@@ -207,18 +244,18 @@
 
     <div class="items">
 
-      <div class="item">
+      <div class="item shipped">
         <div class="body">
-          <h3>Schema propagation <span class="where">src/core/resolve.ts</span></h3>
-          <p>The big one, and the source of every "why is it offering that?" report you will get. After <code>df.select("a","b")</code> the extension still offers all source columns; after <code>.rename({"a":"z"})</code> it offers <code>a</code> and not <code>z</code>. The fix is architectural: <code>resolve()</code> returns a schema <em>expression</em> — a source plus a chain of transforms — instead of a bare <code>SourceRef</code>, and each of <code>select</code> / <code>rename</code> / <code>drop</code> / <code>with_columns</code> / <code>join</code> / <code>group_by</code> gets a small evaluator. Essentially a mini type checker for the polars API.</p>
+          <h3>Schema propagation <span class="tick">shipped</span> <span class="where">src/core/frame.ts · schemaEval.ts</span></h3>
+          <p>A frame is now its source plus the transforms applied to it. <code>select</code>, <code>with_columns</code>, <code>drop</code>, <code>rename</code>, <code>with_row_index</code>, <code>group_by</code>+<code>agg</code> and <code>join</code> are all modelled; anything else keeps the columns it had and clears a <code>certain</code> flag rather than narrowing wrongly. This was the correctness ceiling for everything else, and clearing it is what made diagnostics safe to ship.</p>
         </div>
-        <div class="chips"><span class="chip hi">impact high</span><span class="chip">3–4 d</span></div>
+        <div class="chips"><span class="chip">3–4 d</span></div>
       </div>
 
       <div class="item">
         <div class="body">
           <h3>Cross-module frames <span class="where">src/core/bindings.ts</span></h3>
-          <p>A frame built in <code>loaders.py</code> and imported gets nothing, and with no escape hatch in v1 there is no workaround. Needs a workspace-wide index of exported frame-returning functions, kept current by a file watcher.</p>
+          <p>A frame built in <code>loaders.py</code> and imported gets nothing, and with no escape hatch there is no workaround. Needs a workspace-wide index of exported frame-returning functions, kept current by a file watcher. Now the largest remaining gap in what the resolver can see.</p>
         </div>
         <div class="chips"><span class="chip hi">impact high</span><span class="chip">2 d</span></div>
       </div>
@@ -236,7 +273,7 @@ return pl.scan_parquet(cfg.source_path)</code></pre>
       <div class="item">
         <div class="body">
           <h3><code>df["…"]</code> and <code>get_column</code> <span class="where">src/core/triggerSites.ts</span></h3>
-          <p>You scoped these out of v1. Subscript access needs one branch in <code>findArgumentPosition</code>; <code>get_column</code> is literally one table row. The smallest useful thing on this whole page.</p>
+          <p>You scoped these out of v1. Subscript access needs one branch in <code>findArgumentPosition</code>; <code>get_column</code> is literally one table row. Still the smallest useful thing on this page — and now that diagnostics exist, adding the site also means those positions get typo-checked.</p>
         </div>
         <div class="chips"><span class="chip med">impact med</span><span class="chip">1 h</span></div>
       </div>
@@ -264,33 +301,33 @@ return pl.scan_parquet(cfg.source_path)</code></pre>
     <div class="sechead">
       <span class="num">Part 03</span>
       <h2>Not in the plan, worth adding</h2>
-      <p>Ideas the build plan never considered, mostly because v1 was scoped to completion alone. Several are cheap because the resolver already does the hard part.</p>
+      <p>Ideas the build plan never considered, mostly because v1 was scoped to completion alone. Four of these are now built.</p>
     </div>
 
     <div class="items">
 
-      <div class="item">
+      <div class="item shipped">
         <div class="body">
-          <h3>Complete the file path itself</h3>
-          <p>Today <code>pl.scan_parquet("da…")</code> is classified <code>not-a-column-site</code> and offers nothing. But that string is a path, the extension already knows the workspace roots, and it knows which extensions each source function accepts. Offering matching data files there costs one branch in <code>classifyCall</code> and reuses everything else. Cheapest delight-per-hour on this page.</p>
+          <h3>Complete the file path itself <span class="tick">shipped</span> <span class="where">src/paths.ts</span></h3>
+          <p>Typing inside <code>pl.scan_parquet("da…")</code> offers matching files and folders, filtered to the formats that reader can open. Folders re-trigger the suggestion list; table readers offer only directories, and mark the real tables.</p>
         </div>
-        <div class="chips"><span class="chip hi">impact high</span><span class="chip">0.5 d</span></div>
+        <div class="chips"><span class="chip">0.5 d</span></div>
       </div>
 
-      <div class="item">
+      <div class="item shipped">
         <div class="body">
-          <h3>Diagnostics for unknown columns</h3>
-          <p>A squiggle on <code>pl.col("regoin")</code> — a typo caught while typing instead of at runtime, on a full scan, ten minutes in. The resolver already produces everything needed. The care required is in <em>when to stay silent</em>: only warn where the chain has no unmodelled transformation, or the limitations above turn into a stream of false positives, which is worse than no diagnostics at all.</p>
+          <h3>Diagnostics for unknown columns <span class="tick">shipped</span> <span class="where">src/diagnostics.ts</span></h3>
+          <p>A warning on <code>pl.col("regoin")</code> with a quick fix offering <code>"region"</code>. Reports only where the schema evaluator says <code>certain</code>; an unmodelled reshape, a selector, an unidentified frame, an unreadable file or a truncated schema all mean silence. Twelve of its nineteen tests assert that it says nothing.</p>
         </div>
-        <div class="chips"><span class="chip hi">impact high</span><span class="chip">1 d</span></div>
+        <div class="chips"><span class="chip">1 d</span></div>
       </div>
 
-      <div class="item">
+      <div class="item shipped">
         <div class="body">
-          <h3>Hover with column statistics</h3>
-          <p>Hover a column name, get its dtype — plus null count, min and max, which parquet already carries in the same footer the extension reads. No extra I/O for the common case; it's a display of bytes already in hand.</p>
+          <h3>Hover with column statistics <span class="tick">shipped</span> <span class="where">src/hover.ts</span></h3>
+          <p>Dtype, null count, min and max — all from the parquet footer already read for the schema, so no extra I/O. Dates and timestamps are formatted rather than shown as epoch integers. Hovering a path shows the file it resolves to and its shape.</p>
         </div>
-        <div class="chips"><span class="chip hi">impact high</span><span class="chip">1 d</span></div>
+        <div class="chips"><span class="chip">1 d</span></div>
       </div>
 
       <div class="item">
@@ -301,18 +338,18 @@ return pl.scan_parquet(cfg.source_path)</code></pre>
         <div class="chips"><span class="chip hi">impact high</span><span class="chip">2 d</span></div>
       </div>
 
-      <div class="item">
+      <div class="item shipped">
         <div class="body">
-          <h3>Ctrl-click a path to open the file</h3>
-          <p>A <code>DocumentLinkProvider</code> over the resolved path in <code>pl.scan_parquet("…")</code>. Two hours, and it makes the extension feel like it understands the project rather than just the strings.</p>
+          <h3>Ctrl-click a path to open the file <span class="tick">shipped</span> <span class="where">src/links.ts</span></h3>
+          <p>A <code>DocumentLinkProvider</code> over the resolved path. Constants link too, and a glob or directory names the concrete file it resolved to in the tooltip.</p>
         </div>
-        <div class="chips"><span class="chip med">impact med</span><span class="chip">2 h</span></div>
+        <div class="chips"><span class="chip">2 h</span></div>
       </div>
 
       <div class="item">
         <div class="body">
           <h3>polars.selectors</h3>
-          <p><code>cs.by_name("…")</code>, <code>cs.starts_with("…")</code>, <code>cs.ends_with("…")</code> — a real and growing part of the polars API that the trigger table doesn't know about. Mostly new rows plus recognising the <code>import polars.selectors as cs</code> alias, which the import scanner nearly does already.</p>
+          <p><code>cs.by_name("…")</code>, <code>cs.starts_with("…")</code>, <code>cs.ends_with("…")</code> — a real and growing part of the polars API that the trigger table doesn't know about. Mostly new rows plus recognising the <code>import polars.selectors as cs</code> alias. Doing this would also let the propagation model narrow through a selector instead of giving up, which currently costs both accuracy and a diagnostic.</p>
         </div>
         <div class="chips"><span class="chip med">impact med</span><span class="chip">0.5 d</span></div>
       </div>
@@ -336,7 +373,7 @@ return pl.scan_parquet(cfg.source_path)</code></pre>
       <div class="item">
         <div class="body">
           <h3>pandas, pyarrow, duckdb</h3>
-          <p>The machinery is not polars-specific — <code>pd.read_parquet("x.parquet")</code> and <code>duckdb.sql("SELECT * FROM 'x.parquet'")</code> read the same footers. The trigger table is polars-shaped, but the resolver, readers, paths and cache are not. This is the largest audience increase per day of work available.</p>
+          <p>The machinery is not polars-specific — <code>pd.read_parquet("x.parquet")</code> and <code>duckdb.sql("SELECT * FROM 'x.parquet'")</code> read the same footers. The trigger table is polars-shaped, but the resolver, readers, paths and cache are not. Still the largest audience increase per day of work available.</p>
         </div>
         <div class="chips"><span class="chip hi">impact high</span><span class="chip">1–2 d</span></div>
       </div>
@@ -352,15 +389,15 @@ return pl.scan_parquet(cfg.source_path)</code></pre>
       <div class="item">
         <div class="body">
           <h3>Warm the cache on open</h3>
-          <p>Every source in a file is known the moment it's parsed, so the schemas could be read on open instead of on the first keystroke. That removes the one visibly slow moment in the whole product — the <code>isIncomplete</code> round trip — at the cost of some I/O nobody asked for.</p>
+          <p>Every source in a file is known the moment it's parsed, so the schemas could be read on open instead of on the first keystroke. That removes the one visibly slow moment in the whole product — the <code>isIncomplete</code> round trip. Diagnostics already read every schema in the file shortly after open, so most of this now happens as a side effect; what is left is making it deliberate.</p>
         </div>
-        <div class="chips"><span class="chip med">impact med</span><span class="chip">2 h</span></div>
+        <div class="chips"><span class="chip">impact low</span><span class="chip">2 h</span></div>
       </div>
 
       <div class="item">
         <div class="body">
           <h3>A "show schema" command</h3>
-          <p>The status bar says <em>24 cols</em>. Clicking it could show them — name, dtype, null count — in a quick pick that inserts the one you choose. Turns the existing status item from a debug affordance into a feature.</p>
+          <p>The status bar says <em>24 cols</em>. Clicking it could show them — name, dtype, null count — in a quick pick that inserts the one you choose. Turns the existing status item from a debug affordance into a feature, and the statistics it would display are already being read.</p>
         </div>
         <div class="chips"><span class="chip med">impact med</span><span class="chip">1 d</span></div>
       </div>
@@ -372,31 +409,32 @@ return pl.scan_parquet(cfg.source_path)</code></pre>
     <div class="sechead">
       <span class="num">Part 04</span>
       <h2>What I'd do next</h2>
-      <p>Ordered — each one either unblocks the next or buys the most user-visible improvement per day spent.</p>
+      <p>The original six are done except object storage, which is waiting on you. This is the re-ordered remainder.</p>
     </div>
 
     <ol class="next">
-      <li><span class="n">1</span><span class="what"><b>Demo GIF, then publish</b><span>0.1.0 is genuinely useful. Ship it and let real files find the bugs that fixtures can't — that feedback should shape the rest of this list.</span></span><span class="est">1 h</span></li>
-      <li><span class="n">2</span><span class="what"><b>Path completion + ctrl-click to open</b><span>Under a day for both, they share the resolver, and together they make the extension feel like it understands the project.</span></span><span class="est">0.5 d</span></li>
-      <li><span class="n">3</span><span class="what"><b>Hover with statistics</b><span>Free data — it's already in the footer being read. Highest ratio of visible value to new code on the page.</span></span><span class="est">1 d</span></li>
-      <li><span class="n">4</span><span class="what"><b>Object storage</b><span>Because you said s3 is real for your work. Needs one decision first: profile, SSO, or a custom endpoint.</span></span><span class="est">2 d</span></li>
-      <li><span class="n">5</span><span class="what"><b>Schema propagation</b><span>The correctness ceiling for everything else. Diagnostics in particular are not safe to ship before this — false positives on transformed frames would poison them.</span></span><span class="est">3–4 d</span></li>
-      <li><span class="n">6</span><span class="what"><b>Diagnostics, then value completion</b><span>Diagnostics once propagation makes them trustworthy. Value completion whenever you want the feature people screenshot.</span></span><span class="est">3 d</span></li>
+      <li><span class="n">1</span><span class="what"><b>Publish what exists</b><span>Six features in, 170 tests, a demo GIF and a release process. Real files will find bugs fixtures cannot, and that feedback should reorder everything below this line.</span></span><span class="est">—</span></li>
+      <li><span class="n">2</span><span class="what"><b><code>df["…"]</code> and <code>get_column</code></b><span>An hour, and now it buys typo-checking on those positions too, not just completion.</span></span><span class="est">1 h</span></li>
+      <li><span class="n">3</span><span class="what"><b>polars.selectors</b><span>Half a day that pays three times: completion inside <code>cs.by_name</code>, narrowing through a selector instead of giving up, and one fewer reason for diagnostics to go quiet.</span></span><span class="est">0.5 d</span></li>
+      <li><span class="n">4</span><span class="what"><b>Object storage</b><span>Blocked, not deferred. One answer unblocks it: named AWS profile, SSO, or a custom S3-compatible endpoint.</span></span><span class="est">2 d</span></li>
+      <li><span class="n">5</span><span class="what"><b>Cross-module frames</b><span>The largest remaining blind spot. A frame built in another file is invisible, and there is no escape hatch — so this or the pragma, whichever you'd rather live with.</span></span><span class="est">2 d</span></li>
+      <li><span class="n">6</span><span class="what"><b>pandas and duckdb</b><span>The resolver, readers, paths and cache are not polars-specific. Only the trigger table is.</span></span><span class="est">1–2 d</span></li>
+      <li><span class="n">7</span><span class="what"><b>Value completion</b><span>The feature people screenshot. Deliberately last of the big ones: it reads data rather than metadata, so it needs an opt-in and a plain explanation before it ships.</span></span><span class="est">2 d</span></li>
     </ol>
 
     <div class="note pick">
-      <span class="k">The ordering principle</span>
-      <p>Everything before item 5 is additive — new surfaces over a resolver that already works. Item 5 changes what the resolver returns, so anything built on top of it afterwards is cheaper than anything built on top of it now. That's the only real sequencing constraint on this page; the rest is preference.</p>
+      <span class="k">What changed in the ordering</span>
+      <p>Schema propagation was the constraint, and it has landed — so nothing on this list blocks anything else any more. What replaces that constraint is feedback: every item below the first is a guess about what users need, and one week of real usage is worth more than any of these estimates.</p>
     </div>
 
     <div class="note">
-      <span class="k">One thing not on this list</span>
-      <p>Rewriting the analysis to use a real Python type checker's output — Pylance's or pyright's — instead of the hand-rolled binding table. It would solve cross-module frames and propagation at once. It is also a different product with a different failure mode, and pyright has no plugin interface for contributing string-literal completions. Worth knowing the door exists; not worth walking through it yet.</p>
+      <span class="k">Still not on this list</span>
+      <p>Rewriting the analysis to consume a real Python type checker's output — Pylance's or pyright's — instead of the hand-rolled binding table. It would solve cross-module frames and propagation at once. Propagation is now solved without it, which weakens the case further; and pyright still has no plugin interface for contributing string-literal completions. Worth knowing the door exists; still not worth walking through.</p>
     </div>
   </section>
 
   <footer>
-    <p>PolarSense 0.1.0 · 24 Aug 2026 · companion to docs/build-plan.html</p>
+    <p>PolarSense · 6 of 22 shipped · 170 tests · companion to docs/build-plan.html</p>
   </footer>
 
 </div>

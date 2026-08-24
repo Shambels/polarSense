@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  initParser, parse, buildBindingTable, resolveAtOffset, evaluateFrame, exprNames
+  initParser, parse, buildBindingTable, resolveAtOffset, evaluateFrame, exprNames, nearest
 } from '../harness.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -94,4 +94,37 @@ test('expression names: the shapes that matter', async () => {
   assert.deepEqual(nameOf('pl.exclude("a")'), { kind: 'except', names: ['a'] });
   assert.equal(nameOf('cs.numeric()').kind, 'unknown');
   assert.equal(nameOf('"^regex$"').kind, 'unknown');
+});
+
+// --- the "did you mean" suggestion behind the diagnostic quick fix ---
+
+const COLUMNS = ['region', 'revenue', 'returns_qty', 'units', 'is_active', 'order_date'];
+
+test('suggests the obvious near-misses', () => {
+  assert.deepEqual(nearest('regoin', COLUMNS), ['region']);      // transposition
+  assert.deepEqual(nearest('regin', COLUMNS), ['region']);       // omission
+  assert.deepEqual(nearest('regionn', COLUMNS), ['region']);     // doubled letter
+  assert.deepEqual(nearest('Region', COLUMNS), ['region']);      // case only
+  assert.deepEqual(nearest('REGION', COLUMNS), ['region']);
+});
+
+test('offers nothing when nothing is close', () => {
+  assert.deepEqual(nearest('completely_different', COLUMNS), []);
+  assert.deepEqual(nearest('x', COLUMNS), []);
+});
+
+test('a short name does not match another short name loosely', () => {
+  // "id" and "at" are one edit apart but mean different things; the threshold
+  // scales with length so short names have to be nearly right.
+  assert.deepEqual(nearest('id', ['at', 'of']), []);
+});
+
+test('closer candidates come first, and the list is capped', () => {
+  const got = nearest('revenu', ['revenue', 'revenues', 'revenue_net', 'region']);
+  assert.equal(got[0], 'revenue');
+  assert.ok(got.length <= 3);
+});
+
+test('an exact match suggests nothing — it is not a typo', () => {
+  assert.deepEqual(nearest('region', COLUMNS), []);
 });

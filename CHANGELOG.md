@@ -1,6 +1,21 @@
 # Changelog
 
-## 0.1.2
+## 0.1.4
+
+### Added
+
+- **Unknown column names are flagged as you type**, with a quick fix offering the
+  closest name — `df.select("regoin")` warns and offers `"region"`. Reported as a
+  warning rather than an error: the file on disk can legitimately be older than
+  the code that will run, and polars has the last word.
+
+  The check is deliberately quiet. It reports only where the schema evaluator is
+  `certain` — the frame was identified, its file was read, and every transform in
+  between was one we model. An unmodelled reshape, a selector, an unresolved
+  frame, an unreadable file or a schema clipped by `maxColumns` all mean silence.
+  Turn it off with `polarsense.diagnostics.enable`.
+
+## 0.1.1
 
 ### Added
 
