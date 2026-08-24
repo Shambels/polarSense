@@ -135,3 +135,11 @@ test('the completion range covers the string contents only', async () => {
   const source = marked.replace('|', '');
   assert.equal(source.slice(res.contentStart, res.contentEnd), 'region');
 });
+
+test('a list kwarg survives as a list, not a joined string', async () => {
+  const res = await resolveMarked(
+    `${HEAD}df = pl.read_csv("a.csv", new_columns=["alpha", "beta"])\ndf.select("|")`,
+    ROOT
+  );
+  assert.deepEqual(res.source?.kwargs.new_columns, ['alpha', 'beta']);
+});

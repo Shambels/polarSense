@@ -163,3 +163,10 @@ test('hive columns are read off the directory names', () => {
   const columns = hiveColumns('/data', '/data/region=EU/year=2026/part-0.parquet');
   assert.deepEqual(columns.map((c) => c.name), ['region', 'year']);
 });
+
+test('csv: new_columns= overrides the header row', async () => {
+  const columns = await readCsvSchema(
+    path.join(DATA, 'sales.csv'), { new_columns: ['alpha', 'beta', 'gamma'] }, CSV_OPTS
+  );
+  assert.deepEqual(columns.map((c) => c.name), ['alpha', 'beta', 'gamma']);
+});
