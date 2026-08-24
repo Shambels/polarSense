@@ -143,7 +143,7 @@ with `example.py` ready to type into. The F5 build task runs `npm install` for y
 so a fresh clone works — but on a slow connection the first launch waits for it.
 
 `dist/extension.js` is a self-contained bundle — once built, *running* the extension
-needs no dependencies at all, which is why the packaged `.vsix` is 196 KB and carries
+needs no dependencies at all, which is why the packaged `.vsix` is around 200 KB and carries
 no `node_modules`. **Run PolarSense (skip build)** in the debug dropdown launches the
 existing bundle without rebuilding. `dist/` is gitignored; CI and `npm run package`
 build it.
@@ -159,6 +159,9 @@ The analysis layer (`src/core`, `src/schema`, `src/storage`, `src/paths.ts`) nev
 imports `vscode`, so it is testable in plain node — that is what `test/unit` runs
 against. `test/unit/extension.test.mjs` activates the *bundled* extension against a
 stub of the VS Code API, which is what catches bundling and activation failures.
+
+[`RELEASING.md`](RELEASING.md) is the release process: version numbering, the
+marketplace gotchas, and the checklist.
 
 ## Privacy
 
