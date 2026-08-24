@@ -2,7 +2,7 @@
   "name": "polarsense",
   "displayName": "PolarSense",
   "description": "Column-name autocompletion for polars, read from the parquet, CSV, Delta or Iceberg file behind your DataFrame.",
-  "version": "0.1.2",
+  "version": "0.1.1",
   "license": "MIT",
   "publisher": "Pinch",
   "repository": {
@@ -103,6 +103,11 @@
           "type": "number",
           "default": 200,
           "description": "Number of file schemas held in memory."
+        },
+        "polarsense.diagnostics.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Warn about column names that do not exist in the frame’s schema. Only reported where the schema is known with certainty — an unmodelled reshape or a selector silences the check rather than guessing."
         },
         "polarsense.trace": {
           "type": "boolean",

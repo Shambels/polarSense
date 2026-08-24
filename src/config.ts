@@ -9,6 +9,7 @@ export interface Settings {
   csvInferDtypes: boolean;
   httpsEnabled: boolean;
   cacheSize: number;
+  diagnosticsEnabled: boolean;
   trace: boolean;
 }
 
@@ -23,6 +24,7 @@ export function readSettings(): Settings {
     csvInferDtypes: config.get('csv.inferDtypes', false),
     httpsEnabled: config.get('https.enabled', false),
     cacheSize: config.get('cacheSize', 200),
+    diagnosticsEnabled: config.get('diagnostics.enable', true),
     trace: config.get('trace', false)
   };
 }

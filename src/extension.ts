@@ -5,6 +5,7 @@ import { SchemaService } from './schema/index.js';
 import { ColumnCompletionProvider } from './completion/provider.js';
 import { DataFileLinkProvider } from './links.js';
 import { ColumnHoverProvider } from './hover.js';
+import { ColumnDiagnostics, ColumnQuickFix } from './diagnostics.js';
 import { readSettings } from './config.js';
 import { initLog, setTrace, showLog, trace, warn } from './log.js';
 
@@ -61,6 +62,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.languages.registerHoverProvider(PYTHON, new ColumnHoverProvider(analyzer, schemas))
   );
 
+  const diagnostics = new ColumnDiagnostics(analyzer, schemas);
+  context.subscriptions.push(
+    diagnostics,
+    vscode.languages.registerCodeActionsProvider(
+      PYTHON,
+      new ColumnQuickFix(diagnostics),
+      { providedCodeActionKinds: ColumnQuickFix.kinds }
+    ),
+    vscode.workspace.onDidOpenTextDocument((doc) => diagnostics.schedule(doc)),
+    vscode.workspace.onDidChangeTextDocument((event) => diagnostics.schedule(event.document)),
+    vscode.workspace.onDidCloseTextDocument((doc) => diagnostics.clear(doc)),
+    vscode.workspace.onDidSaveTextDocument((doc) => diagnostics.schedule(doc))
+  );
+  for (const doc of vscode.workspace.textDocuments) diagnostics.schedule(doc);
+
   // Show the status item only where it means something.
   const syncStatus = (editor: vscode.TextEditor | undefined) => {
     if (editor?.document.languageId === 'python') status.show();
@@ -76,6 +92,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const invalidate = (uri: vscode.Uri) => {
     trace(`invalidate ${uri.fsPath}`);
     schemas.invalidate(uri.fsPath);
+    // The columns just changed: anything we warned about may now be fine.
+    for (const doc of vscode.workspace.textDocuments) diagnostics.schedule(doc);
   };
   watcher.onDidChange(invalidate);
   watcher.onDidCreate(invalidate);
@@ -95,6 +113,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         csvInferDtypes: next.csvInferDtypes
       });
       schemas.clear();
+      for (const doc of vscode.workspace.textDocuments) diagnostics.schedule(doc);
     })
   );
 

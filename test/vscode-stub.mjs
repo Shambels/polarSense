@@ -51,6 +51,30 @@ class MarkdownString {
   }
 }
 
+class Diagnostic {
+  constructor(range, message, severity) {
+    this.range = range;
+    this.message = message;
+    this.severity = severity;
+  }
+}
+
+class CodeAction {
+  constructor(title, kind) {
+    this.title = title;
+    this.kind = kind;
+  }
+}
+
+class WorkspaceEdit {
+  constructor() {
+    this.edits = [];
+  }
+  replace(uri, range, newText) {
+    this.edits.push({ uri, range, newText });
+  }
+}
+
 class Hover {
   constructor(contents, range) {
     this.contents = contents;
@@ -61,7 +85,10 @@ class Hover {
 const noopEvent = () => ({ dispose() {} });
 
 export function makeVscode(settings = {}, workspaceFolders = []) {
-  const registered = { providers: [], linkProviders: [], hoverProviders: [], commands: new Map() };
+  const registered = {
+    providers: [], linkProviders: [], hoverProviders: [], codeActionProviders: [],
+    diagnostics: null, commands: new Map()
+  };
   const defaults = {
     enable: true,
     pathRoots: [],
@@ -77,13 +104,19 @@ export function makeVscode(settings = {}, workspaceFolders = []) {
 
   const vscode = {
     _registered: registered,
+    _settings: defaults,
     Position,
     Range,
     CompletionItem,
     CompletionList,
+    CodeAction,
+    CodeActionKind: { QuickFix: 'quickfix' },
+    Diagnostic,
+    DiagnosticSeverity: { Error: 0, Warning: 1, Information: 2, Hint: 3 },
     DocumentLink,
     Hover,
     MarkdownString,
+    WorkspaceEdit,
     CompletionItemKind: { Field: 4 },
     NotebookCellKind: { Markup: 1, Code: 2 },
     StatusBarAlignment: { Left: 1, Right: 2 },
@@ -106,7 +139,12 @@ export function makeVscode(settings = {}, workspaceFolders = []) {
       createFileSystemWatcher: () => ({
         onDidChange: noopEvent, onDidCreate: noopEvent, onDidDelete: noopEvent, dispose() {}
       }),
-      onDidChangeConfiguration: noopEvent
+      onDidChangeConfiguration: noopEvent,
+      textDocuments: [],
+      onDidOpenTextDocument: noopEvent,
+      onDidChangeTextDocument: noopEvent,
+      onDidCloseTextDocument: noopEvent,
+      onDidSaveTextDocument: noopEvent
     },
     languages: {
       registerCompletionItemProvider: (selector, provider, ...triggers) => {
@@ -120,6 +158,23 @@ export function makeVscode(settings = {}, workspaceFolders = []) {
       registerHoverProvider: (selector, provider) => {
         registered.hoverProviders.push({ selector, provider });
         return { dispose() {} };
+      },
+      registerCodeActionsProvider: (selector, provider) => {
+        registered.codeActionProviders.push({ selector, provider });
+        return { dispose() {} };
+      },
+      createDiagnosticCollection: (name) => {
+        const store = new Map();
+        const collection = {
+          name,
+          set: (uri, diags) => store.set(uri.toString(), diags),
+          delete: (uri) => store.delete(uri.toString()),
+          get: (uri) => store.get(uri.toString()) ?? [],
+          clear: () => store.clear(),
+          dispose: () => store.clear()
+        };
+        registered.diagnostics = collection;
+        return collection;
       }
     },
     commands: {
