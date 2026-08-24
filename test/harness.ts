@@ -10,6 +10,9 @@ export { readIcebergSchema } from '../src/schema/iceberg.js';
 export { localStorage } from '../src/storage/local.js';
 export { resolvePath, hiveColumns, completeDataPaths } from '../src/paths.js';
 export { EXPR_FUNCS, FRAME_METHODS } from '../src/core/triggerSites.js';
+export { resolveFrame, framesSources } from '../src/core/frame.js';
+export { evaluateFrame } from '../src/core/schemaEval.js';
+export { exprNames } from '../src/core/exprNames.js';
 
 import { initParser } from '../src/core/parser.js';
 import { parse, repairAtCursor } from '../src/core/parser.js';

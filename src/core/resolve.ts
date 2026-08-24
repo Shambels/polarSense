@@ -2,6 +2,7 @@ import type { Node, Tree } from 'web-tree-sitter';
 import type { Resolution, SourceKind, SourceRef } from './types.js';
 import { PATH_KWARGS, SOURCE_FUNCS, type BindingTable } from './bindings.js';
 import { callArguments, dottedName, lastSegment, nearest } from './ast.js';
+import { resolveFrame } from './frame.js';
 import {
   EXPR_FUNCS, FRAME_METHODS, RIGHT_FRAME_KWARGS, specAccepts,
   type ArgPosition, type ArgSpec
@@ -82,7 +83,8 @@ export function resolveAtOffset(
   if (!source.path) return { ...base, failure: 'unresolvable-path' };
 
   const symbol = source.symbol ?? (frameExpr.type === 'identifier' ? frameExpr.text : undefined);
-  return { ...base, source: { ...source, symbol } };
+  const frame = resolveFrame(frameExpr, { table }) ?? undefined;
+  return { ...base, source: { ...source, symbol }, frame };
 }
 
 function enclosingString(tree: Tree, offset: number): Node | null {

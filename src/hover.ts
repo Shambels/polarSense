@@ -3,6 +3,8 @@ import * as path from 'node:path';
 import type { Analyzer } from './analysis.js';
 import type { SchemaService } from './schema/index.js';
 import { resolveAtOffset } from './core/resolve.js';
+import { framesSources } from './core/frame.js';
+import { evaluateFrame } from './core/schemaEval.js';
 import { assemble } from './notebook.js';
 import { readSettings, workspaceDirs } from './config.js';
 import type { PathContext } from './paths.js';
@@ -64,10 +66,22 @@ export class ColumnHoverProvider implements vscode.HoverProvider {
     const hovered = assembled.source.slice(resolution.contentStart, resolution.contentEnd);
     if (!hovered) return undefined;
 
-    const result = await this.schemas.getWithBudget(resolution.source, ctx, BUDGET_MS);
-    if (token.isCancellationRequested || !result?.schema) return undefined;
+    const sources = resolution.frame ? framesSources(resolution.frame) : [resolution.source];
+    const results = await Promise.all(
+      sources.map((source) => this.schemas.getWithBudget(source, ctx, BUDGET_MS))
+    );
+    if (token.isCancellationRequested) return undefined;
+    const result = results[0];
+    if (!result?.schema) return undefined;
 
-    const column = result.schema.columns.find((c) => c.name === hovered);
+    // Hover the columns that exist here, not everything the file holds.
+    const byIndex = new Map(sources.map((source, i) => [source, results[i]?.schema?.columns]));
+    const evaluated = resolution.frame
+      ? evaluateFrame(resolution.frame, (s) => byIndex.get(s), analysis.table)
+      : null;
+    const columns = evaluated?.columns ?? result.schema.columns;
+
+    const column = columns.find((c) => c.name === hovered);
     if (!column) return undefined;
 
     const md = new vscode.MarkdownString();

@@ -244,3 +244,135 @@ test('a csv column hovers without inventing statistics', async () => {
   assert.match(result.contents.value, /\*\*region\*\*/);
   assert.doesNotMatch(result.contents.value, /min |max |nulls/);
 });
+
+// --- schema propagation: the columns that exist here, not everything in the file ---
+async function labels(marked, fileDir = DATA) {
+  const result = await complete(marked, fileDir);
+  return result?.items.map((i) => i.label);
+}
+const HEAD_PY = 'import polars as pl\ndf = pl.scan_parquet("sales.parquet")\n';
+
+test('select narrows what is offered downstream', async () => {
+  const got = await labels(`${HEAD_PY}narrow = df.select("region", "revenue")\nnarrow.select("|")\n`);
+  assert.deepEqual(got, ['region', 'revenue']);
+});
+
+test('rename offers the new name and not the old one', async () => {
+  const got = await labels(`${HEAD_PY}r = df.rename({"region": "zone"})\nr.select("|")\n`);
+  assert.ok(got.includes('zone'), 'renamed column missing');
+  assert.ok(!got.includes('region'), 'old name should be gone');
+});
+
+test('drop removes a column from the offer', async () => {
+  const got = await labels(`${HEAD_PY}d = df.drop("notes", "tags")\nd.select("|")\n`);
+  assert.ok(!got.includes('notes'));
+  assert.ok(!got.includes('tags'));
+  assert.ok(got.includes('region'));
+});
+
+test('with_columns adds the alias it creates', async () => {
+  const got = await labels(
+    `${HEAD_PY}w = df.with_columns(pl.col("revenue").sum().alias("total"))\nw.select("|")\n`
+  );
+  assert.ok(got.includes('total'), 'alias missing');
+  assert.ok(got.includes('region'), 'existing columns should survive');
+});
+
+test('a keyword argument names its own column', async () => {
+  const got = await labels(`${HEAD_PY}w = df.with_columns(uplift=pl.col("revenue") * 2)\nw.select("|")\n`);
+  assert.ok(got.includes('uplift'));
+});
+
+test('with_row_index puts its column first', async () => {
+  const got = await labels(`${HEAD_PY}w = df.with_row_index("idx")\nw.select("|")\n`);
+  assert.equal(got[0], 'idx');
+});
+
+test('group_by then agg offers keys and aggregates only', async () => {
+  const got = await labels(
+    `${HEAD_PY}g = df.group_by("region").agg(pl.col("revenue").sum())\ng.select("|")\n`
+  );
+  assert.deepEqual(got, ['region', 'revenue']);
+});
+
+test('inside agg the full input frame is still offered', async () => {
+  const got = await labels(`${HEAD_PY}df.group_by("region").agg(pl.col("|"))\n`);
+  assert.ok(got.includes('units'), 'agg should see every input column');
+});
+
+test('transformations chain', async () => {
+  const got = await labels(
+    `${HEAD_PY}out = df.select("region", "revenue").rename({"revenue": "rev"}).drop("region")\nout.select("|")\n`
+  );
+  assert.deepEqual(got, ['rev']);
+});
+
+test('a filter in the chain changes nothing', async () => {
+  const got = await labels(
+    `${HEAD_PY}out = df.select("region").filter(pl.col("region") == "EU").sort("region")\nout.select("|")\n`
+  );
+  assert.deepEqual(got, ['region']);
+});
+
+test('a join offers both frames, suffixing the collisions', async () => {
+  const got = await labels(
+    'import polars as pl\n' +
+    'a = pl.scan_parquet("sales.parquet").select("region", "revenue")\n' +
+    'b = pl.read_csv("sales.csv").select("region", "units")\n' +
+    'j = a.join(b, on="region")\nj.select("|")\n'
+  );
+  assert.deepEqual(got, ['region', 'revenue', 'units']);
+});
+
+test('a join on different keys keeps both key columns', async () => {
+  const got = await labels(
+    'import polars as pl\n' +
+    'a = pl.scan_parquet("sales.parquet").select("region", "revenue")\n' +
+    'b = pl.read_csv("sales.csv").select("region", "units")\n' +
+    'j = a.join(b, left_on="region", right_on="region")\nj.select("|")\n'
+  );
+  assert.ok(got.includes('region'));
+  assert.ok(got.includes('region_right'), 'the right key should be suffixed, not dropped');
+});
+
+test('a semi join offers only the left frame', async () => {
+  const got = await labels(
+    'import polars as pl\n' +
+    'a = pl.scan_parquet("sales.parquet").select("region")\n' +
+    'b = pl.read_csv("sales.csv").select("units")\n' +
+    'j = a.join(b, on="region", how="semi")\nj.select("|")\n'
+  );
+  assert.deepEqual(got, ['region']);
+});
+
+test('pl.all() means every column of the input', async () => {
+  const got = await labels(`${HEAD_PY}w = df.select(pl.all())\nw.select("|")\n`);
+  assert.ok(got.includes('region') && got.includes('tags'));
+});
+
+test('pl.exclude() removes from the whole set', async () => {
+  const got = await labels(`${HEAD_PY}w = df.select(pl.exclude("notes"))\nw.select("|")\n`);
+  assert.ok(!got.includes('notes'));
+  assert.ok(got.includes('region'));
+});
+
+test('an unmodelled reshape keeps the columns but marks them uncertain', async () => {
+  const result = await complete(`${HEAD_PY}p = df.explode("tags")\np.select("|")\n`);
+  assert.ok(result.items.length > 0, 'should still offer something useful');
+  assert.ok(
+    result.items.every((i) => i.sortText.startsWith('1')),
+    'an unmodelled step should rank its guesses below certain answers'
+  );
+});
+
+test('a selector we cannot read statically does not narrow wrongly', async () => {
+  const result = await complete(`${HEAD_PY}w = df.select(cs.numeric())\nw.select("|")\n`);
+  const got = result.items.map((i) => i.label);
+  assert.ok(got.includes('region'), 'must not invent a narrowed list');
+  assert.ok(result.items.every((i) => i.sortText.startsWith('1')), 'and must admit uncertainty');
+});
+
+test('dtypes survive propagation', async () => {
+  const result = await complete(`${HEAD_PY}n = df.select("revenue")\nn.select("|")\n`);
+  assert.equal(result.items[0].detail, 'f64');
+});

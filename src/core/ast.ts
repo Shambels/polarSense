@@ -20,6 +20,19 @@ export function lastSegment(name: string | null): string | null {
   return i === -1 ? name : name.slice(i + 1);
 }
 
+/**
+ * The method a call invokes: "rename" for both `df.rename(…)` and
+ * `df.select(…).rename(…)`. dottedName cannot answer the second — the receiver
+ * is a call, not a name — which is exactly where chained transforms live.
+ */
+export function methodName(call: Node): string | null {
+  const fn = call.childForFieldName('function');
+  if (!fn) return null;
+  if (fn.type === 'attribute') return fn.childForFieldName('attribute')?.text ?? null;
+  if (fn.type === 'identifier') return fn.text;
+  return lastSegment(dottedName(fn));
+}
+
 /** Contents of a string literal node, without quotes or prefix. Null if interpolated. */
 export function stringValue(node: Node): string | null {
   if (node.type !== 'string' && node.type !== 'concatenated_string') return null;
