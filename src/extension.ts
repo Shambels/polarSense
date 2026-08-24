@@ -3,6 +3,8 @@ import { initParser } from './core/parser.js';
 import { Analyzer } from './analysis.js';
 import { SchemaService } from './schema/index.js';
 import { ColumnCompletionProvider } from './completion/provider.js';
+import { DataFileLinkProvider } from './links.js';
+import { ColumnHoverProvider } from './hover.js';
 import { readSettings } from './config.js';
 import { initLog, setTrace, showLog, trace, warn } from './log.js';
 
@@ -54,7 +56,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       PYTHON,
       new ColumnCompletionProvider(analyzer, schemas, reporter),
       '"', "'"
-    )
+    ),
+    vscode.languages.registerDocumentLinkProvider(PYTHON, new DataFileLinkProvider(analyzer)),
+    vscode.languages.registerHoverProvider(PYTHON, new ColumnHoverProvider(analyzer, schemas))
   );
 
   // Show the status item only where it means something.

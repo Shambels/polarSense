@@ -49,7 +49,7 @@ test('parsing a 1000-statement file stays under 250ms', async () => {
 
 test('a 5000-column parquet footer reads in under 250ms', async () => {
   const started = performance.now();
-  const columns = await readParquetSchema(localStorage, path.join(DATA, 'wide.parquet'));
+  const { columns } = await readParquetSchema(localStorage, path.join(DATA, 'wide.parquet'));
   const elapsed = performance.now() - started;
   assert.equal(columns.length, 5000);
   assert.ok(elapsed < 250, `footer read took ${elapsed.toFixed(0)}ms`);
