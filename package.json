@@ -1,0 +1,116 @@
+{
+  "name": "polarsense",
+  "displayName": "PolarSense",
+  "description": "Column-name autocompletion for polars, read from the parquet, CSV, Delta or Iceberg file behind your DataFrame.",
+  "version": "0.1.0",
+  "license": "MIT",
+  "publisher": "polarsense",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Data Science"
+  ],
+  "keywords": [
+    "polars",
+    "parquet",
+    "python",
+    "dataframe",
+    "autocomplete"
+  ],
+  "icon": "assets/icon.png",
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onLanguage:python"
+  ],
+  "contributes": {
+    "configurationDefaults": {
+      "[python]": {
+        "editor.quickSuggestions": {
+          "strings": "on"
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "polarsense.clearCache",
+        "title": "PolarSense: Clear schema cache"
+      },
+      {
+        "command": "polarsense.showOutput",
+        "title": "PolarSense: Show log"
+      }
+    ],
+    "configuration": {
+      "title": "PolarSense",
+      "properties": {
+        "polarsense.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable column-name completions."
+        },
+        "polarsense.pathRoots": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Extra directories to try when resolving a relative data path. Searched after the file's own directory and the workspace folders."
+        },
+        "polarsense.fallbackToAllSchemas": {
+          "type": "boolean",
+          "default": true,
+          "description": "When the frame at the cursor cannot be identified, offer the union of every schema known in the file."
+        },
+        "polarsense.maxColumns": {
+          "type": "number",
+          "default": 5000,
+          "description": "Maximum number of completion items offered for one schema."
+        },
+        "polarsense.csv.sniffBytes": {
+          "type": "number",
+          "default": 262144,
+          "description": "How many bytes of a CSV file to read when looking for the header row."
+        },
+        "polarsense.csv.inferDtypes": {
+          "type": "boolean",
+          "default": false,
+          "description": "Guess CSV column dtypes from the first rows. Off by default: a guess shown as fact is worse than a blank."
+        },
+        "polarsense.https.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow reading schemas from https:// URLs. Off by default so completions never issue network requests unasked."
+        },
+        "polarsense.cacheSize": {
+          "type": "number",
+          "default": 200,
+          "description": "Number of file schemas held in memory."
+        },
+        "polarsense.trace": {
+          "type": "boolean",
+          "default": false,
+          "description": "Log every resolution attempt to the PolarSense output channel."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "fixtures": "python3 scripts/make_fixtures.py",
+    "test": "npm run build && node esbuild.test.mjs && node --test test/unit/*.test.mjs",
+    "package": "npm run build && npx --yes @vscode/vsce package --no-dependencies"
+  },
+  "dependencies": {
+    "hyparquet": "1.29.1",
+    "web-tree-sitter": "0.25.10"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "@types/vscode": "1.90.0",
+    "esbuild": "0.28.2",
+    "tree-sitter-wasms": "0.1.13",
+    "typescript": "5.9.3"
+  }
+}

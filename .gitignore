@@ -1,0 +1,8 @@
+node_modules/
+dist/
+out/
+*.vsix
+test/harness.mjs
+test/fixtures/data/
+test/fixtures/expected.json
+.DS_Store

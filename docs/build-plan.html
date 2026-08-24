@@ -1,0 +1,713 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>*,*::before,*::after{box-sizing:border-box}body,h1,h2,h3,h4,p,ol,ul,figure,pre{margin:0}ol,ul{padding:0}img,svg{display:block;max-width:100%}</style>
+<title>Polars Column Sense</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Literata:opsz,wght@7..72,400;7..72,500;7..72,600&display=swap">
+
+<style>
+  :root{
+    --ground:#F2F5F4;
+    --surface:#FFFFFF;
+    --surface-2:#E9EFED;
+    --ink:#0F1917;
+    --ink-2:#33433F;
+    --muted:#5C6C68;
+    --line:#D3DDDA;
+    --line-strong:#B6C4C0;
+    --accent:#0E6E66;
+    --accent-ink:#0A5049;
+    --accent-soft:#DBEBE8;
+    --signal:#9A5A11;
+    --signal-soft:#F3E6D3;
+    --shadow:0 1px 2px rgba(15,25,23,.06), 0 8px 24px -16px rgba(15,25,23,.25);
+    --maxw:74rem;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ground:#0B1211;
+      --surface:#121B19;
+      --surface-2:#182320;
+      --ink:#E5ECEA;
+      --ink-2:#C3D0CD;
+      --muted:#8DA09B;
+      --line:#22302D;
+      --line-strong:#33443F;
+      --accent:#54C1B3;
+      --accent-ink:#7FD6C9;
+      --accent-soft:#10302C;
+      --signal:#D79B4F;
+      --signal-soft:#2B2115;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#0B1211;
+    --surface:#121B19;
+    --surface-2:#182320;
+    --ink:#E5ECEA;
+    --ink-2:#C3D0CD;
+    --muted:#8DA09B;
+    --line:#22302D;
+    --line-strong:#33443F;
+    --accent:#54C1B3;
+    --accent-ink:#7FD6C9;
+    --accent-soft:#10302C;
+    --signal:#D79B4F;
+    --signal-soft:#2B2115;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+  }
+
+  *{box-sizing:border-box}
+  body{
+    background:var(--ground);
+    color:var(--ink);
+    font-family:"Literata",Georgia,"Times New Roman",serif;
+    font-size:17px;
+    line-height:1.62;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{
+    max-width:var(--maxw);
+    margin:0 auto;
+    padding:3.5rem 1.5rem 6rem;
+    display:grid;
+    grid-template-columns:minmax(0,1fr);
+    gap:3rem;
+  }
+  @media (min-width:1080px){
+    .wrap{grid-template-columns:14rem minmax(0,1fr);align-items:start;padding-top:4.5rem}
+  }
+
+  /* ---- rail ---- */
+  nav.rail{display:none}
+  @media (min-width:1080px){
+    nav.rail{
+      display:block;position:sticky;top:2rem;
+      font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+      font-size:.72rem;line-height:1.5;
+    }
+    nav.rail ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.45rem}
+    nav.rail a{
+      color:var(--muted);text-decoration:none;display:grid;
+      grid-template-columns:1.6rem 1fr;gap:.4rem;
+      border-left:2px solid transparent;padding-left:.6rem;
+    }
+    nav.rail a:hover{color:var(--accent);border-left-color:var(--accent)}
+    nav.rail a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+    nav.rail .n{color:var(--line-strong)}
+    nav.rail .railhead{
+      font-size:.66rem;letter-spacing:.14em;text-transform:uppercase;
+      color:var(--muted);margin:0 0 .9rem .6rem;
+    }
+  }
+
+  main{min-width:0;display:flex;flex-direction:column;gap:3.25rem}
+
+  /* ---- type ---- */
+  h1,h2,h3,h4{font-family:"Archivo",system-ui,-apple-system,"Segoe UI",sans-serif;text-wrap:balance;margin:0}
+  h1{font-size:clamp(2.1rem,4.6vw,3.05rem);font-weight:700;letter-spacing:-.028em;line-height:1.04}
+  h2{font-size:1.5rem;font-weight:700;letter-spacing:-.018em;line-height:1.15}
+  h3{font-size:1.02rem;font-weight:600;letter-spacing:-.006em;margin-top:.2rem}
+  h4{font-size:.82rem;font-weight:600;letter-spacing:.02em}
+  p{margin:0}
+  a{color:var(--accent-ink)}
+  strong{font-weight:600;color:var(--ink)}
+  code,kbd,.mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+  :not(pre) > code{
+    font-size:.845em;background:var(--surface-2);border:1px solid var(--line);
+    padding:.06em .34em;border-radius:3px;color:var(--ink-2);
+  }
+  .eyebrow{
+    font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.7rem;
+    letter-spacing:.16em;text-transform:uppercase;color:var(--accent);
+  }
+  .lede{font-size:1.12rem;color:var(--ink-2);max-width:60ch}
+  .prose{max-width:66ch;display:flex;flex-direction:column;gap:1rem}
+  .prose ul,.prose ol{margin:0;padding-left:1.15rem;display:flex;flex-direction:column;gap:.45rem}
+  .prose li::marker{color:var(--accent)}
+
+  section{display:flex;flex-direction:column;gap:1.1rem;scroll-margin-top:2rem}
+  .sechead{display:flex;flex-direction:column;gap:.35rem;border-top:1px solid var(--line);padding-top:1.1rem}
+  .sechead .num{
+    font-family:"IBM Plex Mono",monospace;font-size:.7rem;color:var(--muted);letter-spacing:.1em;
+  }
+
+  /* ---- hero mock ---- */
+  header.hero{display:flex;flex-direction:column;gap:1.6rem}
+  .herometa{
+    display:flex;flex-wrap:wrap;gap:.5rem .9rem;font-family:"IBM Plex Mono",monospace;
+    font-size:.72rem;color:var(--muted);letter-spacing:.02em;
+  }
+  .herometa span{display:inline-flex;gap:.4rem;align-items:baseline}
+  .herometa b{color:var(--ink-2);font-weight:500}
+
+  .mock{
+    background:var(--surface);border:1px solid var(--line);border-radius:8px;
+    box-shadow:var(--shadow);overflow:hidden;
+  }
+  .mock .bar{
+    display:flex;align-items:center;gap:.5rem;padding:.5rem .8rem;
+    border-bottom:1px solid var(--line);background:var(--surface-2);
+    font-family:"IBM Plex Mono",monospace;font-size:.7rem;color:var(--muted);
+  }
+  .mock .dot{width:.5rem;height:.5rem;border-radius:50%;background:var(--line-strong)}
+  .mock .body{padding:1.1rem .9rem 1.6rem;overflow-x:auto}
+  .code-line{
+    font-family:"IBM Plex Mono",monospace;font-size:.82rem;line-height:1.85;white-space:pre;
+    color:var(--ink-2);
+  }
+  .gut{color:var(--line-strong);user-select:none;padding-right:1.1rem}
+  .kw{color:var(--signal)}
+  .str{color:var(--accent)}
+  .fn{color:var(--ink);font-weight:500}
+  .cm{color:var(--muted);font-style:italic}
+  .caret{
+    display:inline-block;width:1px;height:1em;background:var(--ink);
+    vertical-align:-.15em;animation:blink 1.15s steps(1,end) infinite;
+  }
+  @keyframes blink{50%{opacity:0}}
+  @media (prefers-reduced-motion:reduce){.caret{animation:none}}
+  .popup{
+    margin:.35rem 0 0 9.6rem;width:min(23rem,90%);
+    background:var(--surface);border:1px solid var(--line-strong);border-radius:5px;
+    box-shadow:var(--shadow);overflow:hidden;
+  }
+  .popup .row{
+    display:grid;grid-template-columns:1rem 1fr auto;gap:.55rem;align-items:center;
+    padding:.3rem .55rem;font-family:"IBM Plex Mono",monospace;font-size:.74rem;
+  }
+  .popup .row.sel{background:var(--accent-soft)}
+  .popup .ico{color:var(--accent);font-size:.8rem;text-align:center}
+  .popup .dt{color:var(--muted);font-size:.68rem}
+  .popup .src{
+    padding:.3rem .55rem;border-top:1px solid var(--line);color:var(--muted);
+    font-family:"IBM Plex Mono",monospace;font-size:.66rem;
+  }
+
+  /* ---- blocks ---- */
+  pre{
+    margin:0;background:var(--surface);border:1px solid var(--line);border-radius:6px;
+    padding:.95rem 1.05rem;overflow-x:auto;box-shadow:var(--shadow);
+  }
+  pre code{font-size:.78rem;line-height:1.7;color:var(--ink-2)}
+
+  .card{
+    background:var(--surface);border:1px solid var(--line);border-radius:6px;
+    padding:1.05rem 1.15rem;display:flex;flex-direction:column;gap:.5rem;box-shadow:var(--shadow);
+  }
+  .grid2{display:grid;gap:.9rem;grid-template-columns:repeat(auto-fit,minmax(17rem,1fr))}
+  .card .k{
+    font-family:"IBM Plex Mono",monospace;font-size:.68rem;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--accent);
+  }
+  .card p{font-size:.92rem;color:var(--ink-2)}
+
+  .note{
+    border-left:3px solid var(--signal);background:var(--signal-soft);
+    padding:.8rem 1rem;border-radius:0 5px 5px 0;font-size:.92rem;color:var(--ink-2);
+    display:flex;flex-direction:column;gap:.4rem;
+  }
+  .note .k{
+    font-family:"IBM Plex Mono",monospace;font-size:.66rem;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--signal);
+  }
+  .note.pick{border-left-color:var(--accent);background:var(--accent-soft)}
+  .note.pick .k{color:var(--accent-ink)}
+
+  .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:6px;background:var(--surface);box-shadow:var(--shadow)}
+  table{border-collapse:collapse;width:100%;font-size:.83rem;font-variant-numeric:tabular-nums}
+  th,td{text-align:left;padding:.55rem .8rem;border-bottom:1px solid var(--line);vertical-align:top}
+  thead th{
+    font-family:"IBM Plex Mono",monospace;font-size:.66rem;letter-spacing:.11em;text-transform:uppercase;
+    color:var(--muted);font-weight:500;background:var(--surface-2);white-space:nowrap;
+  }
+  tbody tr:last-child td{border-bottom:none}
+  td.mono,th.mono{font-family:"IBM Plex Mono",monospace;font-size:.76rem;color:var(--ink-2)}
+  td .hint{color:var(--muted);font-size:.78rem}
+
+  /* ---- milestones ---- */
+  ol.phases{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:0}
+  ol.phases li{
+    display:grid;grid-template-columns:3.6rem minmax(0,1fr) 5.2rem;gap:1rem;
+    padding:.95rem 0;border-top:1px solid var(--line);align-items:start;
+  }
+  ol.phases li:last-child{border-bottom:1px solid var(--line)}
+  ol.phases .tag{
+    font-family:"IBM Plex Mono",monospace;font-size:.78rem;font-weight:600;color:var(--accent);
+    letter-spacing:.04em;padding-top:.1rem;
+  }
+  ol.phases .what{display:flex;flex-direction:column;gap:.3rem;min-width:0}
+  ol.phases .what b{font-family:"Archivo",sans-serif;font-size:.98rem;font-weight:600}
+  ol.phases .what span{font-size:.88rem;color:var(--ink-2)}
+  ol.phases .est{
+    font-family:"IBM Plex Mono",monospace;font-size:.72rem;color:var(--muted);
+    text-align:right;padding-top:.25rem;white-space:nowrap;
+  }
+  @media (max-width:640px){
+    ol.phases li{grid-template-columns:3.2rem minmax(0,1fr);}
+    ol.phases .est{grid-column:2;text-align:left;padding-top:0}
+  }
+
+  .tree{font-size:.76rem;line-height:1.75}
+  .tree .c{color:var(--muted)}
+
+  footer{
+    border-top:1px solid var(--line);padding-top:1.2rem;color:var(--muted);
+    font-family:"IBM Plex Mono",monospace;font-size:.72rem;
+  }
+  ::selection{background:var(--accent-soft);color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <nav class="rail" aria-label="Contents">
+    <p class="railhead">Contents</p>
+    <ol>
+      <li><a href="#shape"><span class="n">01</span><span>The shape of it</span></a></li>
+      <li><a href="#decisions"><span class="n">02</span><span>Locked decisions</span></a></li>
+      <li><a href="#arch"><span class="n">03</span><span>Architecture</span></a></li>
+      <li><a href="#resolve"><span class="n">04</span><span>Cursor → schema</span></a></li>
+      <li><a href="#sites"><span class="n">05</span><span>Trigger sites</span></a></li>
+      <li><a href="#readers"><span class="n">06</span><span>Schema readers</span></a></li>
+      <li><a href="#paths"><span class="n">07</span><span>Paths &amp; escape hatches</span></a></li>
+      <li><a href="#perf"><span class="n">08</span><span>Cache &amp; latency</span></a></li>
+      <li><a href="#ux"><span class="n">09</span><span>Completion UX</span></a></li>
+      <li><a href="#limits"><span class="n">10</span><span>What v1 gets wrong</span></a></li>
+      <li><a href="#repo"><span class="n">11</span><span>Repo layout</span></a></li>
+      <li><a href="#plan"><span class="n">12</span><span>Milestones</span></a></li>
+      <li><a href="#tests"><span class="n">13</span><span>Testing</span></a></li>
+      <li><a href="#ship"><span class="n">14</span><span>Packaging</span></a></li>
+      <li><a href="#ask"><span class="n">15</span><span>Still open</span></a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <header class="hero">
+      <p class="eyebrow">Build plan · VS Code extension</p>
+      <h1>Column names that come from the file, not from memory</h1>
+      <p class="lede">A Python-language completion provider that reads the schema out of the parquet, CSV, Delta or Iceberg source behind a polars frame, and offers those column names wherever polars expects one.</p>
+
+      <div class="mock" role="img" aria-label="Mock of the completion popup: typing inside pl.col in a select call offers region, revenue and returns_qty from sales.parquet">
+        <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span style="margin-left:.4rem">quarterly.py</span></div>
+        <div class="body">
+<div class="code-line"><span class="gut">12</span><span class="kw">import</span> polars <span class="kw">as</span> pl</div>
+<div class="code-line"><span class="gut">13</span></div>
+<div class="code-line"><span class="gut">14</span>df = pl.<span class="fn">scan_parquet</span>(<span class="str">"data/sales.parquet"</span>)</div>
+<div class="code-line"><span class="gut">15</span>out = df.<span class="fn">select</span>(pl.<span class="fn">col</span>(<span class="str">"re</span><span class="caret"></span><span class="str">"</span>))</div>
+          <div class="popup">
+            <div class="row sel"><span class="ico">◆</span><span>region</span><span class="dt">str</span></div>
+            <div class="row"><span class="ico">◆</span><span>revenue</span><span class="dt">f64</span></div>
+            <div class="row"><span class="ico">◆</span><span>returns_qty</span><span class="dt">i32</span></div>
+            <div class="src">from data/sales.parquet · 24 columns</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="herometa">
+        <span><b>Target</b> VS Code ≥ 1.90, .py and .ipynb</span>
+        <span><b>Runtime</b> TypeScript, zero Python dependency</span>
+        <span><b>Estimate</b> ~13 focused days · first release at day 5</span>
+      </div>
+    </header>
+
+    <section id="shape">
+      <div class="sechead"><span class="num">01</span><h2>The shape of it</h2></div>
+      <div class="prose">
+        <p>Polars column names are strings. Every type checker in the Python ecosystem sees <code>pl.col("revenue")</code> as a string literal and stops there — <a href="https://github.com/pola-rs/polars/issues/12673">polars #12673</a> and <a href="https://github.com/pola-rs/polars/issues/18449">#18449</a> are the standing requests for exactly this, and neither has a shipped editor answer. The schema, though, is sitting in the file on disk: a parquet footer, a CSV header row, a Delta commit log, an Iceberg metadata JSON. All four are cheap to read and none of them requires running the user's code.</p>
+        <p>So the extension is a bridge with three spans: work out <em>which file</em> the frame under the cursor came from, read <em>the schema</em> out of that file, and decide <em>whether this string position</em> is a place polars wants a column name. Span one is the hard one — it's a small static analysis of Python. Spans two and three are bounded work.</p>
+      </div>
+    </section>
+
+    <section id="decisions">
+      <div class="sechead"><span class="num">02</span><h2>Locked decisions</h2></div>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Question</th><th>Choice</th><th>Consequence</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Schema source</td>
+              <td><strong>Pure TypeScript reader</strong></td>
+              <td>Bundle <a href="https://github.com/hyparam/hyparquet">hyparquet</a> — zero-dependency JS parquet parser that reads just the footer. No Python interpreter, no subprocess, no user code executed.</td>
+            </tr>
+            <tr>
+              <td>Data locations</td>
+              <td><strong>Local, https, <em>and</em> object storage</strong></td>
+              <td>The one that costs. Local and <code>https://</code> are free with hyparquet's range reads; <code>s3://</code> and <code>gs://</code> need real storage clients and the ambient credential chain — see §06 and §12/M6.</td>
+            </tr>
+            <tr>
+              <td>Inference depth</td>
+              <td><strong>Variable tracking, single file</strong></td>
+              <td>Resolve <code>df = pl.scan_parquet(…)</code> and follow <code>df</code> through method chains and aliases, inside one module. No cross-file imports, no schema transformation through <code>select</code>/<code>rename</code>.</td>
+            </tr>
+            <tr>
+              <td>Trigger sites</td>
+              <td><strong>Expression constructors + frame methods</strong></td>
+              <td><code>pl.col</code>, <code>pl.exclude</code>, and friends; plus <code>select</code>, <code>filter</code>, <code>group_by</code>, <code>sort</code>, <code>join</code>, <code>rename</code> and the rest of the frame API. <code>df["…"]</code> subscripts are out — a two-line add later.</td>
+            </tr>
+            <tr>
+              <td>Formats</td>
+              <td><strong>Parquet, CSV, Delta, Iceberg</strong></td>
+              <td>Four readers behind one interface. Parquet and Iceberg are easy, CSV needs kwarg-aware header parsing, Delta needs the commit log walked backwards.</td>
+            </tr>
+            <tr>
+              <td>Notebooks</td>
+              <td><strong>Yes, cross-cell</strong></td>
+              <td>Cells above the cursor are treated as one module, so a frame defined in cell 1 completes in cell 8. Needs a notebook-aware document assembler — see §04.</td>
+            </tr>
+            <tr>
+              <td>Escape hatch</td>
+              <td><strong>None in v1</strong></td>
+              <td>A frame whose path can't be resolved statically simply gets no completions — no pragma comments, no settings map. Keeps the surface small; revisit once real usage shows how often it bites.</td>
+            </tr>
+            <tr>
+              <td>Distribution</td>
+              <td><strong>VS Code Marketplace</strong></td>
+              <td>Publisher account, icon, README with a demo GIF, licence, release workflow — and Open VSX alongside, since a large share of polars users are on Cursor.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="note pick">
+        <span class="k">Why no Python subprocess</span>
+        <p>Worth restating because it shapes everything downstream: the extension never imports polars, never spawns an interpreter, and works in a repo you've just cloned with no venv. The price is that we reimplement polars' type display names and its path semantics, and we can be wrong about both. Object storage is the one place this could have forced a rethink — it doesn't, because the S3 and GCS clients hand back byte ranges just as well as a local file does, and hyparquet only ever asks for ranges.</p>
+      </div>
+    </section>
+
+    <section id="arch">
+      <div class="sechead"><span class="num">03</span><h2>Architecture</h2></div>
+      <div class="prose">
+        <p>Five components, one direction of flow. Everything above the schema cache is synchronous and works on the document; everything below is async I/O.</p>
+      </div>
+      <pre><code>  keystroke in a .py file
+        │
+   ┌────▼─────────────┐   web-tree-sitter + tree-sitter-python
+   │ 1  Parse layer   │   error-tolerant, incremental, cached per doc version
+   └────┬─────────────┘
+        │  syntax tree
+   ┌────▼─────────────┐   which call am I in? does this arg position
+   │ 2  Site matcher  │   take a column name? which frame does it belong to?
+   └────┬─────────────┘
+        │  { receiverSymbol, argRole }
+   ┌────▼─────────────┐   df → pl.scan_parquet("data/sales.parquet")
+   │ 3  Bindings      │   assignments, aliases, scopes, shadowing
+   └────┬─────────────┘
+        │  SourceRef { kind, pathExpr, kwargs }
+   ┌────▼─────────────┐   const-eval the path expr, resolve roots,
+   │ 4  Path resolver │   expand globs, detect hive partitions
+   └────┬─────────────┘
+        │  URI (file | https | s3 | gs)
+   ┌────▼─────────────┐   LRU keyed on (uri, mtime|etag) + fs watcher
+   │ 5  Schema svc    │   parquet | csv | delta | iceberg readers
+   └────┬─────────────┘   over a Storage { readRange, list } abstraction
+        │  Column[] { name, dtype }
+        ▼
+   CompletionItem[]</code></pre>
+      <div class="grid2">
+        <div class="card">
+          <span class="k">Parsing</span>
+          <h3>web-tree-sitter, not regex</h3>
+          <p>The cursor is by definition in half-written code — <code>pl.col("re</code> with no closing quote. Tree-sitter's error recovery keeps producing a usable tree where a regex scanner or a strict parser gives up, and its incremental reparse keeps the per-keystroke cost at microseconds. Cost: two WASM assets, roughly 1.5 MB in the VSIX.</p>
+        </div>
+        <div class="card">
+          <span class="k">Why not reuse Pylance</span>
+          <h3>No public schema hook</h3>
+          <p>Pylance has no extension API for contributing string-literal completions, and its type engine has no notion of a parquet file. We register an independent <code>CompletionItemProvider</code> for <code>language: python</code>; the two coexist because they fire in different places — ours only inside string literals we've claimed.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="resolve">
+      <div class="sechead"><span class="num">04</span><h2>Cursor → schema: the resolution algorithm</h2></div>
+      <div class="prose">
+        <p>This is the component that decides whether the extension feels magic or broken. Written out as steps, running on every completion request:</p>
+        <ol>
+          <li><strong>Anchor.</strong> From the cursor node, ascend to the enclosing <code>string</code>. If there isn't one, bail — we only ever complete inside string literals.</li>
+          <li><strong>Find the argument.</strong> Ascend past any enclosing list, tuple or dict until we hit an <code>argument_list</code>. Record the position (index, or keyword name, or "dict key"). If we hit a statement first, bail.</li>
+          <li><strong>Classify the call.</strong> Resolve the callee to a dotted name and look it up in the trigger-site table (§05). The table says whether <em>this particular</em> argument position takes a column name.</li>
+          <li><strong>Find the frame.</strong> If the call is a frame method, its receiver is the object it was called on. If it's a bare expression constructor like <code>pl.col</code>, walk <em>outward</em> through enclosing calls to the innermost frame method — this is what makes <code>df.select(pl.col("…"))</code> work.</li>
+          <li><strong>Reduce to a symbol.</strong> Walk left through the receiver chain — <code>df.filter(x).group_by(y).agg</code> collapses to <code>df</code>. A chain rooted directly in <code>pl.read_parquet("…")</code> skips the binding table entirely.</li>
+          <li><strong>Look up the binding.</strong> Nearest assignment to that name at or before the cursor, in the innermost enclosing scope that defines it.</li>
+          <li><strong>Fall back.</strong> No frame found — a bare <code>expr = pl.col("…")</code> at module level — offer the union of every schema bound in the file, each item labelled with its source file. Configurable, on by default; it's usually right and it degrades gracefully.</li>
+        </ol>
+      </div>
+      <pre><code># the binding table after one pass over this file
+df   = pl.scan_parquet("data/sales.parquet")      # SourceRef(parquet, "data/sales.parquet")
+recent = df.filter(pl.col("date") > cutoff)       # alias → same SourceRef
+joined = recent.join(dim, on="region")            # alias → recent's SourceRef
+dim  = pl.read_csv(CSV_PATH)                      # const-eval CSV_PATH → SourceRef(csv, …)
+mystery = make_frame()                            # unknown → no completions
+
+# resolution walk for the cursor below:
+#   string "re|"  →  arg 0 of pl.col  →  column site
+#   no receiver   →  ascend to df.select(...)  →  receiver "df"
+#   df            →  data/sales.parquet
+df.select(pl.col("re|"))</code></pre>
+      <div class="note">
+        <span class="k">Sharp edge · join</span>
+        <p><code>left_on=</code> should complete from the receiver's schema and <code>right_on=</code> from the <em>other</em> frame's — which means resolving a second binding from the <code>join</code> call's first positional argument. Cheap enough to do in v1 and very visible when it's wrong, so it's scoped into M2 rather than deferred.</p>
+      </div>
+
+      <h3>Notebooks: one module, assembled from cells</h3>
+      <div class="prose">
+        <p>Notebook cells arrive at the provider as separate <code>TextDocument</code>s under the <code>vscode-notebook-cell</code> scheme, which would scope every binding to a single cell — useless, since the whole point of a notebook is that <code>df</code> is defined once at the top. The fix is to widen the binding pass rather than the parse:</p>
+        <ol>
+          <li>If the document's URI scheme is <code>vscode-notebook-cell</code>, find its parent through <code>workspace.notebookDocuments</code>.</li>
+          <li>Take every <em>code</em> cell in document order up to and including the current one — document order, not execution order, because that's the order a reader assumes and the order re-running the notebook would use.</li>
+          <li>Parse each cell separately (trees stay per-cell and per-version, so editing cell 8 doesn't reparse cells 1–7) and merge their binding tables in order, with later cells shadowing earlier ones.</li>
+          <li>Resolve relative paths against the <code>.ipynb</code> file's own directory — the same default the Jupyter extension uses for the kernel's working directory.</li>
+        </ol>
+        <p>Everything downstream — site matching, path resolution, readers, cache — is unchanged. The only new state is a per-notebook merged binding table, invalidated when any cell above the cursor changes.</p>
+      </div>
+    </section>
+
+    <section id="sites">
+      <div class="sechead"><span class="num">05</span><h2>Trigger sites</h2></div>
+      <div class="prose">
+        <p>A single declarative table drives step 3 above. One row per API, naming which argument positions are column names. New polars methods become one-line additions, and the table doubles as the test matrix.</p>
+      </div>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th class="mono">api</th><th>column-name positions</th><th>notes</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">pl.col</td><td>all positional</td><td>Also inside a list arg: <code>pl.col(["a","b"])</code>. Regex strings (<code>^…$</code>) are left alone.</td></tr>
+            <tr><td class="mono">pl.exclude</td><td>all positional</td><td>Same list handling.</td></tr>
+            <tr><td class="mono">pl.first, pl.last, pl.sum, pl.mean, pl.min, pl.max, pl.count, pl.std, pl.var, pl.median</td><td>all positional</td><td>The string-argument forms of the aggregate shortcuts.</td></tr>
+            <tr><td class="mono">pl.struct, pl.concat_str, pl.concat_list, pl.coalesce</td><td>all positional</td><td>Accept bare column-name strings.</td></tr>
+            <tr><td class="mono">.select, .with_columns, .drop, .explode, .unique</td><td>all positional, <code>subset=</code></td><td>Frame + LazyFrame.</td></tr>
+            <tr><td class="mono">.sort, .top_k, .bottom_k</td><td>positional, <code>by=</code></td><td></td></tr>
+            <tr><td class="mono">.group_by, .partition_by, .group_by_dynamic</td><td>positional, <code>by=</code>, <code>index_column=</code></td><td><code>.agg(…)</code> chained after resolves through the same receiver.</td></tr>
+            <tr><td class="mono">.join, .join_asof</td><td><code>on=</code>, <code>left_on=</code>, <code>right_on=</code>, <code>by=</code></td><td><code>right_on=</code> resolves against the other frame — see §04.</td></tr>
+            <tr><td class="mono">.rename, .cast</td><td>dict <em>keys</em> only</td><td>Values are new names / dtypes — never completed.</td></tr>
+            <tr><td class="mono">.pivot, .unpivot</td><td><code>on=</code>, <code>index=</code>, <code>values=</code></td><td>Legacy <code>.melt</code> aliased for older code.</td></tr>
+            <tr><td class="mono">.drop_nulls, .fill_null(subset)</td><td><code>subset=</code></td><td></td></tr>
+            <tr><td class="mono">.over, .sort_by</td><td>all positional, <code>by=</code></td><td>Expression-level; receiver found by walking out to the frame.</td></tr>
+            <tr><td class="mono">.set_sorted, .upsample, .rolling</td><td>positional, <code>time_column=</code>, <code>index_column=</code></td><td></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="note">
+        <span class="k">Deliberately excluded from v1</span>
+        <p><code>df["…"]</code> and <code>.get_column("…")</code> (you scoped these out — one table entry each when you want them), <code>.alias("…")</code> and <code>with_row_index</code> (these <em>create</em> names, completing them is wrong), and <code>.struct.field("…")</code> for nested columns, which needs the schema tree rather than the flat top-level list.</p>
+      </div>
+    </section>
+
+    <section id="readers">
+      <div class="sechead"><span class="num">06</span><h2>Schema readers</h2></div>
+      <div class="prose">
+        <p>One interface — <code>read(uri, kwargs) → Promise&lt;Column[]&gt;</code> where <code>Column = { name, dtype, nullable }</code> — and four implementations. Each maps its native types onto polars' display names (<code>str</code>, <code>i64</code>, <code>f64</code>, <code>datetime[μs]</code>, <code>list[str]</code>, <code>decimal[18,2]</code>) so the popup reads the way <code>df.schema</code> prints.</p>
+      </div>
+      <div class="grid2">
+        <div class="card">
+          <span class="k">parquet</span>
+          <h3>Footer only</h3>
+          <p>hyparquet's <code>parquetMetadataAsync</code> over an <code>AsyncBuffer</code>: two range reads — the trailing 8 bytes for the footer length, then the footer itself. <code>parquetSchema</code> turns that into the schema tree; we flatten to top-level fields and map logical types (STRING, DECIMAL, DATE, TIMESTAMP with its unit) onto polars names. Milliseconds, regardless of file size.</p>
+        </div>
+        <div class="card">
+          <span class="k">csv</span>
+          <h3>Header sniff, kwarg-aware</h3>
+          <p>Read the first 256 KB, split on a real quote-aware scan, and honor the kwargs actually passed at the call site: <code>separator</code>, <code>has_header</code>, <code>skip_rows</code>, <code>comment_prefix</code>, <code>new_columns</code>, <code>quote_char</code>. <code>has_header=False</code> yields polars' generated <code>column_1…column_n</code>. Dtypes are omitted unless the optional row-sniff is enabled — a guess printed as fact is worse than a blank.</p>
+        </div>
+        <div class="card">
+          <span class="k">delta</span>
+          <h3>Newest metaData wins</h3>
+          <p>List <code>_delta_log/*.json</code>, read newest-first, scan each commit's newline-delimited actions for a <code>metaData</code> entry, parse its <code>schemaString</code> (Delta's own JSON schema), stop at the first hit. Covers every table whose log hasn't been truncated. When it has, fall back to <code>_last_checkpoint</code> → the checkpoint parquet, read through the same hyparquet path — that fallback is M5b, not blocking.</p>
+        </div>
+        <div class="card">
+          <span class="k">iceberg</span>
+          <h3>Current schema off the pointer</h3>
+          <p><code>metadata/version-hint.text</code> names the current <code>v{n}.metadata.json</code>; without a hint, take the highest-versioned file. Read <code>current-schema-id</code>, find that entry in <code>schemas[]</code>, map its <code>fields[]</code>. Filesystem tables only — REST, Glue and Nessie catalogs need a network client and are explicitly out.</p>
+        </div>
+      </div>
+
+      <h3>Object storage without a Python fallback</h3>
+      <div class="prose">
+        <p>The readers above never open a file. They ask a <code>Storage</code> abstraction for a byte range and for a directory listing — which is the whole reason <code>s3://</code> stays compatible with the pure-TypeScript decision. Four implementations of two methods:</p>
+      </div>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th class="mono">scheme</th><th>range read</th><th>list</th><th>credentials</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">file://</td><td><code>workspace.fs</code> / <code>fs.read</code></td><td><code>workspace.fs.readDirectory</code></td><td>—</td></tr>
+            <tr><td class="mono">https://</td><td><code>Range:</code> header, as hyparquet's <code>asyncBufferFromUrl</code> already does</td><td>not available <span class="hint">(single files only, no Delta/Iceberg over plain HTTP)</span></td><td>optional bearer token setting</td></tr>
+            <tr><td class="mono">s3://</td><td><code>GetObject</code> with a <code>Range</code></td><td><code>ListObjectsV2</code> with a prefix and delimiter</td><td><code>@aws-sdk/client-s3</code>'s default chain — env vars, <code>~/.aws/config</code> profile, SSO cache, EC2/ECS roles. Settings for <code>profile</code>, <code>region</code>, and a custom <code>endpoint</code> so MinIO and R2 work too.</td></tr>
+            <tr><td class="mono">gs://</td><td>JSON API media download with a <code>Range</code></td><td><code>objects.list</code> with a prefix</td><td><code>google-auth-library</code> ADC — <code>GOOGLE_APPLICATION_CREDENTIALS</code> or the <code>gcloud</code> user credentials file.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="note">
+        <span class="k">Rules for the remote path</span>
+        <p>Never prompt for credentials and never store any — if the ambient chain yields nothing, the source resolves to "unauthenticated" in the status bar and the completion is silently empty. Remote reads are opt-in per scheme (<code>polarsColumns.remote.s3.enabled</code>), because a completion provider that quietly issues billable API calls on every keystroke is a bad neighbour. Every remote read is coalesced, cached far more aggressively than local ones (§08), and capped at one in flight per URI.</p>
+        <p>Bundle cost: the modular AWS v3 client adds roughly 400 KB to the VSIX; the Google auth path is lighter. Both load lazily on first remote resolution, so a purely local user never pays the startup cost.</p>
+      </div>
+    </section>
+
+    <section id="paths">
+      <div class="sechead"><span class="num">07</span><h2>Paths and escape hatches</h2></div>
+      <div class="prose">
+        <p>Between "the string in the call" and "a file on disk" sits a small constant evaluator, because real code rarely inlines a literal path.</p>
+        <ul>
+          <li><strong>Resolvable:</strong> string literals; f-strings whose parts are all literal; adjacent-literal concatenation; <code>Path("a") / "b"</code>; <code>os.path.join(…)</code>; module-level string constants (recursively); <code>str(…)</code> wrappers.</li>
+          <li><strong>Roots, in order:</strong> the directory of the .py file, then each workspace folder, then anything in the <code>polarsColumns.pathRoots</code> setting. First existing match wins — this is the fix for scripts that assume they're run from the repo root.</li>
+          <li><strong>Globs and directories:</strong> <code>data/*.parquet</code> or a hive-partitioned tree reads the first match only, assuming uniform schemas. Directory segments shaped <code>key=value</code> are appended as hive partition columns, matching what polars actually hands back.</li>
+          <li><strong>Absolute paths</strong> outside the workspace are used as-is; no root search, no sandbox complaints.</li>
+          <li><strong>URIs</strong> — <code>https://</code>, <code>s3://</code>, <code>gs://</code> — skip the root search entirely and go straight to the matching <code>Storage</code> implementation (§06). Globs over object storage become a prefix listing.</li>
+        </ul>
+        <p>When the evaluator can't get there — the path comes from a config object, a function parameter, an environment variable — <strong>v1 does nothing</strong>. No pragma comment, no settings map: the frame resolves to nothing, the status bar says why, and no completions appear. This is a deliberate bet that literal-or-constant paths cover most real code; the two escape hatches stay designed but unbuilt behind the same resolver interface, so adding one later is an afternoon rather than a refactor.</p>
+      </div>
+    </section>
+
+    <section id="perf">
+      <div class="sechead"><span class="num">08</span><h2>Cache and latency</h2></div>
+      <div class="prose">
+        <p>A completion provider that takes 200 ms feels broken even when it's correct. Two caches and one trick keep it under budget.</p>
+        <ul>
+          <li><strong>Schema cache</strong> — LRU, ~200 entries, keyed on <code>uri + mtimeMs + size</code> so a rewritten file invalidates itself. A <code>FileSystemWatcher</code> on resolved paths evicts on change; Delta and Iceberg watch their metadata directories and carry a 30-second TTL on top, since a table can gain a commit without any watched file changing.</li>
+          <li><strong>Remote schema cache</strong> — same LRU, but keyed on the object's <code>ETag</code> instead of mtime, with a 5-minute TTL before revalidation and a persistent copy in the extension's <code>globalStorage</code> so reopening the workspace tomorrow doesn't re-fetch. A remote miss costs 100–400 ms, which is exactly what the <code>isIncomplete</code> path below exists for.</li>
+          <li><strong>Binding cache</strong> — per document (or per notebook, merged across cells), keyed on <code>document.version</code>, rebuilt on change behind a short debounce. Rebuilding is a single tree walk; on a 2000-line file it's well under a millisecond.</li>
+          <li><strong>Cold-read trick</strong> — if the schema isn't cached, don't block. Kick off the read, return an empty list with <code>isIncomplete: true</code>, and VS Code re-queries as the user keeps typing; by the second keystroke the items are there. Warm path stays fully synchronous after the cache hit.</li>
+        </ul>
+        <p>Budget: p50 under 30 ms warm, p99 under 120 ms including a cold parquet footer read. A file with thousands of columns is the pathological case — cap the item list at a configurable 5000 and let VS Code's own filtering do the rest.</p>
+      </div>
+    </section>
+
+    <section id="ux">
+      <div class="sechead"><span class="num">09</span><h2>Completion UX</h2></div>
+      <div class="prose">
+        <ul>
+          <li><strong>The items:</strong> <code>label</code> is the column name, <code>detail</code> is the dtype, <code>kind</code> is <code>Field</code> (the ◆ icon), <code>documentation</code> names the source file. <code>sortText</code> is a zero-padded schema-order index so columns list in file order rather than alphabetically, and <code>range</code> is set to the string's <em>contents</em> so replacing a partial name never eats the quotes.</li>
+          <li><strong>Getting the popup to appear at all:</strong> VS Code suppresses quick suggestions inside strings by default. The extension ships <code>contributes.configurationDefaults</code> setting <code>"[python]": {"editor.quickSuggestions": {"strings": "on"}}</code>, plus <code>"</code> and <code>'</code> as trigger characters so it also fires the moment a quote is typed. Without this the feature only works on an explicit <kbd>Ctrl+Space</kbd> — it is the single most likely reason a user reports "it does nothing".</li>
+          <li><strong>Status feedback:</strong> a status-bar item, visible only in Python files, showing the resolved source for the frame at the cursor — or why there isn't one ("path not resolvable", "file not found", "unsupported scheme"). This is the debugging surface, and it costs a few dozen lines.</li>
+          <li><strong>An output channel</strong> logging every resolution attempt at <code>trace</code> level. When someone files an issue, this is what you ask for.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="limits">
+      <div class="sechead"><span class="num">10</span><h2>What v1 gets wrong, on purpose</h2></div>
+      <div class="prose">
+        <p>The single-file, no-propagation choice buys a large simplification and pays for it in specific, nameable ways. Better to document these in the README than to have them discovered:</p>
+        <ul>
+          <li><strong>Transformations don't apply.</strong> After <code>df.select("a","b")</code>, completions still offer all 24 source columns. After <code>.rename({"a":"z"})</code>, <code>a</code> is offered and <code>z</code> isn't. Schema propagation is the natural v2, and the architecture leaves room: the resolver would return a schema <em>expression</em> instead of a <code>SourceRef</code>.</li>
+          <li><strong>Frames crossing module boundaries are invisible.</strong> A frame built in <code>loaders.py</code> and imported gets nothing, and with no escape hatch in v1 there is no workaround — the honest answer is "assign it from a literal path in the file you're editing".</li>
+          <li><strong>Frames from function parameters or config objects are invisible.</strong> Type annotations carry no path, and we're not adding pragmas in v1.</li>
+          <li><strong>Multi-file globs assume one schema.</strong> First match wins; a heterogeneous set silently shows the first file's columns.</li>
+          <li><strong>The dtype names are our translation</strong>, not polars'. Edge cases — nested lists of structs, timezone-aware timestamps, large-string variants — will read slightly differently than <code>print(df.schema)</code>.</li>
+          <li><strong>Notebook order is document order.</strong> Cells run out of order get resolved as if they hadn't; a frame reassigned in a cell <em>below</em> the cursor but executed <em>before</em> it will be wrong. Matching the kernel's real execution history is possible but not worth it.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="repo">
+      <div class="sechead"><span class="num">11</span><h2>Repo layout</h2></div>
+      <pre class="tree"><code>polars-columns/
+├── package.json            <span class="c">contributes: config, configurationDefaults, activation onLanguage:python</span>
+├── esbuild.mjs             <span class="c">single-bundle, wasm copied as assets</span>
+├── assets/
+│   ├── tree-sitter.wasm
+│   └── tree-sitter-python.wasm
+├── src/
+│   ├── extension.ts            <span class="c">activate(): wire provider, watcher, status bar</span>
+│   ├── completion/
+│   │   ├── provider.ts         <span class="c">CompletionItemProvider, isIncomplete handling</span>
+│   │   └── items.ts            <span class="c">Column[] → CompletionItem[], sort/range/detail</span>
+│   ├── python/
+│   │   ├── parser.ts           <span class="c">web-tree-sitter boot, per-doc tree cache</span>
+│   │   ├── triggerSites.ts     <span class="c">the §05 table + arg-position matcher</span>
+│   │   ├── bindings.ts         <span class="c">assignments, aliases, scopes</span>
+│   │   ├── notebook.ts         <span class="c">cell → notebook, ordered merged bindings</span>
+│   │   ├── resolve.ts          <span class="c">the §04 walk</span>
+│   │   └── constEval.ts        <span class="c">path expression evaluator</span>
+│   ├── schema/
+│   │   ├── index.ts            <span class="c">dispatch + LRU + invalidation</span>
+│   │   ├── parquet.ts  csv.ts  delta.ts  iceberg.ts
+│   │   └── dtypes.ts           <span class="c">native types → polars display names</span>
+│   ├── storage/
+│   │   ├── index.ts            <span class="c">scheme → Storage { readRange, list }</span>
+│   │   └── local.ts  https.ts  s3.ts  gcs.ts   <span class="c">clients lazily imported</span>
+│   ├── paths.ts                <span class="c">roots, globs, hive partitions</span>
+│   ├── config.ts  log.ts  status.ts
+├── scripts/make_fixtures.py    <span class="c">generates test data with polars + deltalake + pyiceberg</span>
+└── test/
+    ├── fixtures/               <span class="c">committed parquet/csv/delta/iceberg + .py corpus</span>
+    ├── unit/                   <span class="c">resolver, constEval, readers</span>
+    └── integration/            <span class="c">@vscode/test-cli, real provider invocations</span></code></pre>
+    </section>
+
+    <section id="plan">
+      <div class="sechead"><span class="num">12</span><h2>Milestones</h2></div>
+      <div class="prose">
+        <p>Ordered so that something demonstrable exists on day two and each step after that is independently shippable. Estimates are focused working days.</p>
+      </div>
+      <ol class="phases">
+        <li><span class="tag">M0</span><span class="what"><b>Scaffold</b><span>yo-generated extension, esbuild bundling, web-tree-sitter booting with the Python grammar, a smoke test that parses a file and prints a node.</span></span><span class="est">0.5 d</span></li>
+        <li><span class="tag">M1</span><span class="what"><b>Walking skeleton</b><span>Literal path only, <code>pl.col</code> and <code>.select</code> only, parquet only, no cache. <code>pl.read_parquet("x.parquet").select(pl.col("&lt;cursor&gt;"))</code> completes. This is the proof the whole idea works.</span></span><span class="est">1 d</span></li>
+        <li><span class="tag">M2</span><span class="what"><b>Real resolution</b><span>Binding table with scopes and aliases, const-eval for paths, the full trigger-site table including the join left/right split. The bulk of the intellectual work.</span></span><span class="est">2 d</span></li>
+        <li><span class="tag">M3</span><span class="what"><b>Paths, cache, invalidation</b><span>Root resolution, globs, hive partitions, LRU keyed on mtime, file watchers, settings, output channel.</span></span><span class="est">1.5 d</span></li>
+        <li><span class="tag">M4</span><span class="what"><b>Completion polish</b><span>dtype details, source in documentation, sort order, quote-safe ranges, <code>configurationDefaults</code>, <code>isIncomplete</code> cold path, status bar.</span></span><span class="est">1 d</span></li>
+        <li><span class="tag">M5</span><span class="what"><b>The other three formats</b><span>CSV with kwarg-aware header parsing (0.5), Delta commit-log walk (1), Iceberg metadata pointer (0.5). Checkpoint-parquet fallback for truncated Delta logs deferred to M5b.</span></span><span class="est">2 d</span></li>
+        <li><span class="tag">M6</span><span class="what"><b>Object storage</b><span>Extract the <code>Storage</code> interface, then S3 (range GetObject, ListObjectsV2, credential chain, custom endpoint) and GCS (ADC, media range download). ETag cache, persistent store, per-scheme opt-in, lazy client loading.</span></span><span class="est">2 d</span></li>
+        <li><span class="tag">M7</span><span class="what"><b>Notebooks</b><span>Cell→notebook mapping, ordered merged binding table, per-cell tree cache, notebook-relative path roots.</span></span><span class="est">1 d</span></li>
+        <li><span class="tag">M8</span><span class="what"><b>Tests and docs</b><span>Fixture generator, resolver corpus, integration suite, perf fixture, README with the §10 limitations stated plainly.</span></span><span class="est">1.5 d</span></li>
+        <li><span class="tag">M9</span><span class="what"><b>Marketplace release</b><span>Publisher account, icon, demo GIF, licence, privacy note ("no telemetry, no code leaves your machine except the byte ranges you opted into"), <code>vsce publish</code> + Open VSX in a tagged CI workflow.</span></span><span class="est">0.5 d</span></li>
+      </ol>
+      <div class="note pick">
+        <span class="k">Cut lines</span>
+        <p>Total lands around <strong>13 focused days</strong>. Two natural release points before the end: <strong>M0–M4</strong> is parquet-only on local paths and is already a useful extension — that's the 0.1.0 to put on the Marketplace and get feedback on. <strong>M0–M5 + M8/M9</strong> is a complete local story; object storage and notebooks then land as 0.3 and 0.4 rather than blocking the first release.</p>
+      </div>
+    </section>
+
+    <section id="tests">
+      <div class="sechead"><span class="num">13</span><h2>Testing</h2></div>
+      <div class="prose">
+        <ul>
+          <li><strong>Resolver corpus.</strong> A directory of small <code>.py</code> files with <code>|</code> marking the cursor and an expected-source assertion beside each. Every row of the trigger table gets one, and every §10 limitation gets a case that asserts the <em>current</em> wrong-but-known behaviour, so a future fix is visibly a change.</li>
+          <li><strong>Reader goldens.</strong> <code>scripts/make_fixtures.py</code> writes parquet, CSV, a Delta table with two commits, and an Iceberg table with a schema evolution, plus a JSON dump of each expected schema. The readers are asserted against those goldens — which also catches the day polars renames a dtype.</li>
+          <li><strong>Integration.</strong> <code>@vscode/test-cli</code> driving <code>executeCompletionItemProvider</code> against real documents in a real editor host — the only way to catch the quick-suggestions-in-strings problem, which unit tests cannot see.</li>
+          <li><strong>Perf guard.</strong> A 5000-column parquet and a 2000-line Python file, with an assertion on warm completion latency so a regression fails CI rather than the user's patience.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="ship">
+      <div class="sechead"><span class="num">14</span><h2>Packaging</h2></div>
+      <div class="prose">
+        <ul>
+          <li>esbuild to a single <code>dist/extension.js</code>; the two WASM files ship as assets and are loaded from the extension path at activation.</li>
+          <li>Activation on <code>onLanguage:python</code> only — nothing runs until a Python file opens.</li>
+          <li>Expected VSIX size around 2–2.5 MB: ~1.5 MB tree-sitter, ~400 KB AWS client, the rest ours. Storage clients are dynamic imports, so they cost nothing at startup.</li>
+          <li>Marketplace listing needs a publisher account, a 128px icon, a README opening with a demo GIF of the popup (record the §01 scenario), a licence, and a <code>CHANGELOG.md</code>. Publish to <a href="https://open-vsx.org">Open VSX</a> in the same job — Cursor and Windsurf can't install from the Microsoft Marketplace, and that's a large slice of the polars audience.</li>
+          <li>Release CI: tag → build → <code>vsce publish</code> + <code>ovsx publish</code>, with the integration suite as a required gate.</li>
+          <li>State plainly in the README that the extension sends no telemetry and reads nothing beyond the byte ranges of the data files you point it at — worth saying up front given it holds cloud credentials in-process.</li>
+          <li>Extension host only, no language-server process — which also means it works in <code>vscode.dev</code> if the local reader is kept to the <code>vscode.workspace.fs</code> API rather than Node's <code>fs</code>. Worth doing from the start; it costs nothing at M1 and is expensive to retrofit.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="ask">
+      <div class="sechead"><span class="num">15</span><h2>Still open</h2></div>
+      <div class="prose">
+        <p>Nothing blocks starting M0. Three things want an answer before the milestone that needs them:</p>
+        <ol>
+          <li><strong>Which cloud, and how do you authenticate to it?</strong> (before M6) S3 with a named profile, S3 with SSO, GCS with ADC, or an S3-compatible endpoint like MinIO or R2 — each is a different line in the credential setup, and knowing which one is real means building and testing that one properly instead of all four shallowly.</li>
+          <li><strong>Is there a representative repo to test against?</strong> (before M2) The resolver corpus is only as good as the code it mimics. A handful of your actual polars files — how paths get built, how frames get passed around — is worth more than any number of invented cases.</li>
+          <li><strong>Extension name and publisher id.</strong> (before M9) Needed for the Marketplace listing; <code>polars-column-sense</code> or similar, under whatever publisher you register.</li>
+        </ol>
+        <p>And one thing to watch rather than decide: if the no-escape-hatch bet turns out wrong — frames from function parameters are more common in your code than expected — the pragma comment is the cheapest correction and slots in behind the existing resolver interface.</p>
+      </div>
+    </section>
+
+    <footer>
+      <p>Plan v1 · 24 Aug 2026 · references: hyparquet, polars #12673 / #18449, VS Code CompletionItemProvider API</p>
+    </footer>
+
+  </main>
+</div>
+</body>
+</html>

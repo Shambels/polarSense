@@ -1,0 +1,30 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build",
+      "type": "shell",
+      "command": "npm install --no-audit --no-fund && node esbuild.mjs",
+      "problemMatcher": [],
+      "group": { "kind": "build", "isDefault": true },
+      "presentation": { "reveal": "silent", "panel": "shared", "clear": true },
+      "detail": "Installs dependencies if needed, then bundles the extension."
+    },
+    {
+      "label": "watch",
+      "type": "shell",
+      "command": "npm install --no-audit --no-fund && node esbuild.mjs --watch",
+      "problemMatcher": [],
+      "isBackground": true,
+      "presentation": { "reveal": "silent", "panel": "dedicated" },
+      "detail": "Rebuilds on every save."
+    },
+    {
+      "label": "test",
+      "type": "shell",
+      "command": "npm install --no-audit --no-fund && npm test",
+      "problemMatcher": [],
+      "group": { "kind": "test", "isDefault": true }
+    }
+  ]
+}
