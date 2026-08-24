@@ -1,5 +1,7 @@
 # PolarSense
 
+![PolarSense completing column names from a parquet file](assets/demo.gif)
+
 Column-name autocompletion for [polars](https://pola.rs), read from the file your
 DataFrame actually comes from.
 
