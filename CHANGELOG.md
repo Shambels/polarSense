@@ -15,6 +15,17 @@
   frame, an unreadable file or a schema clipped by `maxColumns` all mean silence.
   Turn it off with `polarsense.diagnostics.enable`.
 
+### Changed
+
+- **Hover names the source by path** rather than by basename. Two files both
+  called `part-0.parquet` in different partitions were indistinguishable, which
+  is exactly when knowing which one you are looking at matters.
+- **Hover falls back the way the completion list does.** When the frame cannot be
+  identified — a function parameter, say — completions still offer the union of
+  every schema in the file, but hover gave nothing for the very name it had just
+  offered. It now shows the column, and says plainly that the frame was not
+  identified so the answer is a guess.
+
 ## 0.1.1
 
 ### Added

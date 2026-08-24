@@ -61,10 +61,16 @@ export class ColumnHoverProvider implements vscode.HoverProvider {
       return new vscode.Hover(md, range);
     }
 
-    if (!resolution.source) return undefined;
-
     const hovered = assembled.source.slice(resolution.contentStart, resolution.contentEnd);
     if (!hovered) return undefined;
+
+    if (!resolution.source) {
+      if (resolution.failure === 'not-in-string' || resolution.failure === 'not-a-column-site') {
+        return undefined;
+      }
+      if (!settings.fallbackToAllSchemas || !resolution.allSources.length) return undefined;
+      return this.unidentifiedFrameHover(resolution, hovered, ctx, range);
+    }
 
     const sources = resolution.frame ? framesSources(resolution.frame) : [resolution.source];
     const results = await Promise.all(
@@ -87,20 +93,77 @@ export class ColumnHoverProvider implements vscode.HoverProvider {
     const md = new vscode.MarkdownString();
     md.appendMarkdown(`**${column.name}**${column.dtype ? ` · \`${column.dtype}\`` : ''}`);
 
-    const facts: string[] = [];
-    if (column.stats?.min !== undefined) facts.push(`min \`${column.stats.min}\``);
-    if (column.stats?.max !== undefined) facts.push(`max \`${column.stats.max}\``);
-    if (column.stats?.nullCount !== undefined) {
-      facts.push(column.stats.nullCount === 0 ? 'no nulls' : `${fmt(column.stats.nullCount)} nulls`);
-    }
-    if (facts.length) md.appendMarkdown(`\n\n${facts.join(' · ')}`);
+    const stats = facts(column);
+    if (stats.length) md.appendMarkdown(`\n\n${stats.join(' · ')}`);
 
     md.appendMarkdown(
-      `\n\n_${path.basename(result.schema.origin)}` +
+      `\n\n_${displayPath(result.schema.origin, ctx)}` +
       `${result.schema.rowCount !== undefined ? ` · ${fmt(result.schema.rowCount)} rows` : ''}_`
     );
     return new vscode.Hover(md, range);
   }
+
+  /**
+   * The completion list falls back to every schema in the file when it cannot
+   * identify the frame. Hover did not, so hovering a name the popup had just
+   * offered produced nothing — the two disagreed about the same word.
+   */
+  private async unidentifiedFrameHover(
+    resolution: ReturnType<typeof resolveAtOffset>,
+    hovered: string,
+    ctx: PathContext,
+    range: vscode.Range
+  ): Promise<vscode.Hover | undefined> {
+    const results = await Promise.all(
+      resolution.allSources.slice(0, 8).map((source) =>
+        this.schemas.getWithBudget(source, ctx, BUDGET_MS).then((r) => ({ source, r }))
+      )
+    );
+    for (const { r } of results) {
+      const column = r?.schema?.columns.find((c) => c.name === hovered);
+      if (!column || !r?.schema) continue;
+      const md = new vscode.MarkdownString();
+      md.appendMarkdown(`**${column.name}**${column.dtype ? ` · \`${column.dtype}\`` : ''}`);
+      md.appendMarkdown(facts(column).length ? `\n\n${facts(column).join(' · ')}` : '');
+      md.appendMarkdown(
+        `\n\n_${displayPath(r.schema.origin, ctx)}` +
+        `${r.schema.rowCount !== undefined ? ` · ${fmt(r.schema.rowCount)} rows` : ''}_`
+      );
+      md.appendMarkdown(
+        '\n\n_The frame here could not be identified, so this is a column of the same' +
+        ' name found elsewhere in the file._'
+      );
+      return new vscode.Hover(md, range);
+    }
+    return undefined;
+  }
+}
+
+/** Statistics worth printing, in a fixed order. */
+function facts(column: { stats?: { min?: string; max?: string; nullCount?: number } }): string[] {
+  const out: string[] = [];
+  if (column.stats?.min !== undefined) out.push(`min \`${column.stats.min}\``);
+  if (column.stats?.max !== undefined) out.push(`max \`${column.stats.max}\``);
+  if (column.stats?.nullCount !== undefined) {
+    out.push(column.stats.nullCount === 0 ? 'no nulls' : `${fmt(column.stats.nullCount)} nulls`);
+  }
+  return out;
+}
+
+/**
+ * Workspace-relative where possible: two files both called part-0.parquet are
+ * indistinguishable by basename, which is exactly when you most want to know
+ * which one you are looking at.
+ */
+function displayPath(origin: string, ctx: PathContext): string {
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(origin)) return origin;
+  let best = path.basename(origin);
+  for (const root of [...ctx.workspaceDirs, ctx.documentDir]) {
+    const relative = path.relative(root, origin);
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) continue;
+    if (relative.length < best.length || best === path.basename(origin)) best = relative;
+  }
+  return best;
 }
 
 function describeShape(columns: number, rows?: number): string {
