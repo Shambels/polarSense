@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   readParquetSchema, readCsvSchema, readDeltaSchema, readIcebergSchema,
-  localStorage, resolvePath, hiveColumns
+  localStorage, resolvePath, hiveColumns, completeDataPaths
 } from '../harness.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -15,7 +15,7 @@ const EXPECTED = JSON.parse(readFileSync(path.join(ROOT, 'test', 'fixtures', 'ex
 const CSV_OPTS = { sniffBytes: 262144, inferDtypes: false };
 
 test('parquet: names match what polars wrote', async () => {
-  const columns = await readParquetSchema(localStorage, path.join(DATA, 'sales.parquet'));
+  const columns = (await readParquetSchema(localStorage, path.join(DATA, 'sales.parquet'))).columns;
   assert.deepEqual(
     columns.map((c) => c.name),
     EXPECTED.parquet.map((c) => c.name)
@@ -23,7 +23,7 @@ test('parquet: names match what polars wrote', async () => {
 });
 
 test('parquet: dtypes map onto polars display names', async () => {
-  const columns = await readParquetSchema(localStorage, path.join(DATA, 'sales.parquet'));
+  const columns = (await readParquetSchema(localStorage, path.join(DATA, 'sales.parquet'))).columns;
   const byName = Object.fromEntries(columns.map((c) => [c.name, c.dtype]));
   assert.deepEqual(byName, {
     region: 'str',
@@ -169,4 +169,74 @@ test('csv: new_columns= overrides the header row', async () => {
     path.join(DATA, 'sales.csv'), { new_columns: ['alpha', 'beta', 'gamma'] }, CSV_OPTS
   );
   assert.deepEqual(columns.map((c) => c.name), ['alpha', 'beta', 'gamma']);
+});
+
+test('path completion: offers data files and folders, not everything', async () => {
+  const ctx = { documentDir: DATA, workspaceDirs: [], extraRoots: [] };
+  const found = await completeDataPaths('', 'parquet', ctx);
+  const names = found.map((c) => c.name);
+  assert.ok(names.includes('sales.parquet'), 'parquet file missing');
+  assert.ok(names.includes('hive'), 'directory missing');
+  assert.ok(!names.includes('sales.csv'), 'a csv should not be offered to a parquet reader');
+});
+
+test('path completion: a csv reader sees csv files', async () => {
+  const ctx = { documentDir: DATA, workspaceDirs: [], extraRoots: [] };
+  const names = (await completeDataPaths('', 'csv', ctx)).map((c) => c.name);
+  assert.ok(names.includes('sales.csv'));
+  assert.ok(!names.includes('sales.parquet'));
+});
+
+test('path completion: a delta reader offers only table directories', async () => {
+  const ctx = { documentDir: DATA, workspaceDirs: [], extraRoots: [] };
+  const found = await completeDataPaths('', 'delta', ctx);
+  assert.ok(found.every((c) => c.isDir), 'files should not be offered for a table reader');
+  const delta = found.find((c) => c.name === 'delta_sales');
+  assert.ok(delta?.isTable, 'delta_sales should be marked as a table');
+  assert.ok(!found.some((c) => c.name === 'hive'), 'a plain directory is not a delta table');
+});
+
+test('path completion: descends into a typed directory prefix', async () => {
+  const ctx = { documentDir: ROOT, workspaceDirs: [], extraRoots: [] };
+  const names = (await completeDataPaths('test/fixtures/data/', 'parquet', ctx)).map((c) => c.name);
+  assert.ok(names.includes('sales.parquet'));
+});
+
+test('path completion: skips dotfiles and dependency directories', async () => {
+  const ctx = { documentDir: ROOT, workspaceDirs: [], extraRoots: [] };
+  const names = (await completeDataPaths('', 'parquet', ctx)).map((c) => c.name);
+  assert.ok(!names.includes('node_modules'));
+  assert.ok(!names.some((n) => n.startsWith('.')));
+});
+
+test('parquet: statistics come off the same footer as the schema', async () => {
+  const { columns, rowCount } = await readParquetSchema(
+    localStorage, path.join(DATA, 'sales.parquet')
+  );
+  assert.equal(rowCount, 3);
+  const byName = Object.fromEntries(columns.map((c) => [c.name, c.stats]));
+
+  assert.deepEqual(byName.region, { nullCount: 0, min: 'APAC', max: 'US' });
+  assert.deepEqual(byName.revenue, { nullCount: 0, min: '1.5', max: '3' });
+  assert.equal(byName.notes.nullCount, 1, 'the null in notes should be counted');
+});
+
+test('parquet: date and datetime statistics are formatted, not raw integers', async () => {
+  const { columns } = await readParquetSchema(localStorage, path.join(DATA, 'sales.parquet'));
+  const byName = Object.fromEntries(columns.map((c) => [c.name, c.stats]));
+  assert.equal(byName.order_date.min, '2026-01-01');
+  assert.equal(byName.order_date.max, '2026-03-01');
+  assert.ok(byName.created_at.min.startsWith('2026-01-01 12:00'), byName.created_at.min);
+});
+
+test('parquet: int64 statistics survive the BigInt round trip', async () => {
+  const { columns } = await readParquetSchema(localStorage, path.join(DATA, 'sales.parquet'));
+  const units = columns.find((c) => c.name === 'units');
+  assert.equal(units.stats.min, '10');
+  assert.equal(units.stats.max, '30');
+});
+
+test('csv columns carry no statistics — the format has none to give', async () => {
+  const columns = await readCsvSchema(path.join(DATA, 'sales.csv'), {}, CSV_OPTS);
+  assert.ok(columns.every((c) => c.stats === undefined));
 });

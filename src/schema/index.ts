@@ -105,10 +105,14 @@ export class SchemaService {
     }
 
     let columns: Column[];
+    let rowCount: number | undefined;
     switch (source.kind) {
-      case 'parquet':
-        columns = await readParquetSchema(storage, resolved.uri);
+      case 'parquet': {
+        const result = await readParquetSchema(storage, resolved.uri);
+        columns = result.columns;
+        rowCount = result.rowCount;
         break;
+      }
       case 'csv':
         columns = await readCsvSchema(resolved.uri, source.kwargs, {
           sniffBytes: this.options.csvSniffBytes,
@@ -136,7 +140,7 @@ export class SchemaService {
       columns = columns.slice(0, this.options.maxColumns);
     }
 
-    const schema: Schema = { columns, origin: resolved.uri };
+    const schema: Schema = { columns, rowCount, origin: resolved.uri };
     this.touch(cacheKey, { key: cacheKey, schema });
     return { schema, uri: resolved.uri };
   }
