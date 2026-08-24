@@ -5,9 +5,9 @@ import type { Schema } from '../core/types.js';
 import { resolveAtOffset, describeResolution } from '../core/resolve.js';
 import { assemble } from '../notebook.js';
 import { readSettings, workspaceDirs, type Settings } from '../config.js';
-import { buildItems, mergeSchemas } from './items.js';
+import { buildItems, buildPathItems, mergeSchemas } from './items.js';
 import { trace } from '../log.js';
-import type { PathContext } from '../paths.js';
+import { completeDataPaths, type PathContext } from '../paths.js';
 
 /** How long a completion may wait for a cold read before answering "ask me again". */
 const BUDGET_MS = 120;
@@ -47,6 +47,18 @@ export class ColumnCompletionProvider implements vscode.CompletionItemProvider {
     };
 
     const range = this.contentRange(document, assembled, resolution.contentStart, resolution.contentEnd);
+
+    if (resolution.pathSite) {
+      const { prefix, kind } = resolution.pathSite;
+      const candidates = await completeDataPaths(prefix, kind, ctx);
+      if (token.isCancellationRequested || !candidates.length) return undefined;
+      const segmentStart = resolution.contentStart + prefix.lastIndexOf('/') + 1;
+      const segmentRange = this.contentRange(
+        document, assembled, segmentStart, resolution.contentEnd
+      );
+      this.status.report(`$(folder) ${candidates.length} paths`);
+      return new vscode.CompletionList(buildPathItems(candidates, segmentRange), true);
+    }
 
     if (resolution.source) {
       trace(`resolve → ${describeResolution(resolution)}`);

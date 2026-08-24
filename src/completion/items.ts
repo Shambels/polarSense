@@ -42,6 +42,36 @@ function item(
   return entry;
 }
 
+/**
+ * Data files and folders for a reader's path argument. Only the segment after the
+ * last slash is replaced, so completing `data/sa` leaves `data/` alone — the same
+ * way VS Code's own path completions behave.
+ */
+export function buildPathItems(
+  candidates: { name: string; isDir: boolean; isTable?: boolean }[],
+  range: vscode.Range
+): vscode.CompletionItem[] {
+  return candidates.map((candidate, index) => {
+    const entry = new vscode.CompletionItem(
+      candidate.name,
+      candidate.isDir ? vscode.CompletionItemKind.Folder : vscode.CompletionItemKind.File
+    );
+    entry.range = range;
+    entry.filterText = candidate.name;
+    if (candidate.isDir && !candidate.isTable) {
+      // Keep going: insert the separator and ask for the next level immediately.
+      entry.insertText = `${candidate.name}/`;
+      entry.command = { command: 'editor.action.triggerSuggest', title: 'continue path' };
+    } else {
+      entry.insertText = candidate.name;
+    }
+    if (candidate.isTable) entry.detail = 'table';
+    // Folders first, then files, each group in directory order.
+    entry.sortText = `${candidate.isDir ? '0' : '1'}${String(index).padStart(4, '0')}`;
+    return entry;
+  });
+}
+
 /** Merge several schemas for the fallback offer, keeping the first dtype seen. */
 export function mergeSchemas(schemas: Schema[]): Schema {
   const columns: Column[] = [];

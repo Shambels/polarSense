@@ -8,7 +8,7 @@ export { readCsvSchema } from '../src/schema/csv.js';
 export { readDeltaSchema } from '../src/schema/delta.js';
 export { readIcebergSchema } from '../src/schema/iceberg.js';
 export { localStorage } from '../src/storage/local.js';
-export { resolvePath, hiveColumns } from '../src/paths.js';
+export { resolvePath, hiveColumns, completeDataPaths } from '../src/paths.js';
 export { EXPR_FUNCS, FRAME_METHODS } from '../src/core/triggerSites.js';
 
 import { initParser } from '../src/core/parser.js';
@@ -29,4 +29,11 @@ export async function resolveMarked(marked: string, assetDir: string): Promise<R
   const repaired = repairAtCursor(source, offset);
   const tree = parse(parser, repaired);
   return resolveAtOffset(tree, buildBindingTable(tree), offset);
+}
+
+/** Parse a snippet and return its tree and binding table, for tests that need the table. */
+export async function analyzeSource(source: string, assetDir: string) {
+  const parser = await initParser(assetDir);
+  const tree = parse(parser, source);
+  return { tree, table: buildBindingTable(tree) };
 }

@@ -4,7 +4,7 @@ import { callArguments, dottedName, lastSegment, stringValue } from './ast.js';
 import { collectConstants, constEval } from './constEval.js';
 
 /** polars entry points that open a file, and the format each one implies. */
-const SOURCE_FUNCS: Record<string, SourceKind> = {
+export const SOURCE_FUNCS: Record<string, SourceKind> = {
   read_parquet: 'parquet',
   scan_parquet: 'parquet',
   read_csv: 'csv',
@@ -17,6 +17,9 @@ const SOURCE_FUNCS: Record<string, SourceKind> = {
   scan_delta: 'delta',
   scan_iceberg: 'iceberg'
 };
+
+/** Keywords that carry the path, when it is not the first positional argument. */
+export const PATH_KWARGS = ['source', 'file', 'path', 'table', 'source_uri'];
 
 /** Call-site keywords that change how the file is parsed. */
 const KEPT_KWARGS = [
@@ -34,6 +37,14 @@ export interface Binding {
   expr: Node;
 }
 
+/** Where a reader call's path argument sits in the source, for document links. */
+export interface SourceSite {
+  /** Byte range of the path argument, so an editor can turn it into a link. */
+  start: number;
+  end: number;
+  source: SourceRef;
+}
+
 export interface BindingTable {
   bindings: Binding[];
   constants: Map<string, Node>;
@@ -45,6 +56,8 @@ export interface BindingTable {
   bareExprFuncs: Set<string>;
   /** Every source found anywhere in the document, for the fallback offer. */
   allSources: SourceRef[];
+  /** Every reader call site with a foldable path, in document order. */
+  sourceSites: SourceSite[];
   resolve(node: Node): SourceRef | null;
   lookup(name: string, beforeIndex: number, scopeIds: number[]): SourceRef | null;
 }
@@ -52,6 +65,7 @@ export interface BindingTable {
 export function buildBindingTable(tree: Tree): BindingTable {
   const root = tree.rootNode;
   const bindings: Binding[] = [];
+  const callSites: Node[] = [];
   const parameters = new Map<number, Set<string>>();
   const polarsAliases = new Set<string>();
   const bareExprFuncs = new Set<string>();
@@ -83,6 +97,11 @@ export function buildBindingTable(tree: Tree): BindingTable {
       if (left?.type === 'identifier' && right) {
         bindings.push({ name: left.text, index: node.startIndex, scopeId, expr: right });
       }
+    }
+
+    if (node.type === 'call') {
+      const short = lastSegment(dottedName(node.childForFieldName('function')));
+      if (short && SOURCE_FUNCS[short]) callSites.push(node);
     }
 
     if (node.type === 'import_statement' || node.type === 'import_from_statement') {
@@ -197,8 +216,8 @@ export function buildBindingTable(tree: Tree): BindingTable {
 
   function buildSourceRef(call: Node, kind: SourceKind): SourceRef {
     const { positional, keywords } = callArguments(call);
-    const pathArg = positional[0] ?? keywords.get('source') ?? keywords.get('file') ??
-      keywords.get('path') ?? keywords.get('table') ?? keywords.get('source_uri') ?? null;
+    const pathArg = positional[0] ??
+      PATH_KWARGS.reduce<Node | null>((found, key) => found ?? keywords.get(key) ?? null, null);
     const kwargs: SourceRef['kwargs'] = {};
     for (const key of KEPT_KWARGS) {
       const value = keywords.get(key);
@@ -209,8 +228,20 @@ export function buildBindingTable(tree: Tree): BindingTable {
 
   const table: BindingTable = {
     bindings, constants, parameters, polarsAliases, bareExprFuncs,
-    allSources: [], resolve, lookup
+    allSources: [], sourceSites: [], resolve, lookup
   };
+
+  for (const call of callSites) {
+    const source = resolve(call);
+    if (!source?.path) continue;
+    const { positional, keywords } = callArguments(call);
+    const pathArg = positional[0] ??
+      PATH_KWARGS.reduce<Node | null>((found, key) => found ?? keywords.get(key) ?? null, null);
+    if (!pathArg) continue;
+    const content = pathArg.namedChildren.find((c) => c?.type === 'string_content');
+    const target = content ?? pathArg;
+    table.sourceSites.push({ start: target.startIndex, end: target.endIndex, source });
+  }
 
   const seen = new Set<string>();
   for (const binding of bindings) {

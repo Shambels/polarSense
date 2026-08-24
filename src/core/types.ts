@@ -13,14 +13,25 @@ export interface SourceRef {
   symbol?: string;
 }
 
+/** What the file's own metadata says about a column, when it says anything. */
+export interface ColumnStats {
+  nullCount?: number;
+  /** Already formatted for display — the reader knows the dtype, the hover does not. */
+  min?: string;
+  max?: string;
+}
+
 export interface Column {
   name: string;
   /** polars display name, e.g. "str", "i64", "datetime[μs, UTC]". Empty when unknown. */
   dtype: string;
+  stats?: ColumnStats;
 }
 
 export interface Schema {
   columns: Column[];
+  /** Rows in the file, when the format records it. */
+  rowCount?: number;
   /** Human-readable origin, shown in the completion detail. */
   origin: string;
 }
@@ -36,9 +47,18 @@ export type ResolutionFailure =
   | 'unsupported-scheme'
   | 'read-failed';
 
+/** The cursor is inside the *path* argument of a reader, not a column name. */
+export interface PathSite {
+  kind: SourceKind;
+  /** What has been typed so far, from the start of the string to the cursor. */
+  prefix: string;
+}
+
 export interface Resolution {
   /** The source the cursor's frame reads from, when we found exactly one. */
   source?: SourceRef;
+  /** Set instead of `source` when the cursor is in a reader's path argument. */
+  pathSite?: PathSite;
   /** Every source known in the document, used for the fallback offer. */
   allSources: SourceRef[];
   /** The range of the string contents being completed, as byte offsets in the source. */
