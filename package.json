@@ -4,7 +4,15 @@
   "description": "Column-name autocompletion for polars, read from the parquet, CSV, Delta or Iceberg file behind your DataFrame.",
   "version": "0.1.0",
   "license": "MIT",
-  "publisher": "polarsense",
+  "publisher": "Pinch",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Shambels/polarSense.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Shambels/polarSense/issues"
+  },
+  "homepage": "https://github.com/Shambels/polarSense#readme",
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -12,6 +20,12 @@
     "Programming Languages",
     "Data Science"
   ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "PolarSense reads data files whose paths appear in the workspace's Python source. Opening an untrusted folder would let its code choose which files are read, so completions stay disabled until you trust the workspace."
+    }
+  },
   "keywords": [
     "polars",
     "parquet",
@@ -52,9 +66,12 @@
         },
         "polarsense.pathRoots": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
-          "description": "Extra directories to try when resolving a relative data path. Searched after the file's own directory and the workspace folders."
+          "description": "Extra directories to try when resolving a relative data path. Searched after the file's own directory and the workspace folders.",
+          "scope": "machine"
         },
         "polarsense.fallbackToAllSchemas": {
           "type": "boolean",
@@ -79,7 +96,8 @@
         "polarsense.https.enabled": {
           "type": "boolean",
           "default": false,
-          "description": "Allow reading schemas from https:// URLs. Off by default so completions never issue network requests unasked."
+          "description": "Allow reading schemas from https:// URLs. Off by default so completions never issue network requests unasked.",
+          "scope": "machine"
         },
         "polarsense.cacheSize": {
           "type": "number",
@@ -107,7 +125,7 @@
     "web-tree-sitter": "0.25.10"
   },
   "devDependencies": {
-    "@types/node": "22.20.1",
+    "@types/node": "^22.20.1",
     "@types/vscode": "1.90.0",
     "esbuild": "0.28.2",
     "tree-sitter-wasms": "0.1.13",

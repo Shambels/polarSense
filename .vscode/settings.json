@@ -1,0 +1,12 @@
+{
+  "js/ts.tsdk.path": "node_modules/typescript/lib",
+  "js/ts.tsdk.promptToUseWorkspaceVersion": true,
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/test/fixtures/data": true
+  },
+  "files.exclude": {
+    "**/.DS_Store": true
+  }
+}

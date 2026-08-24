@@ -6,3 +6,19 @@ test/harness.mjs
 test/fixtures/data/
 test/fixtures/expected.json
 .DS_Store
+.venv
+
+# secrets — never commit a Marketplace PAT
+.env
+.env.*
+
+# tooling
+.vscode-test/
+coverage/
+*.log
+npm-debug.log*
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.idea/
