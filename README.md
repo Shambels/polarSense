@@ -45,6 +45,16 @@ joined.select("␣")           # both frames' columns, collisions suffixed _righ
 df.group_by("region").agg(pl.col("revenue").sum()).select("␣")   # region, revenue
 ```
 
+Hover a column name for its dtype, the file it comes from, and whatever statistics
+that file records — for parquet, null count, min and max, read from the same footer
+as the schema:
+
+> **region** · `str`
+>
+> min `APAC` · max `US` · no nulls
+>
+> _data/sales.parquet · 3 rows_
+
 Column names that do not exist are flagged as you type, with a one-click fix:
 
 ```python

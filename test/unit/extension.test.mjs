@@ -526,3 +526,62 @@ test('diagnostics can be turned off', async () => {
   );
   assert.equal(items.length, 1);
 });
+
+// --- hover: the two gaps the probe found ---
+test('hover names the file by path, not just its basename', async () => {
+  // hive/region=EU/part-0.parquet and hive/region=US/part-0.parquet share a
+  // basename, so a basename alone cannot say which one you are looking at.
+  const result = await hover(
+    'import polars as pl\nh = pl.scan_parquet("hive")\nh.select("reve|nue")\n'
+  );
+  assert.match(result.contents.value, /hive\/region=/);
+  assert.doesNotMatch(result.contents.value, /_part-0\.parquet ·/);
+});
+
+test('hover falls back like the completion list does', async () => {
+  // Completion offers the union of every schema in the file when it cannot
+  // identify the frame; hover used to give nothing for the very name it offered.
+  const result = await hover(
+    'import polars as pl\n' +
+    'df = pl.scan_parquet("sales.parquet")\n' +
+    'def f(d):\n' +
+    '    return d.select("reg|ion")\n'
+  );
+  assert.ok(result, 'hover gave nothing where completion would have offered the name');
+  assert.match(result.contents.value, /\*\*region\*\*/);
+  assert.match(result.contents.value, /`str`/);
+  assert.match(result.contents.value, /could not be identified/, 'must admit it is a guess');
+});
+
+test('the hover fallback respects the setting that governs the completion one', async () => {
+  vscode._settings.fallbackToAllSchemas = false;
+  try {
+    const result = await hover(
+      'import polars as pl\n' +
+      'df = pl.scan_parquet("sales.parquet")\n' +
+      'def f(d):\n' +
+      '    return d.select("reg|ion")\n'
+    );
+    assert.equal(result, undefined);
+  } finally {
+    vscode._settings.fallbackToAllSchemas = true;
+  }
+});
+
+test('hover still says nothing where a column name does not belong', async () => {
+  assert.equal(await hover('import polars as pl\nprint("hel|lo")\n'), undefined);
+  assert.equal(
+    await hover('import polars as pl\ndf = pl.scan_parquet("sales.parquet")\ndf.rename({"region": "new|name"})\n'),
+    undefined
+  );
+});
+
+test('a name that is nowhere in the file hovers to nothing', async () => {
+  const result = await hover(
+    'import polars as pl\n' +
+    'df = pl.scan_parquet("sales.parquet")\n' +
+    'def f(d):\n' +
+    '    return d.select("not_a_col|umn")\n'
+  );
+  assert.equal(result, undefined);
+});
