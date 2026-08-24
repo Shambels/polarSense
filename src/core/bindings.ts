@@ -225,7 +225,7 @@ export function buildBindingTable(tree: Tree): BindingTable {
   return table;
 }
 
-function literalValue(node: Node): string | number | boolean | null {
+function literalValue(node: Node): string | number | boolean | string[] | null {
   if (node.type === 'string' || node.type === 'concatenated_string') return stringValue(node);
   if (node.type === 'true') return true;
   if (node.type === 'false') return false;
@@ -233,10 +233,9 @@ function literalValue(node: Node): string | number | boolean | null {
   if (node.type === 'integer') return Number(node.text);
   if (node.type === 'float') return Number(node.text);
   if (node.type === 'list') {
-    const items = node.namedChildren
+    return node.namedChildren
       .map((c) => (c ? stringValue(c) : null))
       .filter((v): v is string => v !== null);
-    return items.join(' ');
   }
   return null;
 }

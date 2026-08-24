@@ -48,9 +48,8 @@ export async function readCsvSchema(
   const fields = splitFields(headerRow, separator, quoteChar);
 
   // `new_columns=` overrides whatever is in the file.
-  if (typeof kwargs.new_columns === 'string' && kwargs.new_columns.length) {
-    const overrides = kwargs.new_columns.split(' ').filter(Boolean);
-    if (overrides.length) return overrides.map((name) => ({ name, dtype: '' }));
+  if (Array.isArray(kwargs.new_columns) && kwargs.new_columns.length) {
+    return kwargs.new_columns.map((name) => ({ name, dtype: '' }));
   }
 
   const names = hasHeader

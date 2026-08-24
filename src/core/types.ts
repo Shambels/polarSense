@@ -8,7 +8,7 @@ export interface SourceRef {
   /** Path/URI as written, after constant folding. Null when we could not fold it. */
   path: string | null;
   /** Literal keyword arguments at the call site that change how the file is read. */
-  kwargs: Record<string, string | number | boolean | null>;
+  kwargs: Record<string, string | number | boolean | string[] | null>;
   /** Variable this was bound to, for logging and the status bar. */
   symbol?: string;
 }
