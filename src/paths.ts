@@ -77,6 +77,85 @@ async function tryCandidate(candidate: string, kind: SourceRef['kind']): Promise
   return null;
 }
 
+export interface PathCandidate {
+  /** Name of the entry, as it should be inserted. */
+  name: string;
+  isDir: boolean;
+  /** True when this directory is itself a readable table. */
+  isTable?: boolean;
+}
+
+const SKIP_DIRS = new Set(['node_modules', '__pycache__', '.git', '.venv', 'venv', '.idea']);
+
+/**
+ * Entries that could continue the path being typed in a reader's first argument.
+ * Directories are always offered — you have to walk through them to reach a file —
+ * and files are filtered to the formats that reader can actually open.
+ */
+export async function completeDataPaths(
+  prefix: string,
+  kind: SourceRef['kind'],
+  ctx: PathContext
+): Promise<PathCandidate[]> {
+  const slash = prefix.lastIndexOf('/');
+  const dirPart = slash === -1 ? '' : prefix.slice(0, slash);
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(prefix)) return []; // remote: nothing to list
+
+  const roots = path.isAbsolute(dirPart)
+    ? [dirPart]
+    : [
+        path.resolve(ctx.documentDir, dirPart),
+        ...ctx.workspaceDirs.map((dir) => path.resolve(dir, dirPart)),
+        ...ctx.extraRoots.map((dir) => path.resolve(dir, dirPart))
+      ];
+
+  const wantsDirectory = kind === 'delta' || kind === 'iceberg';
+  const extensions = extensionFor(kind);
+  const seen = new Set<string>();
+  const out: PathCandidate[] = [];
+
+  for (const root of roots) {
+    if (out.length >= 200) break;
+    const entries = await fs.readdir(root, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (entry.name.startsWith('.') || SKIP_DIRS.has(entry.name)) continue;
+      if (seen.has(entry.name)) continue;
+
+      if (entry.isDirectory()) {
+        const isTable = await looksLikeTable(path.join(root, entry.name));
+        // A parquet reader should not offer a Delta table directory, and vice versa.
+        if (wantsDirectory && !isTable) {
+          if (!(await hasInterestingDescendant(path.join(root, entry.name), kind))) continue;
+        }
+        seen.add(entry.name);
+        out.push({ name: entry.name, isDir: true, isTable });
+        continue;
+      }
+      if (wantsDirectory) continue;
+      if (!extensions.some((ext) => entry.name.endsWith(ext))) continue;
+      seen.add(entry.name);
+      out.push({ name: entry.name, isDir: false });
+    }
+  }
+  return out;
+}
+
+async function looksLikeTable(dir: string): Promise<boolean> {
+  const entries: string[] = await fs.readdir(dir).catch(() => []);
+  return entries.includes('_delta_log') || entries.includes('metadata');
+}
+
+/** Cheap one-level look for a table further down, so parent folders stay offerable. */
+async function hasInterestingDescendant(dir: string, kind: SourceRef['kind']): Promise<boolean> {
+  const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+    if (await looksLikeTable(path.join(dir, entry.name))) return true;
+  }
+  void kind;
+  return false;
+}
+
 function extensionFor(kind: SourceRef['kind']): string[] {
   switch (kind) {
     case 'parquet': return ['.parquet', '.pq'];

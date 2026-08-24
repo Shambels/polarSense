@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { resolveMarked } from '../harness.mjs';
+import { resolveMarked, analyzeSource } from '../harness.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const HEAD = 'import polars as pl\n';
@@ -142,4 +142,62 @@ test('a list kwarg survives as a list, not a joined string', async () => {
     ROOT
   );
   assert.deepEqual(res.source?.kwargs.new_columns, ['alpha', 'beta']);
+});
+
+// --- path completion inside a reader's first argument ---
+const PATH_SITES = [
+  ['read_parquet positional', `${HEAD}pl.read_parquet("da|")`, 'parquet', 'da'],
+  ['scan_csv positional', `${HEAD}pl.scan_csv("data/sa|")`, 'csv', 'data/sa'],
+  ['source= keyword', `${HEAD}pl.scan_parquet(source="da|")`, 'parquet', 'da'],
+  ['scan_delta is a table site', `${HEAD}pl.scan_delta("tb|")`, 'delta', 'tb'],
+  ['empty prefix', `${HEAD}pl.read_parquet("|")`, 'parquet', '']
+];
+
+for (const [name, snippet, kind, prefix] of PATH_SITES) {
+  test(`path site: ${name}`, async () => {
+    const res = await resolveMarked(snippet, ROOT);
+    assert.equal(res.pathSite?.kind, kind, `failure was: ${res.failure ?? 'none'}`);
+    assert.equal(res.pathSite?.prefix, prefix);
+    assert.equal(res.source, undefined, 'a path site must not also resolve a schema');
+  });
+}
+
+test('the prefix stops at the cursor, not the end of the string', async () => {
+  const res = await resolveMarked(`${HEAD}pl.read_parquet("data/sa|les.parquet")`, ROOT);
+  assert.equal(res.pathSite?.prefix, 'data/sa');
+});
+
+test('a non-path argument of a reader is not a path site', async () => {
+  const res = await resolveMarked(`${HEAD}pl.read_csv("a.csv", separator="|")`, ROOT);
+  assert.equal(res.pathSite, undefined);
+});
+
+// --- reader call sites, used to turn paths into ctrl-clickable links ---
+test('every reader call site is recorded with its path range', async () => {
+  const source = `${HEAD}a = pl.scan_parquet("data/a.parquet")\nb = pl.read_csv("b.csv")\n`;
+  const { table } = await analyzeSource(source, ROOT);
+  const sites = table.sourceSites;
+  assert.equal(sites.length, 2);
+  assert.deepEqual(sites.map((s) => source.slice(s.start, s.end)), ['data/a.parquet', 'b.csv']);
+  assert.deepEqual(sites.map((s) => s.source.kind), ['parquet', 'csv']);
+});
+
+test('a call site with an unfoldable path is not linkable', async () => {
+  const { table } = await analyzeSource(`${HEAD}df = pl.scan_parquet(cfg.path)\n`, ROOT);
+  assert.equal(table.sourceSites.length, 0);
+});
+
+test('a folded constant path still yields a link over the argument', async () => {
+  const source = `${HEAD}P = "data/a.parquet"\ndf = pl.scan_parquet(P)\n`;
+  const { table } = await analyzeSource(source, ROOT);
+  assert.equal(table.sourceSites.length, 1);
+  assert.equal(source.slice(table.sourceSites[0].start, table.sourceSites[0].end), 'P');
+  assert.equal(table.sourceSites[0].source.path, 'data/a.parquet');
+});
+
+test('an inline reader chain is a call site too', async () => {
+  const source = `${HEAD}out = pl.read_parquet("x.parquet").select("a")\n`;
+  const { table } = await analyzeSource(source, ROOT);
+  assert.equal(table.sourceSites.length, 1);
+  assert.equal(source.slice(table.sourceSites[0].start, table.sourceSites[0].end), 'x.parquet');
 });

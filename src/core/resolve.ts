@@ -1,7 +1,7 @@
 import type { Node, Tree } from 'web-tree-sitter';
-import type { Resolution, SourceRef } from './types.js';
-import type { BindingTable } from './bindings.js';
-import { callArguments, dottedName, nearest } from './ast.js';
+import type { Resolution, SourceKind, SourceRef } from './types.js';
+import { PATH_KWARGS, SOURCE_FUNCS, type BindingTable } from './bindings.js';
+import { callArguments, dottedName, lastSegment, nearest } from './ast.js';
 import {
   EXPR_FUNCS, FRAME_METHODS, RIGHT_FRAME_KWARGS, specAccepts,
   type ArgPosition, type ArgSpec
@@ -34,6 +34,16 @@ export function resolveAtOffset(
   if (!site) return { ...base, failure: 'not-a-column-site' };
 
   const { call, position } = site;
+
+  // The path argument of a reader is not a column name — but it is a file path,
+  // and we already know the workspace roots, so complete that instead.
+  const pathKind = pathArgumentKind(call, position);
+  if (pathKind) {
+    const typed = stringNode.namedChildren.find((c) => c?.type === 'string_content')?.text ?? '';
+    const prefix = typed.slice(0, Math.max(0, offset - contentStart));
+    return { ...base, pathSite: { kind: pathKind, prefix } };
+  }
+
   const spec = classifyCall(call, table);
   if (!spec || !specAccepts(spec.spec, position)) {
     return { ...base, failure: 'not-a-column-site' };
@@ -161,6 +171,16 @@ function classifyCall(call: Node, table: BindingTable): CallKind | null {
     return { kind: 'expr-func', spec: EXPR_FUNCS[attr] };
   }
   if (FRAME_METHODS[attr]) return { kind: 'frame-method', spec: FRAME_METHODS[attr] };
+  return null;
+}
+
+/** If this argument is the path of `pl.read_parquet` and friends, which format? */
+function pathArgumentKind(call: Node, position: ArgPosition): SourceKind | null {
+  const short = lastSegment(dottedName(call.childForFieldName('function')));
+  const kind = short ? SOURCE_FUNCS[short] : undefined;
+  if (!kind) return null;
+  if (position.kind === 'positional' && position.index === 0) return kind;
+  if (position.kind === 'keyword' && PATH_KWARGS.includes(position.name)) return kind;
   return null;
 }
 
