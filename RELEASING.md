@@ -1,7 +1,11 @@
 # Releasing
 
-The whole process is six commands. The notes exist because three of the steps
-have a way to go wrong that is not obvious from the error message.
+Releasing is three commands. The notes exist because several steps fail with an
+error message that does not say what is actually wrong.
+
+    git commit -am "changelog for 0.1.2"   # after editing CHANGELOG.md
+    npm version patch                      # tests, bump, commit, tag, package
+    git push --follow-tags                 # then upload the .vsix
 
 ## 1. Choose the number
 
@@ -32,37 +36,41 @@ it before bumping the version — it is the check on whether the number you chos
 matches what actually changed. Group under **Added / Fixed / Changed / Security**,
 and describe what a user notices rather than which file moved.
 
-## 3. Bump the version
+## 3. Bump, test and package — one command
+
+Commit the changelog first: `npm version` refuses to run on a dirty tree.
 
 ```bash
-npm version patch --no-git-tag-version     # or minor / major / an exact 0.1.1
+npm version patch          # or minor / major / an exact version like 0.1.1
 ```
 
-This updates `package.json` **and both version fields in `package-lock.json`** —
-hand-editing `package.json` leaves the lockfile stale, which shows up later as a
-confusing diff. `--no-git-tag-version` keeps git out of it so you can commit the
-bump together with the changelog.
+Lifecycle hooks in `package.json` do the rest:
 
-Without that flag, `npm version` creates its own commit and tag, and refuses to
-run on a dirty tree.
+- `preversion` runs `npm test`. **A failing test aborts everything** — no bump,
+  no commit, no tag. This is the gate; do not skip it with `--force`.
+- npm bumps `package.json` **and both version fields in `package-lock.json`**.
+  Hand-editing `package.json` leaves the lockfile stale and surfaces later as a
+  confusing diff.
+- npm commits and tags (`v0.1.2`).
+- `postversion` runs `npm run package`, leaving the `.vsix` ready.
 
-## 4. Test and build
+Add `--no-git-tag-version` to bump without the commit and tag — useful when the
+version change belongs in the same commit as something else. The hooks still run.
+
+If the tests fail mentioning `sales.parquet` or `wide.parquet`, the fixtures are
+missing rather than the code being broken:
 
 ```bash
-npm run fixtures     # only when test/fixtures/data is empty — needs polars
-npm test             # builds, then runs the suite
+npm run fixtures     # needs polars; writes the gitignored test/fixtures/data
 ```
 
-`npm run fixtures` generates the test data, which is gitignored because some of
-it is large. Without it the perf guards skip (with a message saying so) and the
-reader tests fail — if you see failures mentioning `sales.parquet` or
-`wide.parquet`, that is the step you missed.
+The perf guards skip with a message when their fixtures are absent; the reader
+tests fail outright, which is what you will see first.
 
-## 5. Package
+## 4. What packaging can get wrong
 
-```bash
-npm run package      # npm run build && vsce package --no-dependencies
-```
+`postversion` already ran `npm run package` for you; this section is why that
+command looks the way it does.
 
 `--no-dependencies` matters. esbuild has already bundled everything into
 `dist/extension.js`, so vsce must not walk `node_modules` — with it, the VSIX is
@@ -79,7 +87,7 @@ Two things that break packaging, both with unhelpful errors:
 Check the file list vsce prints. `src/`, `test/`, `docs/` and `scripts/` should
 not be in it — `.vscodeignore` controls that.
 
-## 6. Smoke-test the actual artifact
+## 5. Smoke-test the actual artifact
 
 ```bash
 code --install-extension polarsense-0.1.1.vsix
@@ -89,7 +97,7 @@ Then open `test/fixtures/demo.py` and type inside a string. This is the same fil
 the Marketplace would serve, so anything wrong with it shows up here first —
 which is exactly how a bundling bug was caught once already.
 
-## 7. Publish
+## 6. Publish
 
 Upload the `.vsix` at
 [marketplace.visualstudio.com/manage](https://marketplace.visualstudio.com/manage)
@@ -118,12 +126,12 @@ Cursor and Windsurf cannot install from Microsoft's Marketplace:
 npx ovsx publish polarsense-0.1.1.vsix -p <open-vsx-token>
 ```
 
-## 8. Tag and push
+## 7. Push
+
+`npm version` already made the commit and the tag, so:
 
 ```bash
-git commit -am "release 0.1.1"
-git tag v0.1.1
-git push && git push --tags
+git push --follow-tags
 ```
 
 Push before the listing goes live: the README's image and links are served from
@@ -133,12 +141,10 @@ page.
 ## Checklist
 
 ```
-[ ] CHANGELOG.md written, version number matches what changed
-[ ] npm version …  (package.json + package-lock.json)
-[ ] npm test — green
-[ ] npm run package — file list contains no src/test/docs
+[ ] CHANGELOG.md written and committed, number matches what changed
+[ ] npm version patch|minor|major   (tests, bump, commit, tag, package)
+[ ] the .vsix file list contains no src/ test/ docs/
 [ ] installed the .vsix locally and typed into a string
-[ ] pushed to GitHub, including assets/demo.gif
+[ ] git push --follow-tags   — including assets/demo.gif
 [ ] uploaded, and Open VSX if you publish there
-[ ] tagged v<version>
 ```

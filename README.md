@@ -160,8 +160,43 @@ imports `vscode`, so it is testable in plain node — that is what `test/unit` r
 against. `test/unit/extension.test.mjs` activates the *bundled* extension against a
 stub of the VS Code API, which is what catches bundling and activation failures.
 
-[`RELEASING.md`](RELEASING.md) is the release process: version numbering, the
-marketplace gotchas, and the checklist.
+### Releasing a new version
+
+Write the changelog entry first and commit it — `npm version` refuses to run on a
+dirty tree, and the changelog is the check on whether the number you picked matches
+what actually changed.
+
+```bash
+# 1. edit CHANGELOG.md, then
+git commit -am "changelog for 0.1.2"
+
+# 2. one command: tests, bump, commit, tag, package
+npm version patch          # 0.1.1 -> 0.1.2   fixes only
+npm version minor          # 0.1.1 -> 0.2.0   new features
+npm version major          # 0.1.1 -> 1.0.0   breaking change
+
+# 3. push, then upload the .vsix
+git push --follow-tags
+```
+
+That single command does five things, via npm's own lifecycle hooks in
+`package.json`:
+
+| Hook | Runs | Why |
+| --- | --- | --- |
+| `preversion` | `npm test` | A failing test aborts the bump — no commit, no tag |
+| — | version bump | Updates `package.json` **and** both fields in `package-lock.json` |
+| — | commit + tag | `v0.1.2`, from npm itself |
+| `postversion` | `npm run package` | Leaves `polarsense-0.1.2.vsix` ready to upload |
+
+Push **before** updating the Marketplace listing: the README's GIF is served from
+GitHub at render time, so an unpushed commit shows a broken image on the page.
+
+To bump without touching git — useful when you want the version change in the same
+commit as something else — add `--no-git-tag-version`. The hooks still run.
+
+[`RELEASING.md`](RELEASING.md) has the rest: how to choose the number, the
+marketplace gotchas, and a checklist.
 
 ## Privacy
 
