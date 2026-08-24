@@ -57,6 +57,12 @@ export interface PathSite {
 export interface Resolution {
   /** The source the cursor's frame reads from, when we found exactly one. */
   source?: SourceRef;
+  /**
+   * The frame as an expression — its source plus every transform applied on the
+   * way here. Evaluating it gives the columns that actually exist at the cursor,
+   * rather than everything the file happens to contain.
+   */
+  frame?: import('./frame.js').FrameExpr;
   /** Set instead of `source` when the cursor is in a reader's path argument. */
   pathSite?: PathSite;
   /** Every source known in the document, used for the fallback offer. */

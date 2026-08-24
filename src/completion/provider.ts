@@ -3,6 +3,8 @@ import type { Analyzer } from '../analysis.js';
 import type { SchemaService } from '../schema/index.js';
 import type { Schema } from '../core/types.js';
 import { resolveAtOffset, describeResolution } from '../core/resolve.js';
+import { framesSources } from '../core/frame.js';
+import { evaluateFrame } from '../core/schemaEval.js';
 import { assemble } from '../notebook.js';
 import { readSettings, workspaceDirs, type Settings } from '../config.js';
 import { buildItems, buildPathItems, mergeSchemas } from './items.js';
@@ -62,26 +64,49 @@ export class ColumnCompletionProvider implements vscode.CompletionItemProvider {
 
     if (resolution.source) {
       trace(`resolve → ${describeResolution(resolution)}`);
-      const result = await this.schemas.getWithBudget(resolution.source, ctx, BUDGET_MS);
+
+      // Every source the frame reads from — two of them for a join.
+      const sources = resolution.frame
+        ? framesSources(resolution.frame)
+        : [resolution.source];
+      const results = await Promise.all(
+        sources.map((source) => this.schemas.getWithBudget(source, ctx, BUDGET_MS))
+      );
       if (token.isCancellationRequested) return undefined;
 
-      if (!result) {
-        // Read still running. Answer incomplete so VS Code asks again a keystroke later.
+      if (results.some((r) => r === null)) {
+        // A read is still running. Answer incomplete so VS Code asks again a
+        // keystroke later, by which time the cache is warm.
         this.status.report('$(sync~spin) reading schema…', resolution.source.path ?? '');
         return new vscode.CompletionList([], true);
       }
-      if (result.schema) {
+
+      const primary = results[0];
+      if (!primary?.schema) {
         this.status.report(
-          `$(database) ${result.schema.columns.length} cols`,
-          `${resolution.source.symbol ? `${resolution.source.symbol} → ` : ''}${result.uri}`
+          `$(warning) ${primary?.error ?? 'no schema'}`, resolution.source.path ?? ''
         );
-        return new vscode.CompletionList(
-          buildItems(result.schema, { range, origin: result.schema.origin }),
-          false
-        );
+        return new vscode.CompletionList([], false);
       }
-      this.status.report(`$(warning) ${result.error ?? 'no schema'}`, resolution.source.path ?? '');
-      return new vscode.CompletionList([], false);
+
+      const byIndex = new Map(sources.map((source, i) => [source, results[i]?.schema?.columns]));
+      const evaluated = resolution.frame
+        ? evaluateFrame(resolution.frame, (s) => byIndex.get(s), analysis.table)
+        : { columns: primary.schema.columns, certain: true };
+
+      const columns = evaluated?.columns ?? primary.schema.columns;
+      const certain = evaluated?.certain ?? false;
+      this.status.report(
+        `$(database) ${columns.length} cols${certain ? '' : ' (approx)'}`,
+        `${resolution.source.symbol ? `${resolution.source.symbol} → ` : ''}${results[0]?.uri ?? ''}`
+      );
+      return new vscode.CompletionList(
+        buildItems(
+          { columns, rowCount: primary.schema.rowCount, origin: primary.schema.origin },
+          { range, origin: primary.schema.origin, uncertain: !certain }
+        ),
+        false
+      );
     }
 
     // No identifiable frame. Offer the union of what the file knows, if allowed.

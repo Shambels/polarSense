@@ -85,13 +85,17 @@ for (const [name, snippet] of NEGATIVE) {
  * Known-wrong behaviour, asserted on purpose so that fixing it is a visible change
  * rather than a silent one. These are the v1 limitations from the plan.
  */
-test('known limitation: schema transformations are not applied', async () => {
+test('a transformed frame keeps its source and records the transform', async () => {
   const res = await resolveMarked(
     `${HEAD}df = pl.scan_parquet("a.parquet")\nnarrow = df.select("x")\nnarrow.select("|")`,
     ROOT
   );
-  // Ideally this would offer only "x"; today it offers everything in a.parquet.
+  // The file is still a.parquet; the frame remembers the select applied to it,
+  // which is what narrows the offer downstream.
   assert.equal(res.source?.path, 'a.parquet');
+  assert.equal(res.frame?.kind, 'transform');
+  assert.equal(res.frame?.op.op, 'select');
+  assert.equal(res.frame?.input.kind, 'source');
 });
 
 test('known limitation: a frame from a parameter is not resolved', async () => {

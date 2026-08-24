@@ -60,6 +60,8 @@ export interface BindingTable {
   sourceSites: SourceSite[];
   resolve(node: Node): SourceRef | null;
   lookup(name: string, beforeIndex: number, scopeIds: number[]): SourceRef | null;
+  /** The expression a name is bound to, for building a frame expression from it. */
+  lookupBinding(name: string, beforeIndex: number, scopeIds: number[]): Node | null;
 }
 
 export function buildBindingTable(tree: Tree): BindingTable {
@@ -131,6 +133,21 @@ export function buildBindingTable(tree: Tree): BindingTable {
       const preceding = inScope.filter((b) => b.index < beforeIndex);
       const chosen = preceding.length ? preceding[preceding.length - 1] : inScope[0];
       return resolve(chosen.expr);
+    }
+    return null;
+  }
+
+  /** Same scoping rules as lookup, but returns the bound expression itself. */
+  function lookupBinding(name: string, beforeIndex: number, scopeIds: number[]): Node | null {
+    for (const scopeId of scopeIds) {
+      if (parameters.get(scopeId)?.has(name)) return null;
+    }
+    const scopes: (number | null)[] = [...scopeIds, null];
+    for (const scope of scopes) {
+      const inScope = bindings.filter((b) => b.name === name && b.scopeId === scope);
+      if (!inScope.length) continue;
+      const preceding = inScope.filter((b) => b.index < beforeIndex);
+      return (preceding.length ? preceding[preceding.length - 1] : inScope[0]).expr;
     }
     return null;
   }
@@ -228,7 +245,7 @@ export function buildBindingTable(tree: Tree): BindingTable {
 
   const table: BindingTable = {
     bindings, constants, parameters, polarsAliases, bareExprFuncs,
-    allSources: [], sourceSites: [], resolve, lookup
+    allSources: [], sourceSites: [], resolve, lookup, lookupBinding
   };
 
   for (const call of callSites) {

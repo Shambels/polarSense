@@ -1,7 +1,5 @@
 # PolarSense
 
-![PolarSense completing column names from a parquet file](assets/demo.gif)
-
 Column-name autocompletion for [polars](https://pola.rs), read from the file your
 DataFrame actually comes from.
 
@@ -33,6 +31,19 @@ Column names inside string literals, wherever polars expects one:
 - `join` and `join_asof` — including `right_on=`, which completes from the frame
   being joined in rather than the receiver
 - `rename` and `cast` dict keys, `pivot`, `unpivot`, `over`, `sort_by`
+
+Column names are propagated through transformations, so what you are offered is
+what actually exists at that point in the chain:
+
+```python
+narrow = df.select("region", "revenue").rename({"revenue": "rev"})
+narrow.select("␣")           # region, rev — not the other seven columns
+
+joined = a.join(b, on="region")
+joined.select("␣")           # both frames' columns, collisions suffixed _right
+
+df.group_by("region").agg(pl.col("revenue").sum()).select("␣")   # region, revenue
+```
 
 It finds the frame by tracking assignments within the file:
 
@@ -93,12 +104,16 @@ default that turns them on for Python, but a setting of your own takes precedenc
 
 ## Known limitations
 
-These are deliberate, not oversights — the v1 analysis is single-file and does not
-propagate schemas through transformations.
+These are deliberate, not oversights — the analysis is single-file, and some
+reshapes are beyond what static reading can predict.
 
-- **Transformations don't apply.** After `df.select("a", "b")`, completions still
-  offer every source column. After `.rename({"a": "z"})`, `a` is offered and `z`
-  isn't.
+- **Some reshapes are not modelled.** `pivot`, `unpivot`, `explode`, `transpose`
+  and friends change the columns in ways this does not attempt to predict. The
+  extension keeps offering the columns it had and marks them as a guess — they
+  sort below certain answers and say so in the tooltip.
+- **Selectors are opaque.** `cs.numeric()`, regex patterns like `"^total_.*$"` and
+  computed names cannot be read statically, so a `select` using them widens rather
+  than narrows, and is again marked uncertain.
 - **Frames crossing module boundaries are invisible.** A frame built in
   `loaders.py` and imported gets nothing.
 - **Frames from function parameters or config objects are invisible.** A type
