@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.8
 
 - **pandas and duckdb get the same treatment as polars.** `pd.read_parquet`,
   `pd.read_csv` and `duckdb.read_parquet` were already recognised as readers —
