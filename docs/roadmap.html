@@ -158,10 +158,10 @@
     <p class="lede">Everything the build plan scoped but v1 didn't ship, every limitation that was a deliberate trade, and the features worth adding that weren't in the plan at all — with what has since been built marked <span class="tick">shipped</span>.</p>
 
     <div class="score">
-      <div class="hi"><b>12</b><span>shipped</span></div>
-      <div><b>10</b><span>remaining</span></div>
+      <div class="hi"><b>14</b><span>shipped</span></div>
+      <div><b>8</b><span>remaining</span></div>
       <div><b>1</b><span>blocked on a decision</span></div>
-      <div><b>373</b><span>tests</span></div>
+      <div><b>393</b><span>tests</span></div>
     </div>
 
     <p class="lede" style="font-size:.95rem;color:var(--muted)">Effort figures are focused working days. <strong>Impact</strong> is my read on how many users would notice, not how interesting the work is.</p>
@@ -307,7 +307,7 @@ def report(df):  # polarsense: data/sales.parquet</code></pre>
     <div class="sechead">
       <span class="num">Part 03</span>
       <h2>Not in the plan, worth adding</h2>
-      <p>Ideas the build plan never considered, mostly because v1 was scoped to completion alone. Five of these are now built.</p>
+      <p>Ideas the build plan never considered, mostly because v1 was scoped to completion alone. Most of these are now built.</p>
     </div>
 
     <div class="items">
@@ -361,12 +361,13 @@ def report(df):  # polarsense: data/sales.parquet</code></pre>
         <div class="chips"><span class="chip">0.5 d</span></div>
       </div>
 
-      <div class="item">
+      <div class="item shipped">
         <div class="body">
-          <h3>Constraint keywords</h3>
-          <p><code>df.filter(region="EU")</code> — polars accepts column names as keyword arguments. This is the one completion on the page that fires <em>outside</em> a string literal, so it needs a different trigger path, but the schema lookup is unchanged.</p>
+          <h3>Constraint keywords <span class="tick">shipped</span> <span class="where">src/core/resolve.ts</span></h3>
+          <p>Exactly as predicted: a different trigger path, and past it nothing new at all. One branch before the string check walks from the cursor to an <code>argument_list</code> whose call takes constraints, and hands back the same shape every other site produces — same frame, same schema, same narrowing through whatever transforms came before. The name is inserted with its <code>=</code>, since nothing else would be valid there.</p>
+          <p>Typo-checking and hover came along without being asked for. Both already work from a resolution and a range, and this produces both, so <code>df.filter(regoin="EU")</code> warns with the same one-click fix as everywhere else.</p>
         </div>
-        <div class="chips"><span class="chip med">impact med</span><span class="chip">1 d</span></div>
+        <div class="chips"><span class="chip">1 d</span></div>
       </div>
 
       <div class="item shipped">
@@ -405,12 +406,13 @@ def report(df):  # polarsense: data/sales.parquet</code></pre>
         <div class="chips"><span class="chip">impact low</span><span class="chip">2 h</span></div>
       </div>
 
-      <div class="item">
+      <div class="item shipped">
         <div class="body">
-          <h3>A "show schema" command</h3>
-          <p>The status bar says <em>24 cols</em>. Clicking it could show them — name, dtype, null count — in a quick pick that inserts the one you choose. Turns the existing status item from a debug affordance into a feature, and the statistics it would display are already being read.</p>
+          <h3>A "show schema" command <span class="tick">shipped</span> <span class="where">src/showSchema.ts</span></h3>
+          <p>The status item is a link now: clicking <em>24 cols</em> lists the columns with the dtype, min, max and null count the schema read had already paid for, and picking one writes it at the cursor — replacing the half-typed name if you were in the middle of one.</p>
+          <p>One thing this entry did not anticipate: invoked from the command palette, the cursor is usually nowhere near a frame. So it falls back to the sources the file reads — straight in if there is one, a pick between them if there are several — which is the difference between a command that works and one that only works if you are already standing in the right place.</p>
         </div>
-        <div class="chips"><span class="chip med">impact med</span><span class="chip">1 d</span></div>
+        <div class="chips"><span class="chip">1 d</span></div>
       </div>
 
     </div>
@@ -440,7 +442,7 @@ def report(df):  # polarsense: data/sales.parquet</code></pre>
   </section>
 
   <footer>
-    <p>PolarSense · 12 of 22 shipped · 373 tests · companion to docs/build-plan.html</p>
+    <p>PolarSense · 14 of 22 shipped · 393 tests · companion to docs/build-plan.html</p>
   </footer>
 
 </div>

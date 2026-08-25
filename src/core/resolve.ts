@@ -30,7 +30,10 @@ export function resolveAtOffset(
   };
 
   const stringNode = enclosingString(tree, offset);
-  if (!stringNode) return { ...empty, failure: 'not-in-string' };
+  if (!stringNode) {
+    // `df.filter(region="EU")` — the one column position outside a string.
+    return constraintSite(tree, table, offset, empty) ?? { ...empty, failure: 'not-in-string' };
+  }
 
   const [contentStart, contentEnd] = stringContentRange(stringNode);
   const base = { ...empty, contentStart, contentEnd };
@@ -111,6 +114,62 @@ export function resolveAtOffset(
   return spec.partial
     ? { ...base, ...wordRange(stringNode, offset, base), ...resolved, partial: true }
     : { ...base, ...resolved };
+}
+
+/**
+ * A constraint keyword. polars lets a column name be a keyword argument, which
+ * is the only place a column is completed outside a string literal — a different
+ * way in, and from there exactly the same schema lookup as everywhere else.
+ */
+function constraintSite(
+  tree: Tree, table: BindingTable, offset: number, empty: Resolution
+): Resolution | null {
+  const node = siteNode(tree, offset);
+  if (!node) return null;
+
+  let name: Node | null = null;
+  let list: Node | null = null;
+  if (node.type === 'argument_list') {
+    // `df.filter(|)` — nothing typed yet, so there is no name to replace.
+    list = node;
+  } else if (node.type === 'identifier' && node.parent?.type === 'argument_list') {
+    name = node;
+    list = node.parent;
+  } else if (node.type === 'identifier' && node.parent?.type === 'keyword_argument') {
+    // The name half only: the value of `region="EU"` is data, not a column.
+    if (node.parent.childForFieldName('name')?.id !== node.id) return null;
+    name = node;
+    list = node.parent.parent;
+  }
+  if (list?.type !== 'argument_list') return null;
+
+  const call = list.parent;
+  if (!call || call.type !== 'call') return null;
+  const fn = call.childForFieldName('function');
+  if (fn?.type !== 'attribute') return null;
+  const method = fn.childForFieldName('attribute')?.text;
+  if (!method || !FRAME_METHODS[method]?.constraintKeywords) return null;
+
+  const receiver = fn.childForFieldName('object');
+  const resolved = receiver ? resolveReceiver(receiver, table) : null;
+  if (!resolved) return null;
+
+  return {
+    ...empty,
+    contentStart: name ? name.startIndex : offset,
+    contentEnd: name ? name.endIndex : offset,
+    keywordSite: true,
+    ...resolved
+  };
+}
+
+/** The node the cursor is on, counting the name it sits at the end of. */
+function siteNode(tree: Tree, offset: number): Node | null {
+  const at = tree.rootNode.namedDescendantForIndex(offset);
+  if (at?.type === 'identifier') return at;
+  const before = offset > 0 ? tree.rootNode.namedDescendantForIndex(offset - 1) : null;
+  if (before?.type === 'identifier' && before.endIndex === offset) return before;
+  return at;
 }
 
 /** The call whose SQL argument this string is, if it is one. */

@@ -84,13 +84,20 @@ export class ColumnDiagnostics {
     };
 
     const diagnostics: vscode.Diagnostic[] = [];
-    const strings = analysis.tree.rootNode.descendantsOfType('string') as Node[];
 
-    for (const node of strings) {
-      // Only this cell's own strings, for notebooks.
-      if (node.startIndex < assembled.cellOffset) continue;
+    // Every place a column name can be written: inside a string, and — for
+    // polars' constraint keywords — as the name of a keyword argument.
+    const sites: number[] = [];
+    for (const node of analysis.tree.rootNode.descendantsOfType('string') as Node[]) {
+      if (node.startIndex >= assembled.cellOffset) sites.push(node.startIndex + 1);
+    }
+    for (const node of analysis.tree.rootNode.descendantsOfType('keyword_argument') as Node[]) {
+      const keyword = node.childForFieldName('name');
+      if (keyword && keyword.startIndex >= assembled.cellOffset) sites.push(keyword.startIndex);
+    }
 
-      const resolution = resolveAtOffset(analysis.tree, analysis.table, node.startIndex + 1);
+    for (const at of sites) {
+      const resolution = resolveAtOffset(analysis.tree, analysis.table, at);
       if (!resolution.source || resolution.contentEnd <= resolution.contentStart) continue;
       // `cs.starts_with("reg")` holds a fragment, not a name that must exist.
       if (resolution.partial) continue;

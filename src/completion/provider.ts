@@ -114,7 +114,12 @@ export class ColumnCompletionProvider implements vscode.CompletionItemProvider {
       return new vscode.CompletionList(
         buildItems(
           { columns, rowCount: primary.schema.rowCount, origin: primary.schema.origin },
-          { range, origin: primary.schema.origin, uncertain: !certain }
+          {
+            range,
+            origin: primary.schema.origin,
+            uncertain: !certain,
+            keyword: resolution.keywordSite
+          }
         ),
         false
       );

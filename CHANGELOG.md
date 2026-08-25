@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Constraint keywords complete.** polars lets a column name be a keyword
+  argument — `df.filter(region="EU")`, and the same for `remove` — which makes it
+  the one column position in the whole extension that is not inside a string.
+  It needed a different way in and nothing else: the same frame, the same schema,
+  the same narrowing through whatever transforms came before it. The name is
+  inserted with its `=`, since nothing else would be valid there.
+
+  Typo-checking followed for free. `df.filter(regoin="EU")` warns and offers
+  `region`, with the same one-click fix as everywhere else, and hovering the
+  keyword shows the column's dtype and statistics.
+
+- **A "show schema" command.** The status bar has said `24 cols` since the first
+  release and did nothing but open the log. Clicking it now shows the columns —
+  name, dtype, and the min, max and null count already read from the file — and
+  picking one writes it at the cursor, replacing the half-typed name if you were
+  in the middle of one.
+
+  Invoked from the palette with the cursor anywhere, it falls back to the sources
+  the file reads: straight in if there is one, a pick between them if there are
+  several. It says when the column list is approximate, for the same reasons the
+  completion list does. The log is still a command away —
+  **PolarSense: Show log**.
+
 ## 0.2.0
 
 ### Added
