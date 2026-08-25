@@ -585,3 +585,60 @@ test('a name that is nowhere in the file hovers to nothing', async () => {
   );
   assert.equal(result, undefined);
 });
+
+// --- df["…"] and get_column ---
+test('a subscript offers the frame\'s columns', async () => {
+  const got = await labels(`${HEAD_PY}df["|"]\n`);
+  assert.deepEqual(got.slice(0, 3), ['region', 'revenue', 'returns_qty']);
+});
+
+test('get_column offers them too', async () => {
+  const got = await labels(`${HEAD_PY}df.get_column("|")\n`);
+  assert.ok(got.includes('region'));
+});
+
+test('a subscript respects what the chain narrowed to', async () => {
+  const got = await labels(`${HEAD_PY}n = df.select("region", "revenue")\nn["|"]\n`);
+  assert.deepEqual(got, ['region', 'revenue']);
+});
+
+test('a dict subscript offers nothing, not even the fallback', async () => {
+  // The all-schemas fallback would otherwise put column names inside every
+  // dictionary lookup in a file that happens to use polars.
+  const result = await complete(
+    'import polars as pl\ndf = pl.scan_parquet("sales.parquet")\ncfg = {"path": "x"}\ncfg["|"]\n'
+  );
+  assert.equal(result, undefined);
+});
+
+test('a subscript on an unknown name offers nothing', async () => {
+  const result = await complete(
+    'import polars as pl\ndf = pl.scan_parquet("sales.parquet")\nmystery["|"]\n'
+  );
+  assert.equal(result, undefined);
+});
+
+test('a subscript column is hoverable', async () => {
+  const result = await hover(
+    'import polars as pl\ndf = pl.scan_parquet("sales.parquet")\ndf["reg|ion"]\n'
+  );
+  assert.match(result.contents.value, /\*\*region\*\* · `str`/);
+});
+
+test('a typo in a subscript is flagged', async () => {
+  const { items } = await diagnose(
+    'import polars as pl\ndf = pl.scan_parquet("sales.parquet")\ndf["regoin"]\n'
+  );
+  assert.equal(items.length, 1);
+  assert.match(items[0].message, /Did you mean "region"/);
+});
+
+test('a dict key is never flagged as a bad column', async () => {
+  const { items } = await diagnose(
+    'import polars as pl\n' +
+    'df = pl.scan_parquet("sales.parquet")\n' +
+    'cfg = {"path": "x"}\n' +
+    'value = cfg["anything_at_all"]\n'
+  );
+  assert.deepEqual(items, []);
+});
