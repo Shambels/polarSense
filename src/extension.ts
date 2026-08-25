@@ -3,6 +3,7 @@ import { initParser } from './core/parser.js';
 import { Analyzer } from './analysis.js';
 import { ModuleService } from './modules.js';
 import { showSchema } from './showSchema.js';
+import { SchemaWarmer } from './warm.js';
 import { SchemaService } from './schema/index.js';
 import { ColumnCompletionProvider } from './completion/provider.js';
 import { DataFileLinkProvider } from './links.js';
@@ -68,6 +69,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     )
   );
 
+  // Read what the open files name before anyone types, so the first completion
+  // in a file is a cache hit rather than a round trip.
+  const warmer = new SchemaWarmer(analyzer, schemas, modules);
+  context.subscriptions.push(
+    warmer,
+    vscode.workspace.onDidOpenTextDocument((doc) => warmer.schedule(doc)),
+    vscode.window.onDidChangeActiveTextEditor((editor) => warmer.schedule(editor?.document))
+  );
+  for (const doc of vscode.workspace.textDocuments) warmer.schedule(doc);
+
   const diagnostics = new ColumnDiagnostics(analyzer, schemas, modules);
   context.subscriptions.push(
     diagnostics,
@@ -130,7 +141,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         csvInferDtypes: next.csvInferDtypes
       });
       schemas.clear();
-      for (const doc of vscode.workspace.textDocuments) diagnostics.schedule(doc);
+      for (const doc of vscode.workspace.textDocuments) {
+        diagnostics.schedule(doc);
+        warmer.schedule(doc);
+      }
     })
   );
 
@@ -139,6 +153,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       schemas.clear();
       modules.clear();
       analyzer.drop('');
+      warmer.schedule(vscode.window.activeTextEditor?.document);
       vscode.window.showInformationMessage('PolarSense: schema cache cleared.');
     }),
     vscode.commands.registerCommand('polarsense.showOutput', () => showLog()),
