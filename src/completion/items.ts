@@ -9,6 +9,8 @@ export interface ItemContext {
   origin: string;
   /** Set when the items come from the all-schemas fallback rather than one frame. */
   uncertain?: boolean;
+  /** A constraint keyword position, where the name is followed by `=`. */
+  keyword?: boolean;
 }
 
 /**
@@ -35,7 +37,9 @@ function item(
   );
   entry.range = ctx.range;
   entry.filterText = column.name;
-  entry.insertText = column.name;
+  // `df.filter(region=…)`: the name alone is not usable there, and typing the
+  // `=` is the next thing you would do anyway.
+  entry.insertText = ctx.keyword ? `${column.name}=` : column.name;
   // Zero-padded so "10" sorts after "9", and prefixed so we sit above word-based
   // suggestions without fighting anything that has a real ranking.
   entry.sortText = `${ctx.uncertain ? '1' : '0'}${String(index).padStart(6, '0')}`;

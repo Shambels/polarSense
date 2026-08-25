@@ -34,6 +34,8 @@ Column names inside string literals, wherever polars expects one:
 - `df["region"]`, `df[["a", "b"]]`, `get_column`, `get_column_index`, `drop_in_place`
 - `polars.selectors` — `cs.by_name`, `cs.exclude`, `cs.starts_with`, `cs.ends_with`,
   `cs.contains`
+- `df.filter(region="EU")` and `df.remove(…)` — polars' constraint keywords, the
+  one column position that is not inside a string
 
 And the same wherever pandas or duckdb expects one:
 
@@ -87,6 +89,17 @@ Selectors narrow rather than stopping the analysis: `cs.numeric()`, `cs.string()
 `cs.temporal()` and the other dtype groups are matched against the dtypes already
 read from the file, the name-based selectors against the names, and `|`, `&`, `-`
 and `^` compose two selectors the way polars composes them.
+
+The status bar shows how many columns the frame at the cursor has. Clicking it —
+or **PolarSense: Show schema** — lists them with their dtype and statistics, and
+picking one writes it at the cursor:
+
+```
+sales.parquet · 7 columns
+  region       str    min APAC · max US · no nulls
+  revenue      f64    min 12.5 · max 9930.0 · 3 nulls
+  order_date   date   min 2026-01-02 · max 2026-06-30 · no nulls
+```
 
 Hover a column name for its dtype, the file it comes from, and whatever statistics
 that file records — for parquet, null count, min and max, read from the same footer

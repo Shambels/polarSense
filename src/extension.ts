@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { initParser } from './core/parser.js';
 import { Analyzer } from './analysis.js';
 import { ModuleService } from './modules.js';
+import { showSchema } from './showSchema.js';
 import { SchemaService } from './schema/index.js';
 import { ColumnCompletionProvider } from './completion/provider.js';
 import { DataFileLinkProvider } from './links.js';
@@ -30,7 +31,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
 
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 90);
-  status.command = 'polarsense.showOutput';
+  // The count is a link to the columns behind it, not just a debug readout.
+  status.command = 'polarsense.showSchema';
   context.subscriptions.push(status);
 
   const reporter = {
@@ -139,7 +141,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       analyzer.drop('');
       vscode.window.showInformationMessage('PolarSense: schema cache cleared.');
     }),
-    vscode.commands.registerCommand('polarsense.showOutput', () => showLog())
+    vscode.commands.registerCommand('polarsense.showOutput', () => showLog()),
+    vscode.commands.registerCommand(
+      'polarsense.showSchema', () => showSchema(analyzer, schemas, modules)
+    )
   );
 
   trace('PolarSense activated');

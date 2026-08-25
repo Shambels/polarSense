@@ -66,6 +66,11 @@ export interface Resolution {
   /** Set instead of `source` when the cursor is in a reader's path argument. */
   pathSite?: PathSite;
   /**
+   * The cursor is on a constraint keyword — `df.filter(region="EU")` — rather
+   * than inside a string. The lookup is identical; what is inserted is not.
+   */
+  keywordSite?: boolean;
+  /**
    * The string is a *fragment* of a column name — `cs.starts_with("reg")` —
    * rather than a whole one. Completion still offers full names; anything that
    * checks a name against the schema must not, because it will not be there.

@@ -18,6 +18,11 @@ export interface ArgSpec {
   dictKeys?: boolean;
   /** Keywords whose dict *keys* are column names — `rename(columns={…})`. */
   dictKwargs?: string[];
+  /**
+   * Any keyword argument names a column: `df.filter(region="EU")`. polars calls
+   * these constraints, and they are the one column position outside a string.
+   */
+  constraintKeywords?: boolean;
 }
 
 /**
@@ -53,7 +58,8 @@ export const FRAME_METHODS: Record<string, ArgSpec> = {
   with_columns: { positional: 'all' },
   drop: { positional: 'all', kwargs: ['columns'] },
   explode: { positional: 'all', kwargs: ['column'] },
-  filter: { positional: 'all', kwargs: ['items'] },
+  filter: { positional: 'all', kwargs: ['items'], constraintKeywords: true },
+  remove: { positional: 'all', constraintKeywords: true },
   unique: { positional: 'all', kwargs: ['subset'] },
   drop_nulls: { positional: 'all', kwargs: ['subset'] },
   fill_null: { kwargs: ['subset'] },
