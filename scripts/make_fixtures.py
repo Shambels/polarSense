@@ -102,6 +102,68 @@ def write_delta() -> None:
     )
 
 
+def write_delta_checkpoint() -> None:
+    """A table whose JSON commits have been vacuumed: only a checkpoint is left.
+
+    The metaData action sits at row 1, not row 0, so the reader has to find it
+    rather than assume it. Snappy, not the polars default, because that is what
+    Spark and delta-rs write and it is what hyparquet can decompress.
+    """
+    log = DATA / "delta_checkpoint" / "_delta_log"
+    log.mkdir(parents=True, exist_ok=True)
+    schema = {
+        "type": "struct",
+        "fields": [
+            {"name": "region", "type": "string", "nullable": True, "metadata": {}},
+            {"name": "revenue", "type": "double", "nullable": True, "metadata": {}},
+            {"name": "checkpointed_at", "type": "timestamp", "nullable": True, "metadata": {}},
+        ],
+    }
+    meta = pl.Struct(
+        [
+            pl.Field("id", pl.String),
+            pl.Field("schemaString", pl.String),
+            pl.Field("createdTime", pl.Int64),
+        ]
+    )
+    add = pl.Struct([pl.Field("path", pl.String), pl.Field("size", pl.Int64)])
+    actions = pl.DataFrame(
+        {
+            "metaData": pl.Series(
+                [
+                    None,
+                    {
+                        "id": "c0ffee00-0000-4000-8000-000000000000",
+                        "schemaString": json.dumps(schema),
+                        "createdTime": 1_767_000_000_000,
+                    },
+                    None,
+                    None,
+                ],
+                dtype=meta,
+            ),
+            "add": pl.Series(
+                [
+                    None,
+                    None,
+                    {"path": "part-0.parquet", "size": 1},
+                    {"path": "part-1.parquet", "size": 2},
+                ],
+                dtype=add,
+            ),
+        }
+    )
+    actions.write_parquet(
+        log / "00000000000000000002.checkpoint.parquet", compression="snappy"
+    )
+    # A commit above the checkpoint carrying no metaData, so the JSON walk runs
+    # and comes up empty before the fallback fires.
+    (log / "00000000000000000003.json").write_text(
+        json.dumps({"add": {"path": "part-2.parquet", "size": 3, "dataChange": True}}) + "\n",
+        encoding="utf-8",
+    )
+
+
 def write_iceberg() -> None:
     table = DATA / "iceberg_sales"
     meta = table / "metadata"
@@ -173,6 +235,7 @@ def main() -> None:
     write_parquet(df)
     write_csv(df)
     write_delta()
+    write_delta_checkpoint()
     write_iceberg()
     write_perf()
     write_expected(df)

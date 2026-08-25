@@ -185,7 +185,7 @@ segments are added as hive partition columns, the way polars adds them.
 | --- | --- |
 | Parquet | Footer only — two range reads, independent of file size |
 | CSV | Header row, honouring `separator`, `has_header`, `skip_rows`, `comment_prefix`, `quote_char`, `new_columns` |
-| Delta | `_delta_log` walked newest-first to the most recent `metaData` action |
+| Delta | `_delta_log` walked newest-first to the most recent `metaData` action, falling back to the checkpoint parquet when the commits have been vacuumed |
 | Iceberg | `metadata/version-hint.text` → the current schema in that metadata file |
 
 Schemas are read when a file opens rather than when you first ask for a column, so
@@ -263,8 +263,9 @@ reshapes are beyond what static reading can predict.
   timezone-aware types may read slightly differently than `print(df.schema)`.
 - **Notebook order is document order.** Cells run out of order resolve as if they
   hadn't been.
-- **Delta tables whose JSON commits have been truncated** by a checkpoint report
-  nothing rather than something stale.
+- **A Delta checkpoint compressed with ZSTD or brotli reports nothing.** Reading
+  a checkpoint is the one place a parquet page is decompressed rather than a
+  footer read, and only snappy — what Spark and delta-rs write — is understood.
 
 ## Development
 

@@ -158,10 +158,10 @@
     <p class="lede">Everything the build plan scoped but v1 didn't ship, every limitation that was a deliberate trade, and the features worth adding that weren't in the plan at all — with what has since been built marked <span class="tick">shipped</span>.</p>
 
     <div class="score">
-      <div class="hi"><b>15</b><span>shipped</span></div>
-      <div><b>7</b><span>remaining</span></div>
+      <div class="hi"><b>16</b><span>shipped</span></div>
+      <div><b>6</b><span>remaining</span></div>
       <div><b>1</b><span>blocked on a decision</span></div>
-      <div><b>394</b><span>tests</span></div>
+      <div><b>398</b><span>tests</span></div>
     </div>
 
     <p class="lede" style="font-size:.95rem;color:var(--muted)">Effort figures are focused working days. <strong>Impact</strong> is my read on how many users would notice, not how interesting the work is.</p>
@@ -184,12 +184,14 @@
         <div class="chips"><span class="chip blocked">needs a decision</span><span class="chip hi">impact high</span><span class="chip">2 d</span></div>
       </div>
 
-      <div class="item">
+      <div class="item shipped">
         <div class="body">
-          <h3>Delta checkpoint fallback <span class="where">plan M5b · src/schema/delta.ts</span></h3>
-          <p>The reader walks <code>_delta_log/*.json</code> backwards for a <code>metaData</code> action. A table whose JSON commits have been vacuumed leaves only <code>*.checkpoint.parquet</code>, and today that reports nothing at all. The fallback reads the checkpoint's <code>metaData</code> column through the hyparquet path already in the repo.</p>
+          <h3>Delta checkpoint fallback <span class="tick">shipped</span> <span class="where">plan M5b · src/schema/delta.ts</span></h3>
+          <p>Through the hyparquet path already in the repo, as planned. It runs second on purpose — a JSON commit is always newer than the checkpoint beneath it, so the walk keeps the last word and a stale checkpoint can never surface. The checkpoint is chosen from the directory listing already in hand rather than from <code>_last_checkpoint</code>, which can be missing or stale without the checkpoints themselves being either.</p>
+          <p>A checkpoint of a million files still decodes a handful of rows: the row group holding the <code>metaData</code> action is located from the footer's own null counts — the same statistics hover already reads — so the read is targeted rather than a scan. Without statistics it reads the head of the file, where every writer puts <code>protocol</code> and <code>metaData</code>.</p>
+          <p>One thing the estimate did not see coming. This is the only place the extension decompresses a parquet page rather than reading a footer, so it is the only place the compression codec matters. Snappy, which Spark and delta-rs write, works; a checkpoint written with ZSTD or brotli reports nothing rather than failing — hyparquet decodes neither, and a third dependency to decode them is not worth it.</p>
         </div>
-        <div class="chips"><span class="chip med">impact med</span><span class="chip">0.5 d</span></div>
+        <div class="chips"><span class="chip">0.5 d</span></div>
       </div>
 
       <div class="item">
@@ -444,7 +446,7 @@ def report(df):  # polarsense: data/sales.parquet</code></pre>
   </section>
 
   <footer>
-    <p>PolarSense · 15 of 22 shipped · 394 tests · companion to docs/build-plan.html</p>
+    <p>PolarSense · 16 of 22 shipped · 398 tests · companion to docs/build-plan.html</p>
   </footer>
 
 </div>
