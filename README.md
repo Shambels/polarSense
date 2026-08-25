@@ -14,8 +14,9 @@ out = df.select(pl.col("re␣"))
 ```
 
 Column names are strings, so no type checker can see inside them. But the schema is
-sitting in the file on disk — a parquet footer, a CSV header row, a Delta commit
-log, an Iceberg metadata pointer. PolarSense reads it and offers the names.
+sitting in the file on disk — a parquet footer, a CSV header row, an Arrow IPC
+footer, a Delta commit log, an Iceberg metadata pointer. PolarSense reads it and
+offers the names.
 
 It never imports polars, never spawns a Python interpreter, and never runs your
 code. It reads bytes out of your data files and nothing else.
@@ -187,6 +188,7 @@ segments are added as hive partition columns, the way polars adds them.
 | --- | --- |
 | Parquet | Footer only — two range reads, independent of file size; struct columns keep their fields |
 | CSV | Header row, honouring `separator`, `has_header`, `skip_rows`, `comment_prefix`, `quote_char`, `new_columns` |
+| Arrow IPC | The schema flatbuffer — out of the footer for a file, out of the first message for a stream; struct columns keep their fields |
 | Delta | `_delta_log` walked newest-first to the most recent `metaData` action, falling back to the checkpoint parquet when the commits have been vacuumed |
 | Iceberg | `metadata/version-hint.text` → the current schema in that metadata file |
 
@@ -259,6 +261,10 @@ reshapes are beyond what static reading can predict.
   annotation carries no path, so `def load(source): return pl.scan_parquet(source)`
   finds the frame but not the file — that is what the pragma comment is for.
 - **Multi-file globs assume one schema.** First match wins.
+- **Feather V1 is not read.** `.feather` written by old pandas or R is a
+  different format that happens to share the extension; polars writes and reads
+  Arrow IPC, which is what this understands. A V1 file reports nothing rather
+  than misreading its bytes.
 - **Object storage is not supported.** `s3://` and `gs://` resolve to nothing and
   stay quiet. `https://` works when enabled.
 - **Dtype names are our translation**, not polars' own, so nested and

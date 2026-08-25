@@ -1,5 +1,6 @@
-"""Generate the test fixtures: a parquet file, a CSV, a Delta table and an Iceberg
-table, plus a JSON dump of the schema each reader is expected to produce.
+"""Generate the test fixtures: a parquet file, a CSV, a pair of Arrow IPC files, a
+Delta table and an Iceberg table, plus a JSON dump of the schema each reader is
+expected to produce.
 
 Run with:  npm run fixtures
 Only polars is required; the Delta and Iceberg fixtures are written by hand so the
@@ -8,6 +9,7 @@ test suite does not depend on deltalake/pyiceberg being installed.
 from __future__ import annotations
 
 import datetime as dt
+import decimal
 import json
 import pathlib
 
@@ -91,6 +93,62 @@ def write_nested() -> None:
     # Named so it still sorts after sales.parquet: the glob corpus asserts which
     # file a `*.parquet` pattern lands on, and that is the first one by name.
     frame.write_parquet(DATA / "structs.parquet")
+
+
+def write_ipc(df: pl.DataFrame) -> None:
+    """The same frame in Arrow IPC, in both the file and the stream shape.
+
+    `arrow_types.arrow` is the type corners in one place: what polars actually
+    writes is view types, large lists and a dictionary-encoded categorical, none
+    of which the parquet fixtures exercise.
+    """
+    df.write_ipc(DATA / "sales.arrow")
+    df.write_ipc_stream(DATA / "sales_stream.arrow")
+
+    pl.DataFrame(
+        {
+            "id": [1, 2],
+            "address": [
+                {"city": "Ghent", "postcode": "9000", "geo": {"lat": 51.05, "lon": 3.72}},
+                {"city": "Lisbon", "postcode": "1100", "geo": {"lat": 38.72, "lon": -9.14}},
+            ],
+            "tags": [["a", "b"], ["c"]],
+            "grade": ["gold", "silver"],
+            "price": [decimal.Decimal("1.50"), decimal.Decimal("2.25")],
+            "opened_at": [dt.time(9, 0), dt.time(17, 30)],
+            "elapsed": [dt.timedelta(seconds=1), dt.timedelta(seconds=2)],
+            "hits": pl.Series([1, 2], dtype=pl.UInt32),
+            "ratio": pl.Series([0.5, 0.25], dtype=pl.Float32),
+            "blob": pl.Series([b"\x00", b"\x01"], dtype=pl.Binary),
+            "point": pl.Series([[1.0, 2.0], [3.0, 4.0]], dtype=pl.Array(pl.Float64, 2)),
+            "utc_at": pl.Series(
+                [dt.datetime(2026, 1, 1, 12, 0), dt.datetime(2026, 2, 1, 12, 0)]
+            ).dt.replace_time_zone("UTC"),
+        },
+        schema={
+            "id": pl.Int64,
+            "address": pl.Struct(
+                [
+                    pl.Field("city", pl.String),
+                    pl.Field("postcode", pl.String),
+                    pl.Field(
+                        "geo",
+                        pl.Struct([pl.Field("lat", pl.Float64), pl.Field("lon", pl.Float64)]),
+                    ),
+                ]
+            ),
+            "tags": pl.List(pl.String),
+            "grade": pl.Categorical,
+            "price": pl.Decimal(18, 2),
+            "opened_at": pl.Time,
+            "elapsed": pl.Duration("us"),
+            "hits": pl.UInt32,
+            "ratio": pl.Float32,
+            "blob": pl.Binary,
+            "point": pl.Array(pl.Float64, 2),
+            "utc_at": pl.Datetime("us", "UTC"),
+        },
+    ).write_ipc(DATA / "arrow_types.arrow")
 
 
 def write_delta() -> None:
@@ -270,6 +328,7 @@ def main() -> None:
     write_parquet(df)
     write_csv(df)
     write_nested()
+    write_ipc(df)
     write_delta()
     write_delta_checkpoint()
     write_iceberg()

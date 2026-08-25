@@ -150,12 +150,3 @@ function format(value: unknown, dtype: string): string {
   if (typeof value === 'string' && value.length > 40) return `${value.slice(0, 40)}…`;
   return String(value);
 }
-
-export async function readIpcSchema(storage: Storage, uri: string): Promise<Column[]> {
-  // Arrow IPC carries its schema in a flatbuffer at the head of the file. Rather
-  // than pull in a full Arrow implementation for the one format nobody asked
-  // about, report nothing and let the caller fall through cleanly.
-  void storage;
-  void uri;
-  return [];
-}

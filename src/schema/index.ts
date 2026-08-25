@@ -1,7 +1,8 @@
 import type { Column, Schema, SourceRef } from '../core/types.js';
 import { storageFor, UnsupportedSchemeError, type Storage } from '../storage/index.js';
 import { resolvePath, type PathContext } from '../paths.js';
-import { readParquetSchema, readIpcSchema } from './parquet.js';
+import { readParquetSchema } from './parquet.js';
+import { readIpcSchema } from './ipc.js';
 import { readCsvSchema } from './csv.js';
 import { readDeltaSchema } from './delta.js';
 import { readIcebergSchema } from './iceberg.js';

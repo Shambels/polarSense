@@ -1,11 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as path from 'node:path';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, rmSync } from 'node:fs';
+import * as os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import {
-  readParquetSchema, readCsvSchema, readDeltaSchema, readIcebergSchema, checkpointFiles,
-  localStorage, resolvePath, hiveColumns, completeDataPaths
+  readParquetSchema, readCsvSchema, readIpcSchema, readDeltaSchema, readIcebergSchema,
+  checkpointFiles, localStorage, resolvePath, hiveColumns, completeDataPaths
 } from '../harness.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -92,6 +93,86 @@ test('csv: dtype inference stays off unless asked', async () => {
   assert.equal(byName.units, 'i64');
   assert.equal(byName.region, 'str');
   assert.equal(byName.order_date, 'date');
+});
+
+test('ipc: names match what polars wrote', async () => {
+  // The same frame as sales.parquet, so the two readers are held to one answer.
+  const columns = await readIpcSchema(localStorage, path.join(DATA, 'sales.arrow'));
+  assert.deepEqual(columns.map((c) => c.name), EXPECTED.parquet.map((c) => c.name));
+});
+
+test('ipc: dtypes map onto polars display names', async () => {
+  const columns = await readIpcSchema(localStorage, path.join(DATA, 'sales.arrow'));
+  assert.deepEqual(Object.fromEntries(columns.map((c) => [c.name, c.dtype])), {
+    region: 'str',
+    revenue: 'f64',
+    returns_qty: 'i32',
+    units: 'i64',
+    is_active: 'bool',
+    order_date: 'date',
+    created_at: 'datetime[\u03bcs]',
+    notes: 'str',
+    tags: 'list[str]'
+  });
+});
+
+test('ipc: a stream reads the same as a file', async () => {
+  // No ARROW1 magic and no footer — the schema message is at byte zero, which is
+  // the reason this reader looks at the head rather than the end of the file.
+  const stream = await readIpcSchema(localStorage, path.join(DATA, 'sales_stream.arrow'));
+  const file = await readIpcSchema(localStorage, path.join(DATA, 'sales.arrow'));
+  assert.deepEqual(stream, file);
+});
+
+test('ipc: a struct keeps its own fields, as deep as they go', async () => {
+  const columns = await readIpcSchema(localStorage, path.join(DATA, 'arrow_types.arrow'));
+  const address = columns.find((c) => c.name === 'address');
+  assert.deepEqual(address.fields.map((f) => f.name), ['city', 'postcode', 'geo']);
+  const geo = address.fields.find((f) => f.name === 'geo');
+  assert.deepEqual(geo.fields.map((f) => f.name), ['lat', 'lon']);
+  assert.equal(geo.dtype, 'struct[2]');
+});
+
+test('ipc: a list keeps no fields — its child is machinery, not a name', async () => {
+  const columns = await readIpcSchema(localStorage, path.join(DATA, 'arrow_types.arrow'));
+  const tags = columns.find((c) => c.name === 'tags');
+  assert.equal(tags.dtype, 'list[str]');
+  assert.equal(tags.fields, undefined);
+});
+
+test('ipc: the type corners polars actually writes', async () => {
+  const columns = await readIpcSchema(localStorage, path.join(DATA, 'arrow_types.arrow'));
+  const byName = Object.fromEntries(columns.map((c) => [c.name, c.dtype]));
+  // grade is dictionary-encoded: the encoding is what makes it a categorical
+  // rather than a str. blob is a BinaryView and the strings are Utf8View —
+  // the view types polars 1.x writes, which older Arrow readers never see.
+  assert.equal(byName.grade, 'cat');
+  assert.equal(byName.blob, 'binary');
+  assert.equal(byName.price, 'decimal[18,2]');
+  assert.equal(byName.opened_at, 'time');
+  assert.equal(byName.elapsed, 'duration[\u03bcs]');
+  assert.equal(byName.hits, 'u32');
+  assert.equal(byName.ratio, 'f32');
+  assert.equal(byName.point, 'array[f64, 2]');
+  assert.equal(byName.utc_at, 'datetime[\u03bcs, UTC]');
+});
+
+test('ipc: a file that is not arrow reports nothing rather than guessing', async () => {
+  // Every offset in a flatbuffer is read out of the bytes before it, so pointing
+  // this reader at other bytes is the case where inventing columns is easy.
+  assert.deepEqual(await readIpcSchema(localStorage, path.join(DATA, 'sales.parquet')), []);
+  assert.deepEqual(await readIpcSchema(localStorage, path.join(DATA, 'sales.csv')), []);
+});
+
+test('ipc: a truncated file reports nothing rather than throwing', async () => {
+  const truncated = path.join(os.tmpdir(), 'polarsense-truncated.arrow');
+  const whole = readFileSync(path.join(DATA, 'sales.arrow'));
+  writeFileSync(truncated, whole.subarray(0, 64));
+  try {
+    assert.deepEqual(await readIpcSchema(localStorage, truncated), []);
+  } finally {
+    rmSync(truncated, { force: true });
+  }
 });
 
 test('delta: walks the log backwards to the newest metaData', async () => {

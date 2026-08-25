@@ -14,6 +14,7 @@ export const SOURCE_FUNCS: Record<string, SourceKind> = {
   read_csv_batched: 'csv',
   read_ipc: 'ipc',
   scan_ipc: 'ipc',
+  read_ipc_stream: 'ipc',
   read_feather: 'ipc',
   read_delta: 'delta',
   scan_delta: 'delta',

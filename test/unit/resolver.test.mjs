@@ -70,6 +70,9 @@ const CASES = [
 
   // --- other formats ---
   ['csv', `${HEAD}df = pl.read_csv("a.csv")\ndf.select("|")`, 'a.csv'],
+  ['ipc', `${HEAD}df = pl.scan_ipc("a.arrow")\ndf.select("|")`, 'a.arrow'],
+  ['ipc stream', `${HEAD}df = pl.read_ipc_stream("a.arrow")\ndf.select("|")`, 'a.arrow'],
+  ['feather', `${HEAD}df = pl.read_feather("a.feather")\ndf.select("|")`, 'a.feather'],
   ['delta', `${HEAD}df = pl.scan_delta("tbl")\ndf.select("|")`, 'tbl'],
   ['iceberg', `${HEAD}df = pl.scan_iceberg("tbl")\ndf.select("|")`, 'tbl'],
 
