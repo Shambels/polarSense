@@ -72,10 +72,11 @@ export class ColumnHoverProvider implements vscode.HoverProvider {
       return new vscode.Hover(md, range);
     }
 
+    // Inside a fragment — a SQL statement, a selector prefix — the range covers
+    // the one identifier under the cursor rather than the whole string, so this
+    // is the same lookup as anywhere else.
     const hovered = assembled.source.slice(resolution.contentStart, resolution.contentEnd);
     if (!hovered) return undefined;
-    // A selector fragment is not a column name; there is nothing to describe.
-    if (resolution.partial) return undefined;
 
     if (!resolution.source) {
       if (resolution.failure === 'not-in-string' || resolution.failure === 'not-a-column-site') {

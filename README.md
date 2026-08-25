@@ -52,8 +52,20 @@ rel.project("␣")             # completes, and the path in the SQL is ctrl-clic
 df = rel.df().groupby("␣")   # a duckdb relation converted to pandas keeps its schema
 ```
 
-The SQL is scanned for a reader call or a quoted path with a known extension, not
-parsed — `con.execute("SELECT * FROM users")` names no file and stays quiet.
+Column names complete inside the SQL too, in duckdb and in polars:
+
+```python
+df.sql("SELECT ␣ FROM self")                        # the frame it was called on
+pl.sql("SELECT ␣ FROM df")                          # a frame named in the file
+pl.SQLContext(sales=df).execute("SELECT ␣ FROM sales")
+duckdb.sql("SELECT s.␣ FROM 'sales.parquet' s")     # an alias picks its table
+```
+
+The statement is scanned, not parsed: literals and comments are masked out, then
+whatever follows `FROM` and `JOIN` is a table. So `con.execute("SELECT * FROM
+users")` names no file and stays quiet, a table name or a quoted path offers
+nothing, and a join offers both sides' columns marked as a guess — which side a
+bare name belongs to is not something this can know.
 
 Column names are propagated through transformations, so what you are offered is
 what actually exists at that point in the chain:
@@ -209,9 +221,10 @@ reshapes are beyond what static reading can predict.
 - **A warning means the file on disk disagrees with the code**, which is usually
   a typo but occasionally means the data is older than the script that writes it.
   That is why it is a warning rather than an error: polars has the last word.
-- **SQL is scanned, not parsed.** duckdb's SQL is read only for the file it opens.
-  The column names inside a `SELECT` are not offered, in duckdb or in
-  `pl.SQLContext`.
+- **SQL is scanned, not parsed.** Every table in a statement is in scope
+  everywhere in it, so a subquery's tables leak outward and a join cannot say
+  which side a bare column came from — it offers both, marked uncertain. SQL
+  positions are never typo-checked for the same reason.
 - **pyarrow is not supported.** Its `read_table` means parquet where pandas' means
   CSV, and telling those apart needs to know which module the call came from.
 - **Some selectors are still opaque.** `cs.by_dtype(pl.Int64)`, a selector method

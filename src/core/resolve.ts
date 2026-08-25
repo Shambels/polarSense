@@ -1,13 +1,16 @@
 import type { Node, Tree } from 'web-tree-sitter';
 import type { Resolution, SourceKind, SourceRef } from './types.js';
 import { PATH_KWARGS, SOURCE_FUNCS, type BindingTable } from './bindings.js';
-import { callArguments, dottedName, lastSegment, nearest } from './ast.js';
+import { callArguments, dottedName, lastSegment, methodName, nearest, stringValue } from './ast.js';
 import { resolveFrame, type FrameExpr } from './frame.js';
 import {
   EXPR_FUNCS, FRAGMENT_METHODS, FRAME_METHODS, RIGHT_FRAME_KWARGS, specAccepts,
   type ArgPosition, type ArgSpec
 } from './triggerSites.js';
 import { PARTIAL_SELECTORS, SELECTOR_FUNCS, isSelectorNamespace } from './selectors.js';
+import {
+  SQL_FUNCS, matchesQualifier, sqlColumnPosition, sqlTables, sqlText, type SqlTable
+} from './sql.js';
 
 const CONTAINERS = ['list', 'tuple', 'set', 'dictionary', 'parenthesized_expression'];
 
@@ -31,6 +34,14 @@ export function resolveAtOffset(
 
   const [contentStart, contentEnd] = stringContentRange(stringNode);
   const base = { ...empty, contentStart, contentEnd };
+
+  // A SQL string is a whole little language of its own, and the tables it reads
+  // are named inside it rather than by the call.
+  const sqlCall = findSqlCall(stringNode);
+  if (sqlCall) {
+    const resolved = resolveSqlSite(sqlCall, stringNode, offset, table, base);
+    if (resolved) return resolved;
+  }
 
   // `df["region"]` is a subscript, not a call, so the argument walk never sees it.
   const subscriptReceiver = findSubscriptSite(stringNode);
@@ -96,9 +107,174 @@ export function resolveAtOffset(
     if (!source) return { ...base, failure: 'unknown-binding' };
     return { ...base, failure: 'unresolvable-path' };
   }
+  // A fragment holds several names, so only the one under the cursor is replaced.
   return spec.partial
-    ? { ...base, ...resolved, partial: true }
+    ? { ...base, ...wordRange(stringNode, offset, base), ...resolved, partial: true }
     : { ...base, ...resolved };
+}
+
+/** The call whose SQL argument this string is, if it is one. */
+function findSqlCall(stringNode: Node): Node | null {
+  const parent = stringNode.parent;
+  const list = parent?.type === 'keyword_argument' ? parent.parent : parent;
+  if (list?.type !== 'argument_list') return null;
+  const call = list.parent;
+  if (!call || call.type !== 'call') return null;
+  const short = methodName(call);
+  if (!short || !SQL_FUNCS.has(short)) return null;
+  const { positional, keywords } = callArguments(call);
+  const arg = positional[0] ?? keywords.get('query') ?? keywords.get('sql');
+  return arg?.id === stringNode.id ? call : null;
+}
+
+/**
+ * A cursor inside SQL. Returns null when the string holds no FROM clause at all,
+ * which is how `df.query("revenue > 100")` — a pandas expression, not SQL —
+ * falls through to being read as an ordinary argument.
+ */
+function resolveSqlSite(
+  call: Node, stringNode: Node, offset: number, table: BindingTable, base: Resolution
+): Resolution | null {
+  const raw = sqlText(stringNode);
+  if (!raw) return null;
+  const tables = sqlTables(raw.text);
+  if (!tables.length) return null;
+
+  const position = sqlColumnPosition(raw.text, offset - raw.base, tables);
+  if (!position) return { ...base, failure: 'not-a-column-site' };
+
+  const range = {
+    contentStart: raw.base + position.wordStart,
+    contentEnd: raw.base + position.wordEnd
+  };
+  const wanted = position.qualifier
+    ? tables.filter((ref) => matchesQualifier(ref, position.qualifier as string))
+    : tables;
+
+  const parts: { source: SourceRef; frame?: FrameExpr }[] = [];
+  for (const ref of wanted) {
+    const resolved = resolveSqlTable(ref, call, table);
+    if (resolved) parts.push(resolved);
+  }
+  if (!parts.length) return { ...base, ...range, failure: 'unknown-binding' };
+
+  return {
+    ...base,
+    ...range,
+    partial: true,
+    source: parts[0].source,
+    frame: unionFrames(parts)
+  };
+}
+
+/** The frame a table reference names: a file, the receiver, or a Python name. */
+function resolveSqlTable(
+  ref: SqlTable, call: Node, table: BindingTable
+): { source: SourceRef; frame?: FrameExpr } | null {
+  // `FROM 'sales.parquet'` and `FROM read_parquet('sales.parquet')`.
+  if (ref.path) {
+    return { source: { kind: ref.kind ?? 'parquet', path: ref.path, kwargs: {} } };
+  }
+  // `FROM self` — polars' name for the frame `.sql(…)` was called on.
+  if (ref.name.toLowerCase() === 'self') {
+    const receiver = call.childForFieldName('function')?.childForFieldName('object');
+    return receiver ? resolveReceiver(receiver, table) : null;
+  }
+  // A frame registered with pl.SQLContext, then a plain name in the file. The
+  // second is how `pl.sql("SELECT * FROM df")` finds `df` at all.
+  const registered = registeredFrames(call, table).get(ref.name);
+  if (registered) return resolveReceiver(registered, table);
+
+  const definition = table.resolveName(ref.name, call.startIndex, enclosingScopeIds(call), false);
+  for (const expr of definition?.exprs ?? []) {
+    const found = resolveReceiver(expr, definition!.table);
+    if (found) return { ...found, source: { ...found.source, symbol: ref.name } };
+  }
+  return null;
+}
+
+/**
+ * Several tables in one statement, as one frame. The join carries no keys — SQL
+ * says which column belongs to which table and this scan does not read that far —
+ * so the answer comes back marked uncertain, which is the truth.
+ */
+function unionFrames(parts: { source: SourceRef; frame?: FrameExpr }[]): FrameExpr {
+  const frames = parts.map((part): FrameExpr =>
+    part.frame ?? { kind: 'source', source: part.source });
+  return frames.reduce((left, right): FrameExpr => ({
+    kind: 'join', left, right, on: { shared: [], unknown: true }, how: 'inner', suffix: ''
+  }));
+}
+
+/** Frames given a name by `pl.SQLContext(sales=df)` or `.register("sales", df)`. */
+function registeredFrames(call: Node, table: BindingTable): Map<string, Node> {
+  const found = new Map<string, Node>();
+  let cur: Node | null = call.childForFieldName('function')?.childForFieldName('object') ?? null;
+
+  for (let depth = 0; cur && depth < 16; depth++) {
+    if (cur.type === 'parenthesized_expression') {
+      cur = cur.namedChildren[0] ?? null;
+      continue;
+    }
+    if (cur.type === 'identifier') {
+      const definition = table.resolveName(
+        cur.text, cur.startIndex, enclosingScopeIds(cur), false
+      );
+      cur = definition?.exprs[0] ?? null;
+      continue;
+    }
+    if (cur.type !== 'call') break;
+
+    const short = methodName(cur);
+    const { positional, keywords } = callArguments(cur);
+    if (short === 'SQLContext' || short === 'register_many') {
+      collectFrameNames(positional[0] ?? keywords.get('frames'), found);
+      for (const [name, value] of keywords) {
+        if (name !== 'frames' && !found.has(name)) found.set(name, value);
+      }
+    } else if (short === 'register') {
+      const name = positional[0] ? stringValue(positional[0]) : null;
+      if (name && positional[1] && !found.has(name)) found.set(name, positional[1]);
+    }
+    cur = cur.childForFieldName('function')?.childForFieldName('object') ?? null;
+  }
+  return found;
+}
+
+function collectFrameNames(node: Node | undefined, into: Map<string, Node>): void {
+  if (node?.type !== 'dictionary') return;
+  for (const pair of node.namedChildren) {
+    if (pair?.type !== 'pair') continue;
+    const key = pair.childForFieldName('key');
+    const value = pair.childForFieldName('value');
+    const name = key ? stringValue(key) : null;
+    if (name && value && !into.has(name)) into.set(name, value);
+  }
+}
+
+const WORD_CHAR = /[A-Za-z_0-9$]/;
+
+/** The identifier under the cursor within a string, rather than the whole string. */
+function wordRange(
+  stringNode: Node, offset: number, base: Resolution
+): { contentStart: number; contentEnd: number } {
+  const raw = sqlText(stringNode);
+  if (!raw) return { contentStart: base.contentStart, contentEnd: base.contentEnd };
+  let start = Math.max(0, Math.min(raw.text.length, offset - raw.base));
+  let end = start;
+  while (start > 0 && WORD_CHAR.test(raw.text[start - 1])) start--;
+  while (end < raw.text.length && WORD_CHAR.test(raw.text[end])) end++;
+  return { contentStart: raw.base + start, contentEnd: raw.base + end };
+}
+
+function enclosingScopeIds(node: Node): number[] {
+  const out: number[] = [];
+  let cur: Node | null = node.parent;
+  while (cur) {
+    if (cur.type === 'function_definition') out.push(cur.id);
+    cur = cur.parent;
+  }
+  return out;
 }
 
 /** Turn a receiver expression into the source it reads and the frame it is. */

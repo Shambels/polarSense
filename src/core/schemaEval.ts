@@ -55,7 +55,10 @@ export function evaluateFrame(
       const columns = [...left.columns];
       for (const column of right.columns) {
         if (dropped.has(column.name)) continue;
-        // A name on both sides gets the suffix, exactly as polars does.
+        // A name on both sides gets the suffix, exactly as polars does. With no
+        // suffix — the shape a SQL statement's tables are folded into — the two
+        // are the same reference, so it is offered once.
+        if (taken.has(column.name) && !expr.suffix) continue;
         const name = taken.has(column.name) ? `${column.name}${expr.suffix}` : column.name;
         taken.add(name);
         columns.push({ ...column, name });
