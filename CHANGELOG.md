@@ -1,5 +1,36 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **An escape hatch for the frames that cannot be read.** A comment naming the
+  file, for a path that arrives as a function parameter, a config attribute or an
+  environment variable:
+
+  ```python
+  # polarsense: data/sales.parquet
+  return pl.scan_parquet(cfg.source_path)
+
+  def report(df):  # polarsense: data/sales.parquet
+  ```
+
+  It governs the statement it is attached to — trailing on the line, or alone on
+  the line above — and on a `def` it answers for that function's parameters. It
+  is consulted *last*, never first: a path the resolver can work out for itself
+  always wins, so a pragma left behind after the code was fixed cannot start
+  lying about a frame that is now readable. When the reader call is right there
+  and only the path was unfoldable, the call still decides the format and its
+  options — `pl.read_csv(cfg.path, separator=";")` stays a semicolon CSV.
+
+  The format comes from the path's extension, and a bare directory is read as
+  parquet. Delta and Iceberg tables are directories, so those say it outright:
+  `# polarsense: delta data/warehouse/sales`. The path is ctrl-clickable like any
+  other, which is the cheapest way to notice you typed the wrong one.
+
+  The build plan spelled it `# polars-schema:`. The extension is no longer
+  polars-only, so it takes its own name.
+
 ## 0.1.8
 
 - **pandas and duckdb get the same treatment as polars.** `pd.read_parquet`,

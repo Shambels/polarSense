@@ -119,6 +119,24 @@ in `site-packages`, and nothing indexed in the background. A function returning 
 frame resolves the same way inside a single file. Turn it off with
 `polarsense.followImports`.
 
+When a path genuinely cannot be read — it arrives as a function parameter, a
+config attribute, an environment variable — a comment can name it:
+
+```python
+# polarsense: data/sales.parquet
+return pl.scan_parquet(cfg.source_path)
+
+def report(df):        # polarsense: data/sales.parquet
+    df.select("␣")     # completes
+```
+
+The comment governs the statement it is attached to, trailing on the line or alone
+on the line above, and on a `def` it answers for that function's parameters. It is
+consulted last, so a path the extension can work out for itself always wins and a
+stale pragma cannot override working code. The format comes from the extension —
+a bare directory is read as parquet, and Delta or Iceberg tables say so outright:
+`# polarsense: delta data/warehouse/sales`.
+
 It finds the frame by tracking assignments within the file:
 
 ```python
@@ -205,9 +223,9 @@ reshapes are beyond what static reading can predict.
   away, or one whose module lives outside the workspace, still gets nothing —
   and only module-level `def`s are read, so `Loader().load()` needs an instance
   this analysis cannot follow.
-- **Frames from function parameters or config objects are invisible.** A type
+- **Frames from function parameters or config objects need to be told.** A type
   annotation carries no path, so `def load(source): return pl.scan_parquet(source)`
-  finds the frame but not the file.
+  finds the frame but not the file — that is what the pragma comment is for.
 - **Multi-file globs assume one schema.** First match wins.
 - **Object storage is not supported.** `s3://` and `gs://` resolve to nothing and
   stay quiet. `https://` works when enabled.

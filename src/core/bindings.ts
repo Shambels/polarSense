@@ -3,6 +3,7 @@ import type { SourceKind, SourceRef } from './types.js';
 import { callArguments, dottedName, lastSegment, stringValue } from './ast.js';
 import { collectConstants, constEval } from './constEval.js';
 import { SQL_FUNCS, sqlSource } from './sql.js';
+import { collectPragmas, parameterPragma, pragmaFor, type Pragma } from './pragma.js';
 
 /** polars entry points that open a file, and the format each one implies. */
 export const SOURCE_FUNCS: Record<string, SourceKind> = {
@@ -111,6 +112,8 @@ export interface BindingTable {
   sourceSites: SourceSite[];
   /** Names imported from other modules, in document order. */
   imports: ImportedName[];
+  /** `# polarsense: …` escape hatches, by the row each comment sits on. */
+  pragmas: Map<number, Pragma>;
   resolve(node: Node): SourceRef | null;
   lookup(name: string, beforeIndex: number, scopeIds: number[]): SourceRef | null;
   /**
@@ -187,6 +190,7 @@ export function buildBindingTable(tree: Tree, loader?: ModuleLoader): BindingTab
 
   if (polarsAliases.size === 0) polarsAliases.add('pl');
   const constants = collectConstants(root);
+  const pragmas = collectPragmas(tree);
 
   const memo = new Map<number, SourceRef | null>();
   const inFlight = new Set<number>();
@@ -272,10 +276,22 @@ export function buildBindingTable(tree: Tree, loader?: ModuleLoader): BindingTab
     if (memo.has(node.id)) return memo.get(node.id)!;
     if (inFlight.has(node.id)) return null; // cyclic assignment
     inFlight.add(node.id);
-    const result = resolveInner(node);
+    const result = withPragma(node, resolveInner(node));
     inFlight.delete(node.id);
     memo.set(node.id, result);
     return result;
+  }
+
+  /**
+   * The escape hatch, applied only where the code itself came up short: no
+   * source at all, or a reader whose path would not fold. In the second case the
+   * call still knows the format and its options — only the path was missing.
+   */
+  function withPragma(node: Node, found: SourceRef | null): SourceRef | null {
+    if (found?.path) return found;
+    const pragma = pragmaFor(node, pragmas);
+    if (!pragma) return found;
+    return found ? { ...found, path: pragma.path } : pragma;
   }
 
   function resolveInner(node: Node): SourceRef | null {
@@ -285,7 +301,10 @@ export function buildBindingTable(tree: Tree, loader?: ModuleLoader): BindingTab
 
       case 'identifier': {
         const scopeIds = enclosingScopeIds(node);
-        return lookup(node.text, node.startIndex, scopeIds);
+        // `def report(df):  # polarsense: data/sales.parquet` — a parameter is
+        // the one binding that has nowhere else to get a path from.
+        return lookup(node.text, node.startIndex, scopeIds)
+          ?? parameterPragma(node, pragmas);
       }
 
       case 'attribute': {
@@ -383,7 +402,7 @@ export function buildBindingTable(tree: Tree, loader?: ModuleLoader): BindingTab
 
   const table: BindingTable = {
     bindings, constants, parameters, polarsAliases, bareExprFuncs,
-    selectorAliases, bareSelectorFuncs, imports,
+    selectorAliases, bareSelectorFuncs, imports, pragmas,
     allSources: [], sourceSites: [],
     resolve, lookup, resolveName, callDefinition, moduleFor
   };
@@ -412,6 +431,13 @@ export function buildBindingTable(tree: Tree, loader?: ModuleLoader): BindingTab
     const target = content ?? pathArg;
     table.sourceSites.push({ start: target.startIndex, end: target.endIndex, source });
   }
+
+  // A pragma's path is ctrl-clickable like any other, which is the cheapest way
+  // to notice you have typed the wrong one.
+  for (const pragma of pragmas.values()) {
+    table.sourceSites.push({ start: pragma.start, end: pragma.end, source: pragma.source });
+  }
+  table.sourceSites.sort((a, b) => a.start - b.start);
 
   const seen = new Set<string>();
   for (const binding of bindings) {

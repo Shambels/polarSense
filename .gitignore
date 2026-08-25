@@ -25,5 +25,5 @@ __pycache__/
 
 # transfer scratch
 _sync.tgz
-_scratch/
+_scratch*/
 CLAUDE.md

@@ -158,10 +158,10 @@
     <p class="lede">Everything the build plan scoped but v1 didn't ship, every limitation that was a deliberate trade, and the features worth adding that weren't in the plan at all — with what has since been built marked <span class="tick">shipped</span>.</p>
 
     <div class="score">
-      <div class="hi"><b>10</b><span>shipped</span></div>
-      <div><b>12</b><span>remaining</span></div>
+      <div class="hi"><b>11</b><span>shipped</span></div>
+      <div><b>11</b><span>remaining</span></div>
       <div><b>1</b><span>blocked on a decision</span></div>
-      <div><b>302</b><span>tests</span></div>
+      <div><b>332</b><span>tests</span></div>
     </div>
 
     <p class="lede" style="font-size:.95rem;color:var(--muted)">Effort figures are focused working days. <strong>Impact</strong> is my read on how many users would notice, not how interesting the work is.</p>
@@ -262,14 +262,18 @@
         <div class="chips"><span class="chip">2 d</span></div>
       </div>
 
-      <div class="item">
+      <div class="item shipped">
         <div class="body">
-          <h3>The pragma escape hatch</h3>
-          <p>Designed, then deliberately dropped. Cross-module frames closed the neighbouring gap but not this one: a path that arrives as a function parameter or a config attribute is still unreadable. If that turns out to be common in your code, this is the cheapest correction — a comment the developer writes once, read by the existing resolver:</p>
-          <pre><code># polars-schema: data/sales.parquet
-return pl.scan_parquet(cfg.source_path)</code></pre>
+          <h3>The pragma escape hatch <span class="tick">shipped</span> <span class="where">src/core/pragma.ts</span></h3>
+          <p>Designed in the plan, dropped from v1, and now the answer for the one frame this cannot read: a path arriving as a function parameter, a config attribute or an environment variable.</p>
+          <pre><code># polarsense: data/sales.parquet
+return pl.scan_parquet(cfg.source_path)
+
+def report(df):  # polarsense: data/sales.parquet</code></pre>
+          <p>It governs the statement it is attached to, and on a <code>def</code> it answers for that function's parameters. Two decisions did most of the work. It is consulted <em>last</em> — a path the code can supply always wins, so a pragma left behind after the code was fixed cannot start lying about a frame that is now readable. And where the reader call is right there and only the path would not fold, that call keeps deciding the format and its options; the comment supplies the path and nothing else.</p>
+          <p>Named <code>polarsense:</code> rather than the plan's <code>polars-schema:</code>, because by the time it was built the extension was no longer polars-only. Half a day, as estimated — the resolver interface it had been designed behind was still there.</p>
         </div>
-        <div class="chips"><span class="chip med">impact med</span><span class="chip">0.5 d</span></div>
+        <div class="chips"><span class="chip">0.5 d</span></div>
       </div>
 
       <div class="item shipped">
@@ -414,14 +418,13 @@ return pl.scan_parquet(cfg.source_path)</code></pre>
     <div class="sechead">
       <span class="num">Part 04</span>
       <h2>What I'd do next</h2>
-      <p>Published, the blind spot that mattered most is closed, and the audience is no longer polars-only. What is left is four items, one waiting on an answer from you and one that only earns its place if real code turns out to build frames in ways static reading cannot follow.</p>
+      <p>Published, the audience is no longer polars-only, and every frame the resolver cannot see now has either a way in or a way to be told. What is left is three items, one of them waiting on an answer from you.</p>
     </div>
 
     <ol class="next">
       <li><span class="n">1</span><span class="what"><b>Object storage</b><span>Blocked, not deferred. One answer unblocks it: named AWS profile, SSO, or a custom S3-compatible endpoint.</span></span><span class="est">2 d</span></li>
       <li><span class="n">2</span><span class="what"><b>Value completion</b><span>The feature people screenshot. Deliberately last of the big ones: it reads data rather than metadata, so it needs an opt-in and a plain explanation before it ships.</span></span><span class="est">2 d</span></li>
       <li><span class="n">3</span><span class="what"><b>Columns inside SQL strings</b><span>duckdb made half the case for it: the path in a SQL string is read now, but the column names in it are not. <code>pl.SQLContext</code> and <code>df.sql</code> want the same scan.</span></span><span class="est">2 d</span></li>
-      <li><span class="n">4</span><span class="what"><b>The pragma escape hatch</b><span>Half a day, and now the only remaining answer for a frame that comes from a function parameter or a config object — the one blind spot cross-module frames did not close.</span></span><span class="est">0.5 d</span></li>
     </ol>
 
     <div class="note pick">
@@ -436,7 +439,7 @@ return pl.scan_parquet(cfg.source_path)</code></pre>
   </section>
 
   <footer>
-    <p>PolarSense · 10 of 22 shipped · 302 tests · companion to docs/build-plan.html</p>
+    <p>PolarSense · 11 of 22 shipped · 332 tests · companion to docs/build-plan.html</p>
   </footer>
 
 </div>
