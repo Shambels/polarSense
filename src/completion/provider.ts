@@ -4,7 +4,7 @@ import type { SchemaService } from '../schema/index.js';
 import type { Schema } from '../core/types.js';
 import { resolveAtOffset, describeResolution } from '../core/resolve.js';
 import { framesSources } from '../core/frame.js';
-import { evaluateFrame } from '../core/schemaEval.js';
+import { evaluateFrame, structFields } from '../core/schemaEval.js';
 import { assemble } from '../notebook.js';
 import { readSettings, workspaceDirs, type Settings } from '../config.js';
 import { buildItems, buildPathItems, mergeSchemas } from './items.js';
@@ -105,7 +105,13 @@ export class ColumnCompletionProvider implements vscode.CompletionItemProvider {
         ? evaluateFrame(resolution.frame, (s) => byIndex.get(s), analysis.table)
         : { columns: primary.schema.columns, certain: true };
 
-      const columns = evaluated?.columns ?? primary.schema.columns;
+      const all = evaluated?.columns ?? primary.schema.columns;
+      // A struct field position: the fields of that path, or nothing at all when
+      // the path leads somewhere this schema does not have.
+      const columns = resolution.structPath
+        ? structFields(all, resolution.structPath)
+        : all;
+      if (!columns) return new vscode.CompletionList([], false);
       const certain = evaluated?.certain ?? false;
       this.status.report(
         `$(database) ${columns.length} cols${certain ? '' : ' (approx)'}`,

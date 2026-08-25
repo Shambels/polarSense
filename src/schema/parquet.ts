@@ -25,17 +25,42 @@ export async function readParquetSchema(
   // Index the row-group statistics once. Looking them up per column instead
   // would be quadratic, which a 5000-column file notices.
   const raw = indexStatistics(metadata);
-
-  const columns = schema.children.map((child) => {
-    const dtype = parquetDtype(child);
-    return {
-      name: child.element.name,
-      dtype,
-      stats: finish(raw.get(child.element.name), dtype)
-    };
-  });
+  const columns = schema.children.map((child) => toColumn(child, raw, ''));
 
   return { columns, rowCount: Number(metadata.num_rows ?? 0) };
+}
+
+/**
+ * One column, and — when it is a struct — its own columns underneath. The
+ * parquet schema is already a tree; keeping it is what lets `.struct.field("…")`
+ * be answered at all.
+ */
+function toColumn(node: ParquetNode, raw: Map<string, RawStats>, prefix: string): Column {
+  const name = node.element.name;
+  const dtype = parquetDtype(node);
+  // The prefix is carried as a string rather than a path array: a flat file
+  // walks this 5000 times and should not pay for a join it does not need.
+  const path = prefix ? `${prefix}.${name}` : name;
+  const column: Column = { name, dtype, stats: finish(raw.get(path), dtype) };
+  const children = structChildren(node);
+  if (children) column.fields = children.map((child) => toColumn(child, raw, path));
+  return column;
+}
+
+/**
+ * The children of a plain struct group. A list and a map are groups too, and
+ * their children are machinery — `list.element`, `key_value.key` — rather than
+ * fields anyone would name.
+ */
+function structChildren(node: ParquetNode): ParquetNode[] | null {
+  // Childless first: on a flat schema that is the only question worth asking,
+  // and it is asked once per column.
+  if (!node.children.length) return null;
+  const logical = node.element.logical_type?.type;
+  const converted = node.element.converted_type;
+  if (logical === 'LIST' || converted === 'LIST') return null;
+  if (logical === 'MAP' || converted === 'MAP') return null;
+  return node.children;
 }
 
 interface RawStats {
@@ -53,12 +78,16 @@ function indexStatistics(metadata: { row_groups?: unknown[] }): Map<string, RawS
     for (const column of columns) {
       const meta = (column as { meta_data?: Record<string, unknown> }).meta_data;
       const pathInSchema = meta?.['path_in_schema'];
-      // Only top-level leaves: a nested list's element stats are not the column's.
-      if (!Array.isArray(pathInSchema) || pathInSchema.length !== 1) continue;
+      if (!Array.isArray(pathInSchema) || !pathInSchema.length) continue;
       const stats = meta?.['statistics'] as Record<string, unknown> | undefined;
       if (!stats) continue;
 
-      const name = String(pathInSchema[0]);
+      // Keyed by the whole path, so a struct field finds its own statistics and
+      // a list's `x.list.element` finds nothing looking for it. The flat case is
+      // spelt out because a 5000-column file pays for this loop 5000 times.
+      const name = pathInSchema.length === 1
+        ? String(pathInSchema[0])
+        : pathInSchema.map(String).join('.');
       const acc = out.get(name) ?? {};
       if (stats['null_count'] !== undefined && stats['null_count'] !== null) {
         acc.nullCount = (acc.nullCount ?? 0) + Number(stats['null_count']);

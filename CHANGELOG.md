@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **`pl.col("address").struct.field("␣")` completes the struct's fields.** The
+  readers were flattening every schema to top-level names; they keep the tree
+  now, for parquet, Delta and Iceberg alike, and a struct inside a struct keeps
+  going — `…field("geo").struct.field("␣")` offers what is under `geo`.
+
+  It is the same lookup as anywhere else, just one level down: the frame is found
+  the way `pl.col` finds it, and the path says which column of it and which field
+  of that. So hover and the unknown-column check came along —
+  `.struct.field("citt")` warns and offers `city`. A path the schema cannot
+  follow means silence, not an empty list: "no idea" and "this struct has no
+  fields" are different answers.
+
+  A struct field also finds its own statistics, because the parquet footer keys
+  them by the full path and the reader now looks them up that way. `df.unnest("␣")`
+  names a top-level struct column too, which was an adjacent gap.
+
+### Fixed
+
+- **`.struct.field("city")` was propagating under the wrong name.** polars names
+  the result after the field; the schema evaluator was naming it after the struct
+  it came out of, so `df.select(pl.col("address").struct.field("city"))` offered
+  `address` downstream.
+
 ## 0.3.0
 
 ### Added

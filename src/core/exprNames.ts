@@ -180,6 +180,14 @@ function callNames(call: Node, ctx: ExprContext, depth: number): NameSet {
     const receiver = fn.childForFieldName('object');
     if (!receiver) return UNKNOWN;
 
+    // `pl.col("address").struct.field("city")` comes back named after the field,
+    // not after the struct it was pulled out of.
+    if (short === 'field' && receiver.type === 'attribute' &&
+        receiver.childForFieldName('attribute')?.text === 'struct') {
+      const value = positional[0] ? stringValue(positional[0]) : null;
+      return value === null ? UNKNOWN : { kind: 'names', names: [value] };
+    }
+
     if (short === 'suffix' || short === 'prefix') {
       // `.name.suffix("_x")` — the receiver chain is `pl.col(...).name`.
       const affix = positional[0] ? stringValue(positional[0]) : null;

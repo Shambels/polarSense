@@ -166,10 +166,20 @@ export function parseDeltaSchemaString(schemaString: string): Column[] {
   } catch {
     return [];
   }
-  const fields = (parsed as Record<string, unknown>)?.['fields'];
-  if (!Array.isArray(fields)) return [];
-  return fields.map((field) => {
+  return deltaFields((parsed as Record<string, unknown>)?.['fields']);
+}
+
+/** A struct's fields, keeping the fields of any struct among them. */
+function deltaFields(value: unknown): Column[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((field) => {
     const f = field as Record<string, unknown>;
-    return { name: String(f['name'] ?? ''), dtype: deltaDtype(f['type']) };
+    const type = f['type'] as Record<string, unknown> | undefined;
+    const nested = type?.['type'] === 'struct' ? deltaFields(type['fields']) : [];
+    return {
+      name: String(f['name'] ?? ''),
+      dtype: deltaDtype(f['type']),
+      ...(nested.length ? { fields: nested } : {})
+    };
   }).filter((c) => c.name !== '');
 }

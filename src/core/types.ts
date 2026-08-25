@@ -26,6 +26,12 @@ export interface Column {
   /** polars display name, e.g. "str", "i64", "datetime[μs, UTC]". Empty when unknown. */
   dtype: string;
   stats?: ColumnStats;
+  /**
+   * A struct's own columns. Every reader here works from a schema that is
+   * already a tree; flattening it to top-level names is what used to make
+   * `.struct.field("…")` unanswerable.
+   */
+  fields?: Column[];
 }
 
 export interface Schema {
@@ -70,6 +76,11 @@ export interface Resolution {
    * than inside a string. The lookup is identical; what is inserted is not.
    */
   keywordSite?: boolean;
+  /**
+   * `pl.col("address").struct.field("…")` — the columns wanted here are the
+   * fields of this path into the frame's schema, not the frame's own columns.
+   */
+  structPath?: string[];
   /**
    * The string is a *fragment* of a column name — `cs.starts_with("reg")` —
    * rather than a whole one. Completion still offers full names; anything that

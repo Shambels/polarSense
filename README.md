@@ -36,6 +36,8 @@ Column names inside string literals, wherever polars expects one:
   `cs.contains`
 - `df.filter(region="EU")` and `df.remove(…)` — polars' constraint keywords, the
   one column position that is not inside a string
+- `pl.col("address").struct.field("␣")` — a struct's own fields, as deep as they
+  go, and `df.unnest("␣")`
 
 And the same wherever pandas or duckdb expects one:
 
@@ -183,7 +185,7 @@ segments are added as hive partition columns, the way polars adds them.
 
 | Format | How the schema is read |
 | --- | --- |
-| Parquet | Footer only — two range reads, independent of file size |
+| Parquet | Footer only — two range reads, independent of file size; struct columns keep their fields |
 | CSV | Header row, honouring `separator`, `has_header`, `skip_rows`, `comment_prefix`, `quote_char`, `new_columns` |
 | Delta | `_delta_log` walked newest-first to the most recent `metaData` action, falling back to the checkpoint parquet when the commits have been vacuumed |
 | Iceberg | `metadata/version-hint.text` → the current schema in that metadata file |
