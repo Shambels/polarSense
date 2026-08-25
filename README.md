@@ -188,6 +188,10 @@ segments are added as hive partition columns, the way polars adds them.
 | Delta | `_delta_log` walked newest-first to the most recent `metaData` action |
 | Iceberg | `metadata/version-hint.text` → the current schema in that metadata file |
 
+Schemas are read when a file opens rather than when you first ask for a column, so
+the first completion is a cache hit. They are cached on the file's mtime and size,
+and a rewritten file invalidates itself.
+
 Notebooks are supported: every code cell above the cursor is treated as one module,
 so a frame defined in cell 1 completes in cell 8.
 

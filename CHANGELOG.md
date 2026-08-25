@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **The schemas a file names are read when it opens**, not when you first ask for
+  a column. That read is the one visibly slow moment in the extension: the
+  completion list comes back empty and `isIncomplete`, and you have to type
+  another character before anything appears. Opening the file, or switching to
+  its tab, now does it in the background first.
+
+  The unknown-column check already caused most of this as a side effect. What is
+  new is that it happens with that check turned off, on open rather than a pause
+  after the first edit, and for every source the file names rather than only the
+  ones sitting at a column position — including a frame it imports from another
+  module, which is one of its own sources once imports are followed.
+
+  Re-warming is cheap rather than tracked: the parse is cached and a schema
+  already read is a cache hit, so this runs on every open and every editor switch
+  without bookkeeping to remember what it has done. It reads at most eight
+  sources per file, and the trace log says how many the file actually had.
+
 ## 0.2.1
 
 ### Added

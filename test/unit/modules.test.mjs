@@ -162,6 +162,18 @@ test('columns propagate through the module boundary', async () => {
   assert.equal(evaluated.certain, true);
 });
 
+/**
+ * What the cache warmer reads on open. It has no unit test of its own — it needs
+ * an editor — so the invariant it leans on is pinned here instead.
+ */
+test("an imported frame is one of the importing file's own sources", async () => {
+  const { table } = await analyzeProject({
+    'loaders.py': `${PL}sales = pl.scan_parquet("a.parquet")\n`,
+    'main.py': 'from loaders import sales\ndf = sales.filter(x)\n'
+  }, 'main.py', ROOT);
+  assert.deepEqual(table.allSources.map((source) => source.path), ['a.parquet']);
+});
+
 // --- the path arithmetic, on its own ---
 
 test('module candidates cover both a file and a package', async () => {
