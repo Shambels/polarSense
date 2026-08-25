@@ -12,6 +12,7 @@ import { readSettings, workspaceDirs } from './config.js';
 import type { PathContext } from './paths.js';
 import { trace } from './log.js';
 import { nearest } from './core/nearest.js';
+import { NO_MODULES, type ModuleService } from './modules.js';
 
 const SOURCE = 'polarsense';
 const CODE = 'unknown-column';
@@ -39,7 +40,11 @@ export class ColumnDiagnostics {
   /** Suggestions per diagnostic position, for the quick fix. */
   private fixes = new Map<string, string[]>();
 
-  constructor(private analyzer: Analyzer, private schemas: SchemaService) {}
+  constructor(
+    private analyzer: Analyzer,
+    private schemas: SchemaService,
+    private modules: ModuleService
+  ) {}
 
   /** Re-check after a pause, so typing does not trigger a read per keystroke. */
   schedule(document: vscode.TextDocument): void {
@@ -65,7 +70,13 @@ export class ColumnDiagnostics {
     }
 
     const assembled = assemble(document, new vscode.Position(0, 0));
-    const analysis = this.analyzer.get(assembled.key, assembled.source);
+    const modules = settings.followImports
+      ? await this.modules.load(
+          this.analyzer.tree(assembled.key, assembled.source),
+          { documentDir: assembled.documentDir, workspaceDirs: workspaceDirs() }
+        )
+      : NO_MODULES;
+    const analysis = this.analyzer.get(assembled.key, assembled.source, modules);
     const ctx: PathContext = {
       documentDir: assembled.documentDir,
       workspaceDirs: workspaceDirs(),

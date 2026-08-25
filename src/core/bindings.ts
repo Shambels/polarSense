@@ -27,6 +27,34 @@ const KEPT_KWARGS = [
   'quote_char', 'new_columns', 'encoding', 'storage_options'
 ];
 
+/** A name this file imports from another module. */
+export interface ImportedName {
+  /** Module path exactly as written: `loaders`, `pkg.loaders`, `.loaders`, `..pkg`. */
+  module: string;
+  /** The name inside that module, or null when the local name *is* the module. */
+  name: string | null;
+  /** What it is called here. */
+  local: string;
+}
+
+/**
+ * An expression, and the module whose table it must be resolved against.
+ *
+ * The second half is the whole point: a frame built in `loaders.py` is a node in
+ * `loaders.py`'s tree, and resolving it against the *importing* file's bindings
+ * would look up the wrong names entirely.
+ */
+export interface Definition {
+  /** Candidates in order — a `def` with several `return`s offers each of them. */
+  exprs: Node[];
+  table: BindingTable;
+}
+
+/** Supplies the binding table of another module. Implemented by the I/O layer. */
+export interface ModuleLoader {
+  tableFor(module: string): BindingTable | null;
+}
+
 export interface Binding {
   name: string;
   /** Byte offset of the assignment, used for "nearest preceding" lookup. */
@@ -62,13 +90,25 @@ export interface BindingTable {
   allSources: SourceRef[];
   /** Every reader call site with a foldable path, in document order. */
   sourceSites: SourceSite[];
+  /** Names imported from other modules, in document order. */
+  imports: ImportedName[];
   resolve(node: Node): SourceRef | null;
   lookup(name: string, beforeIndex: number, scopeIds: number[]): SourceRef | null;
-  /** The expression a name is bound to, for building a frame expression from it. */
-  lookupBinding(name: string, beforeIndex: number, scopeIds: number[]): Node | null;
+  /**
+   * What a name stands for: the expression bound to it, or — when `called` — the
+   * expressions a `def` of that name returns. Follows imports into other modules,
+   * which is why the answer carries the table it belongs to.
+   */
+  resolveName(
+    name: string, beforeIndex: number, scopeIds: number[], called: boolean
+  ): Definition | null;
+  /** The same, for a call node: `load()`, `loaders.load()`. */
+  callDefinition(call: Node): Definition | null;
+  /** The table of a module imported here under this local name, if we have it. */
+  moduleFor(alias: string | null): BindingTable | null;
 }
 
-export function buildBindingTable(tree: Tree): BindingTable {
+export function buildBindingTable(tree: Tree, loader?: ModuleLoader): BindingTable {
   const root = tree.rootNode;
   const bindings: Binding[] = [];
   const callSites: Node[] = [];
@@ -77,9 +117,15 @@ export function buildBindingTable(tree: Tree): BindingTable {
   const bareExprFuncs = new Set<string>();
   const selectorAliases = new Set<string>();
   const bareSelectorFuncs = new Set<string>();
+  const imports: ImportedName[] = [];
+  /** Module-level `def`s by name: calling one of these can produce a frame. */
+  const functions = new Map<string, Node>();
 
   const visit = (node: Node, scopeId: number | null) => {
     if (node.type === 'function_definition') {
+      // Only module-level defs. A method needs an instance we cannot follow.
+      const defName = node.childForFieldName('name')?.text;
+      if (defName && node.parent?.type === 'module') functions.set(defName, node);
       const params = new Set<string>();
       const list = node.childForFieldName('parameters');
       if (list) {
@@ -113,7 +159,7 @@ export function buildBindingTable(tree: Tree): BindingTable {
     }
 
     if (node.type === 'import_statement' || node.type === 'import_from_statement') {
-      collectImports(node, { polarsAliases, bareExprFuncs, selectorAliases, bareSelectorFuncs });
+      collectImports(node, { polarsAliases, bareExprFuncs, selectorAliases, bareSelectorFuncs, imports });
     }
 
     for (const child of node.namedChildren) if (child) visit(child, scopeId);
@@ -126,34 +172,78 @@ export function buildBindingTable(tree: Tree): BindingTable {
   const memo = new Map<number, SourceRef | null>();
   const inFlight = new Set<number>();
 
+  const importsByLocal = new Map<string, ImportedName>();
+
   function lookup(name: string, beforeIndex: number, scopeIds: number[]): SourceRef | null {
+    return fromDefinition(resolveName(name, beforeIndex, scopeIds, false));
+  }
+
+  function resolveName(
+    name: string, beforeIndex: number, scopeIds: number[], called: boolean
+  ): Definition | null {
     // A name bound as a parameter of an enclosing function shadows everything
     // outside it, and we have no path for it — better nothing than a wrong guess.
     for (const scopeId of scopeIds) {
       if (parameters.get(scopeId)?.has(name)) return null;
     }
-    const scopes: (number | null)[] = [...scopeIds, null];
-    for (const scope of scopes) {
-      const inScope = bindings.filter((b) => b.name === name && b.scopeId === scope);
-      if (!inScope.length) continue;
-      const preceding = inScope.filter((b) => b.index < beforeIndex);
-      const chosen = preceding.length ? preceding[preceding.length - 1] : inScope[0];
-      return resolve(chosen.expr);
+
+    if (called) {
+      const fn = functions.get(name);
+      if (fn) {
+        const exprs = returnExpressions(fn);
+        return exprs.length ? { exprs, table } : null;
+      }
+    } else {
+      const scopes: (number | null)[] = [...scopeIds, null];
+      for (const scope of scopes) {
+        const inScope = bindings.filter((b) => b.name === name && b.scopeId === scope);
+        if (!inScope.length) continue;
+        const preceding = inScope.filter((b) => b.index < beforeIndex);
+        const chosen = preceding.length ? preceding[preceding.length - 1] : inScope[0];
+        return { exprs: [chosen.expr], table };
+      }
+    }
+
+    // Not defined here — but it may have been imported. The other module answers
+    // for its own module level, so there is no cursor position to respect.
+    const imported = importsByLocal.get(name);
+    if (!imported?.name || !loader) return null;
+    const other = loader.tableFor(imported.module);
+    if (!other || other === table) return null;
+    return other.resolveName(imported.name, Number.MAX_SAFE_INTEGER, [], called);
+  }
+
+  /** The definition a call resolves to: `load()`, `loaders.load()`. */
+  function callDefinition(call: Node): Definition | null {
+    const fn = call.childForFieldName('function');
+    if (!fn) return null;
+    if (fn.type === 'identifier') {
+      return resolveName(fn.text, call.startIndex, enclosingScopeIds(call), true);
+    }
+    if (fn.type === 'attribute') {
+      const attr = fn.childForFieldName('attribute')?.text;
+      const module = moduleFor(dottedName(fn.childForFieldName('object')));
+      if (!attr || !module) return null;
+      return module.resolveName(attr, Number.MAX_SAFE_INTEGER, [], true);
     }
     return null;
   }
 
-  /** Same scoping rules as lookup, but returns the bound expression itself. */
-  function lookupBinding(name: string, beforeIndex: number, scopeIds: number[]): Node | null {
-    for (const scopeId of scopeIds) {
-      if (parameters.get(scopeId)?.has(name)) return null;
-    }
-    const scopes: (number | null)[] = [...scopeIds, null];
-    for (const scope of scopes) {
-      const inScope = bindings.filter((b) => b.name === name && b.scopeId === scope);
-      if (!inScope.length) continue;
-      const preceding = inScope.filter((b) => b.index < beforeIndex);
-      return (preceding.length ? preceding[preceding.length - 1] : inScope[0]).expr;
+  function moduleFor(alias: string | null): BindingTable | null {
+    if (!alias || !loader) return null;
+    const imported = importsByLocal.get(alias);
+    // `import loaders` binds the module itself; `from x import y` binds a name.
+    if (!imported || imported.name !== null) return null;
+    const other = loader.tableFor(imported.module);
+    return other === table ? null : other;
+  }
+
+  /** First of a definition's candidates that reduces to a source. */
+  function fromDefinition(def: Definition | null): SourceRef | null {
+    if (!def) return null;
+    for (const expr of def.exprs) {
+      const found = def.table.resolve(expr);
+      if (found) return found;
     }
     return null;
   }
@@ -180,6 +270,15 @@ export function buildBindingTable(tree: Tree): BindingTable {
       }
 
       case 'attribute': {
+        // `loaders.sales` — a frame another module exports.
+        const attr = node.childForFieldName('attribute')?.text;
+        const module = moduleFor(dottedName(node.childForFieldName('object')));
+        if (attr && module) {
+          const found = fromDefinition(
+            module.resolveName(attr, Number.MAX_SAFE_INTEGER, [], false)
+          );
+          if (found) return found;
+        }
         const obj = node.childForFieldName('object');
         return obj ? resolve(obj) : null;
       }
@@ -224,6 +323,10 @@ export function buildBindingTable(tree: Tree): BindingTable {
           }
           return null;
         }
+        // `load_sales()` — a function, here or in another module, that returns a
+        // frame. Its `return` expression is resolved in its own module.
+        const returned = fromDefinition(callDefinition(node));
+        if (returned) return returned;
         // Any other call: a method on something. Follow the receiver.
         if (fn?.type === 'attribute') {
           const obj = fn.childForFieldName('object');
@@ -251,9 +354,11 @@ export function buildBindingTable(tree: Tree): BindingTable {
 
   const table: BindingTable = {
     bindings, constants, parameters, polarsAliases, bareExprFuncs,
-    selectorAliases, bareSelectorFuncs,
-    allSources: [], sourceSites: [], resolve, lookup, lookupBinding
+    selectorAliases, bareSelectorFuncs, imports,
+    allSources: [], sourceSites: [],
+    resolve, lookup, resolveName, callDefinition, moduleFor
   };
+  for (const imported of imports) importsByLocal.set(imported.local, imported);
 
   for (const call of callSites) {
     const source = resolve(call);
@@ -310,6 +415,40 @@ interface ImportNames {
   bareExprFuncs: Set<string>;
   selectorAliases: Set<string>;
   bareSelectorFuncs: Set<string>;
+  imports: ImportedName[];
+}
+
+/**
+ * The names a file imports, without building a whole binding table — the module
+ * loader needs this before it can know which files to read.
+ */
+export function readImports(tree: Tree): ImportedName[] {
+  const imports: ImportedName[] = [];
+  const names: ImportNames = {
+    polarsAliases: new Set(), bareExprFuncs: new Set(),
+    selectorAliases: new Set(), bareSelectorFuncs: new Set(), imports
+  };
+  const nodes = tree.rootNode.descendantsOfType(['import_statement', 'import_from_statement']);
+  for (const node of nodes) if (node) collectImports(node, names);
+  return imports;
+}
+
+/** The expressions a function returns, ignoring nested functions and `return None`. */
+function returnExpressions(fn: Node): Node[] {
+  const out: Node[] = [];
+  const body = fn.childForFieldName('body');
+  if (!body) return out;
+  const visit = (node: Node) => {
+    if (node.type === 'function_definition' || node.type === 'lambda') return;
+    if (node.type === 'return_statement') {
+      const value = node.namedChildren.find((c) => c && c.type !== 'comment');
+      if (value && value.type !== 'none') out.push(value);
+      return;
+    }
+    for (const child of node.namedChildren) if (child) visit(child);
+  };
+  for (const child of body.namedChildren) if (child) visit(child);
+  return out;
 }
 
 const SELECTORS_MODULE = 'polars.selectors';
@@ -323,21 +462,25 @@ function collectImports(node: Node, names: ImportNames): void {
         // import polars as pl  /  import polars.selectors as cs
         const name = child.childForFieldName('name')?.text;
         const alias = child.childForFieldName('alias')?.text;
-        if (!alias) continue;
+        if (!alias || !name) continue;
         if (name === 'polars') names.polarsAliases.add(alias);
         else if (name === SELECTORS_MODULE) names.selectorAliases.add(alias);
+        names.imports.push({ module: name, name: null, local: alias });
       } else if (child.type === 'dotted_name') {
         if (child.text === 'polars') names.polarsAliases.add('polars');
         else if (child.text === SELECTORS_MODULE) {
           names.polarsAliases.add('polars');
           names.selectorAliases.add(SELECTORS_MODULE);
         }
+        // `import pkg.loaders` is used as `pkg.loaders.x`, so that is the name.
+        names.imports.push({ module: child.text, name: null, local: child.text });
       }
     }
     return;
   }
   // from polars import col, lit  /  from polars import selectors as cs
-  // from polars.selectors import numeric, by_name
+  // from polars.selectors import numeric, by_name  /  from loaders import sales
+  collectImportedNames(node, names.imports);
   const moduleName = node.childForFieldName('module_name')?.text;
   const moduleId = node.childForFieldName('module_name')?.id;
   if (moduleName !== 'polars' && moduleName !== SELECTORS_MODULE) return;
@@ -357,5 +500,22 @@ function collectImports(node: Node, names: ImportNames): void {
     if (fromSelectors) names.bareSelectorFuncs.add(local);
     else if (name === 'selectors') names.selectorAliases.add(local);
     else names.bareExprFuncs.add(local);
+  }
+}
+
+/** Everything a `from x import y` / `import x` statement brings into scope. */
+function collectImportedNames(node: Node, imports: ImportedName[]): void {
+  const module = node.childForFieldName('module_name')?.text;
+  const moduleId = node.childForFieldName('module_name')?.id;
+  if (!module || node.text.includes('*')) return;
+  for (const child of node.namedChildren) {
+    if (!child || child.id === moduleId) continue;
+    if (child.type === 'dotted_name') {
+      imports.push({ module, name: child.text, local: child.text });
+    } else if (child.type === 'aliased_import') {
+      const name = child.childForFieldName('name')?.text;
+      const alias = child.childForFieldName('alias')?.text;
+      if (name && alias) imports.push({ module, name, local: alias });
+    }
   }
 }

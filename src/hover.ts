@@ -9,6 +9,7 @@ import { assemble } from './notebook.js';
 import { readSettings, workspaceDirs } from './config.js';
 import type { PathContext } from './paths.js';
 import { resolvePath } from './paths.js';
+import { NO_MODULES, type ModuleService } from './modules.js';
 
 /** A hover may wait longer than a completion — nothing is blocked on it. */
 const BUDGET_MS = 1500;
@@ -19,7 +20,11 @@ const BUDGET_MS = 1500;
  * same footer already read for the schema — no extra I/O for the common case.
  */
 export class ColumnHoverProvider implements vscode.HoverProvider {
-  constructor(private analyzer: Analyzer, private schemas: SchemaService) {}
+  constructor(
+    private analyzer: Analyzer,
+    private schemas: SchemaService,
+    private modules: ModuleService
+  ) {}
 
   async provideHover(
     document: vscode.TextDocument,
@@ -30,7 +35,13 @@ export class ColumnHoverProvider implements vscode.HoverProvider {
     if (!settings.enable) return undefined;
 
     const assembled = assemble(document, position);
-    const analysis = this.analyzer.get(assembled.key, assembled.source);
+    const modules = settings.followImports
+      ? await this.modules.load(
+          this.analyzer.tree(assembled.key, assembled.source),
+          { documentDir: assembled.documentDir, workspaceDirs: workspaceDirs() }
+        )
+      : NO_MODULES;
+    const analysis = this.analyzer.get(assembled.key, assembled.source, modules);
     const resolution = resolveAtOffset(analysis.tree, analysis.table, assembled.offset);
     if (token.isCancellationRequested) return undefined;
 

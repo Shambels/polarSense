@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Frames built in another file are visible now.** `from loaders import sales`
+  or `from loaders import load_sales` followed by `load_sales().select("␣")`
+  completes from the file `loaders.py` opens — as does `import loaders` with
+  `loaders.sales` or `loaders.load()`, relative imports (`from .loaders import`),
+  packages (`pkg/loaders.py`, `pkg/__init__.py`) and aliases of any of them.
+
+  This was the largest remaining blind spot in what the resolver could see.
+  Everything the analysis already does travels across the boundary intact: a
+  chain built in the other module keeps its transforms, so
+  `sales = pl.scan_parquet(…).select("a", "b")` in `loaders.py` narrows the offer
+  where it is used, and its module-level path constants fold in their own file
+  rather than being looked up in yours.
+
+- **A function that returns a frame resolves to that frame**, in the file you are
+  editing as much as an imported one. `def load(): return pl.scan_parquet(…)`
+  then `load().select("␣")` used to find nothing. A `def` with several `return`s
+  is read by trying each in turn; a `return` whose path comes from a parameter
+  still resolves to no path, which is the honest answer rather than a guess.
+
+  Only module-level `def`s — a method needs an instance this analysis cannot
+  follow, so `Loader().load()` stays quiet.
+
+  Modules are read on demand rather than indexed: only the ones the open file
+  actually imports, two hops out, capped at sixteen files, each parse cached
+  until its mtime changes. Nothing outside the workspace is opened, so `polars`
+  and every other dependency simply resolve to no file. `polarsense.followImports`
+  turns the whole thing off.
+
 ## 0.1.6
 
 ### Added

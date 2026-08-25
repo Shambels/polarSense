@@ -1,7 +1,7 @@
 import type { Node } from 'web-tree-sitter';
 import type { SourceRef } from './types.js';
-import { callArguments, methodName, stringValue } from './ast.js';
-import type { BindingTable } from './bindings.js';
+import { callArguments, dottedName, methodName, stringValue } from './ast.js';
+import type { BindingTable, Definition } from './bindings.js';
 
 /**
  * A frame as an *expression*, not a file: the source it started from plus every
@@ -67,10 +67,11 @@ export function resolveFrame(node: Node, ctx: FrameContext, depth = 0): FrameExp
     case 'parenthesized_expression':
       return node.namedChildren[0] ? resolveFrame(node.namedChildren[0]!, ctx, depth + 1) : null;
 
-    case 'identifier': {
-      const bound = table.lookupBinding(node.text, node.startIndex, enclosingScopeIds(node));
-      return bound ? resolveFrame(bound, ctx, depth + 1) : null;
-    }
+    case 'identifier':
+      return fromDefinition(
+        table.resolveName(node.text, node.startIndex, enclosingScopeIds(node), false),
+        depth
+      );
 
     case 'await':
       return node.namedChildren[0] ? resolveFrame(node.namedChildren[0]!, ctx, depth + 1) : null;
@@ -88,6 +89,18 @@ export function resolveFrame(node: Node, ctx: FrameContext, depth = 0): FrameExp
       return callFrame(node, ctx, depth);
 
     default: {
+      // `loaders.sales` — a frame another module exports. Resolved as an
+      // expression rather than a source, so its transforms come across too.
+      if (node.type === 'attribute') {
+        const attr = node.childForFieldName('attribute')?.text;
+        const module = table.moduleFor(dottedName(node.childForFieldName('object')));
+        const found = attr && module
+          ? fromDefinition(
+              module.resolveName(attr, Number.MAX_SAFE_INTEGER, [], false), depth
+            )
+          : null;
+        if (found) return found;
+      }
       // `df.lazy` used without calling, subscripts, etc: follow the receiver.
       const source = table.resolve(node);
       return source ? { kind: 'source', source } : null;
@@ -118,6 +131,11 @@ function callFrame(call: Node, ctx: FrameContext, depth: number): FrameExpr | nu
     }
     return null;
   }
+
+  // `load_sales()` — a function whose `return` is the frame. Resolved against
+  // its own module, which is what makes an imported loader work at all.
+  const returned = fromDefinition(table.callDefinition(call), depth);
+  if (returned) return returned;
 
   if (fn?.type !== 'attribute' || !short) return null;
   const receiver = fn.childForFieldName('object');
@@ -232,6 +250,19 @@ function stringList(node: Node): string[] | null {
       out.push(value);
     }
     return out;
+  }
+  return null;
+}
+
+/**
+ * The first of a definition's candidates that resolves to a frame — evaluated in
+ * the module the definition came from, not the one that imported it.
+ */
+function fromDefinition(def: Definition | null, depth: number): FrameExpr | null {
+  if (!def) return null;
+  for (const expr of def.exprs) {
+    const found = resolveFrame(expr, { table: def.table }, depth + 1);
+    if (found) return found;
   }
   return null;
 }

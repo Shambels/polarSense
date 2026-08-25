@@ -1,6 +1,7 @@
 /** Bundled entry point for the unit tests: everything that does not touch vscode. */
 export { initParser, parse, repairAtCursor } from '../src/core/parser.js';
-export { buildBindingTable } from '../src/core/bindings.js';
+export { buildBindingTable, readImports } from '../src/core/bindings.js';
+export { ModuleGraph, moduleCandidates } from '../src/core/modules.js';
 export { resolveAtOffset } from '../src/core/resolve.js';
 export { constEval, collectConstants } from '../src/core/constEval.js';
 export { readParquetSchema } from '../src/schema/parquet.js';
@@ -21,6 +22,44 @@ import { parse, repairAtCursor } from '../src/core/parser.js';
 import { buildBindingTable } from '../src/core/bindings.js';
 import { resolveAtOffset } from '../src/core/resolve.js';
 import type { Resolution } from '../src/core/types.js';
+import * as path from 'node:path';
+import type { Tree } from 'web-tree-sitter';
+import { ModuleGraph } from '../src/core/modules.js';
+
+/** Where a multi-file test project pretends to live. */
+const PROJECT = path.resolve(path.sep, 'polarsense-test');
+
+/**
+ * Analyse one file of a project given as `{ "loaders.py": source }`, with the
+ * others resolvable as modules — the multi-file shape of `resolveMarked`.
+ */
+export async function analyzeProject(
+  files: Record<string, string>, entry: string, assetDir: string
+) {
+  const parser = await initParser(assetDir);
+  const parsed = new Map<string, { path: string; tree: Tree }>();
+  for (const [name, source] of Object.entries(files)) {
+    const full = path.join(PROJECT, name);
+    parsed.set(full, { path: full, tree: parse(parser, source) });
+  }
+  const entryPath = path.join(PROJECT, entry);
+  const tree = parsed.get(entryPath)?.tree;
+  if (!tree) throw new Error(`project has no entry file ${entry}`);
+  const graph = new ModuleGraph(parsed, [PROJECT]);
+  return { tree, table: buildBindingTable(tree, graph.loaderFor(path.dirname(entryPath))) };
+}
+
+/** As above, with `|` in the entry file marking the cursor. */
+export async function resolveProject(
+  files: Record<string, string>, entry: string, assetDir: string
+): Promise<Resolution> {
+  const marked = files[entry];
+  const offset = marked.indexOf('|');
+  if (offset === -1) throw new Error('project entry has no | cursor marker');
+  const source = marked.slice(0, offset) + marked.slice(offset + 1);
+  const { tree, table } = await analyzeProject({ ...files, [entry]: source }, entry, assetDir);
+  return resolveAtOffset(tree, table, offset);
+}
 
 /**
  * Resolve a snippet with `|` marking the cursor — the shape the whole corpus is

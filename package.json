@@ -93,6 +93,11 @@
           "default": false,
           "description": "Guess CSV column dtypes from the first rows. Off by default: a guess shown as fact is worse than a blank."
         },
+        "polarsense.followImports": {
+          "type": "boolean",
+          "default": true,
+          "description": "Follow imports into other Python files in the workspace, so a frame built in loaders.py is visible where it is used. Only modules the open file actually imports are read, two hops deep."
+        },
         "polarsense.https.enabled": {
           "type": "boolean",
           "default": false,

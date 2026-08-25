@@ -80,6 +80,25 @@ guessing. A diagnostic that cries wolf gets switched off and never switched back
 on. It also stays silent inside `cs.starts_with("reg")` and its siblings, where
 the string is a fragment of a name and was never meant to be a whole one.
 
+A frame built in another file is followed too — the import is resolved and that
+file is read the same way:
+
+```python
+# loaders.py
+def load_sales():
+    return pl.scan_parquet("data/sales.parquet").select("region", "revenue")
+
+# report.py
+from loaders import load_sales
+load_sales().select("␣")     # region, revenue — the narrowing survives the import
+```
+
+`import loaders` with `loaders.sales`, relative imports, packages and aliases all
+work. Only modules the open file actually imports are read, two hops out — nothing
+in `site-packages`, and nothing indexed in the background. A function returning a
+frame resolves the same way inside a single file. Turn it off with
+`polarsense.followImports`.
+
 It finds the frame by tracking assignments within the file:
 
 ```python
@@ -119,6 +138,7 @@ so a frame defined in cell 1 completes in cell 8.
 | `polarsense.maxColumns` | `5000` | Cap on items offered for one schema |
 | `polarsense.csv.sniffBytes` | `262144` | How much of a CSV to read looking for the header |
 | `polarsense.csv.inferDtypes` | `false` | Guess CSV dtypes from the first rows |
+| `polarsense.followImports` | `true` | Follow imports into other files in the workspace |
 | `polarsense.https.enabled` | `false` | Allow reading schemas over `https://` |
 | `polarsense.cacheSize` | `200` | File schemas held in memory |
 | `polarsense.diagnostics.enable` | `true` | Warn about column names that don't exist |
@@ -156,10 +176,13 @@ reshapes are beyond what static reading can predict.
   — a CSV with `inferDtypes` off — all widen rather than narrow, and are marked
   uncertain. Bare regex patterns like `"^total_.*$"` in a `select` and computed
   names do the same.
-- **Frames crossing module boundaries are invisible.** A frame built in
-  `loaders.py` and imported gets nothing.
+- **Imports are followed two hops, not indefinitely.** A frame three modules
+  away, or one whose module lives outside the workspace, still gets nothing —
+  and only module-level `def`s are read, so `Loader().load()` needs an instance
+  this analysis cannot follow.
 - **Frames from function parameters or config objects are invisible.** A type
-  annotation carries no path.
+  annotation carries no path, so `def load(source): return pl.scan_parquet(source)`
+  finds the frame but not the file.
 - **Multi-file globs assume one schema.** First match wins.
 - **Object storage is not supported.** `s3://` and `gs://` resolve to nothing and
   stay quiet. `https://` works when enabled.
