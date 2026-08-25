@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### Added
+
+- **A Delta table whose commits have been vacuumed reads its schema from the
+  checkpoint.** The log walk looks for a `metaData` action in `_delta_log/*.json`;
+  once those commits are gone, all that is left is `*.checkpoint.parquet`, and
+  such a table used to report no columns at all. The fallback reads the
+  checkpoint's `metaData` column — through the same hyparquet path the parquet
+  reader already uses.
+
+  It runs second on purpose: a JSON commit is always newer than the checkpoint
+  beneath it, so the walk keeps the last word and a stale checkpoint can never
+  surface. The checkpoint is picked from the directory listing already in hand
+  rather than from `_last_checkpoint`, which can be missing or stale without the
+  checkpoints themselves being either, and multi-part checkpoints are read in
+  order until the schema turns up.
+
+  A checkpoint of a million files still decodes only a handful of rows: the row
+  group holding the `metaData` action is found from the footer's own null counts,
+  the same statistics the parquet reader reads for hover. Only when a checkpoint
+  records no statistics does it fall back to scanning the head of the file.
+
+  This is the one place the extension decompresses a parquet page rather than
+  reading a footer, which makes it the one place the compression codec matters.
+  Snappy — what Spark and delta-rs write — is understood; a checkpoint written
+  with ZSTD or brotli reports nothing, as it did before.
+
 ### Changed
 
 - **The schemas a file names are read when it opens**, not when you first ask for

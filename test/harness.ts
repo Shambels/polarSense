@@ -6,7 +6,7 @@ export { resolveAtOffset } from '../src/core/resolve.js';
 export { constEval, collectConstants } from '../src/core/constEval.js';
 export { readParquetSchema } from '../src/schema/parquet.js';
 export { readCsvSchema } from '../src/schema/csv.js';
-export { readDeltaSchema } from '../src/schema/delta.js';
+export { readDeltaSchema, checkpointFiles } from '../src/schema/delta.js';
 export { readIcebergSchema } from '../src/schema/iceberg.js';
 export { localStorage } from '../src/storage/local.js';
 export { resolvePath, hiveColumns, completeDataPaths } from '../src/paths.js';

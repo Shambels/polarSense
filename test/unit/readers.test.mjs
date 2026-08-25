@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
-  readParquetSchema, readCsvSchema, readDeltaSchema, readIcebergSchema,
+  readParquetSchema, readCsvSchema, readDeltaSchema, readIcebergSchema, checkpointFiles,
   localStorage, resolvePath, hiveColumns, completeDataPaths
 } from '../harness.mjs';
 
@@ -106,6 +106,53 @@ test('delta: walks the log backwards to the newest metaData', async () => {
       ['price', 'decimal[18,2]'],
       ['tags', 'list[str]']
     ]
+  );
+});
+
+test('delta: falls back to the checkpoint when the commits are vacuumed', async () => {
+  // Only a checkpoint parquet and one later add-only commit. The JSON walk finds
+  // no metaData, and the schema is read out of the checkpoint instead.
+  const columns = await readDeltaSchema(localStorage, path.join(DATA, 'delta_checkpoint'));
+  assert.deepEqual(
+    columns.map((c) => [c.name, c.dtype]),
+    [
+      ['region', 'str'],
+      ['revenue', 'f64'],
+      ['checkpointed_at', 'datetime[\u03bcs, UTC]']
+    ]
+  );
+});
+
+test('delta: a JSON commit still wins over the checkpoint below it', async () => {
+  // delta_sales has both a metaData commit and no checkpoint; the walk answers
+  // first, which is the ordering that keeps a stale checkpoint from surfacing.
+  const columns = await readDeltaSchema(localStorage, path.join(DATA, 'delta_sales'));
+  assert.equal(columns[0].name, 'region');
+  assert.equal(columns.length, 6);
+});
+
+test('delta: the newest checkpoint version wins, and its parts read in order', () => {
+  const got = checkpointFiles([
+    '_last_checkpoint',
+    '00000000000000000010.json',
+    '00000000000000000010.checkpoint.parquet',
+    '00000000000000000020.checkpoint.0000000002.0000000002.parquet',
+    '00000000000000000020.checkpoint.0000000001.0000000002.parquet'
+  ]);
+  assert.deepEqual(got, [
+    '00000000000000000020.checkpoint.0000000001.0000000002.parquet',
+    '00000000000000000020.checkpoint.0000000002.0000000002.parquet'
+  ]);
+});
+
+test('delta: nothing that only looks like a checkpoint is read', () => {
+  assert.deepEqual(checkpointFiles([]), []);
+  assert.deepEqual(checkpointFiles(['00000000000000000010.json']), []);
+  assert.deepEqual(checkpointFiles(['00000000000000000010.checkpointX.parquet']), []);
+  // A v2 checkpoint's JSON sibling is not a parquet file.
+  assert.deepEqual(
+    checkpointFiles(['00000000000000000010.checkpoint.abc-def.json']),
+    []
   );
 });
 
