@@ -6,6 +6,7 @@ export { resolveAtOffset } from '../src/core/resolve.js';
 export { constEval, collectConstants } from '../src/core/constEval.js';
 export { readParquetSchema } from '../src/schema/parquet.js';
 export { readCsvSchema } from '../src/schema/csv.js';
+export { readIpcSchema } from '../src/schema/ipc.js';
 export {
   readDeltaSchema, checkpointFiles, parseDeltaSchemaString
 } from '../src/schema/delta.js';

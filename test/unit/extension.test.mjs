@@ -45,6 +45,17 @@ test('completes real column names from a real parquet file', async () => {
   assert.equal(result.items.find((i) => i.label === 'revenue').detail, 'f64');
 });
 
+test('completes from an arrow file, end to end through the schema service', async () => {
+  // The reader is unit-tested against the fixture; this is the wiring — that an
+  // `ipc` source reaches it at all, and that a dtype comes back with the name.
+  const result = await complete(
+    'import polars as pl\ndf = pl.scan_ipc("sales.arrow")\nout = df.select(pl.col("|"))\n'
+  );
+  const labels = result.items.map((i) => i.label);
+  assert.deepEqual(labels.slice(0, 4), ['region', 'revenue', 'returns_qty', 'units']);
+  assert.equal(result.items.find((i) => i.label === 'tags').detail, 'list[str]');
+});
+
 test('columns stay in schema order, not alphabetical', async () => {
   const result = await complete(
     'import polars as pl\ndf = pl.scan_parquet("sales.parquet")\ndf.select("|")\n'

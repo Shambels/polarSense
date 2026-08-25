@@ -1,5 +1,36 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Arrow IPC files complete their columns.** `pl.scan_ipc`, `pl.read_ipc`,
+  `pl.read_ipc_stream` and `pl.read_feather` used to resolve to a file and then
+  report nothing: the reader behind them was a stub that returned an empty list.
+  It reads the schema now — names, dtypes and a struct's own fields, the same as
+  the parquet reader gives — and `read_ipc_stream` was added to the reader table
+  while the format it names finally works.
+
+  The schema is a flatbuffer, and this walks its vtables by hand rather than
+  taking a dependency on an Arrow implementation whose real job is decoding the
+  buffers underneath — the part this extension deliberately never touches. It is
+  two range reads and no decompression, so the cost does not move with the size
+  of the file, which is the same bargain the parquet reader makes.
+
+  The plan said the schema sits at the head of the file. That is true of a
+  stream, and it is where a stream is read; it is not dependable in a file,
+  because polars writes that first message with no length prefix in front of it,
+  and a reader scanning forward walks straight off the end. A file is read
+  through its footer instead — the index its own spec puts there.
+
+  Dtypes are the ones polars actually writes today, which the parquet fixtures
+  never exercised: `Utf8View` and `BinaryView` rather than `Utf8` and `Binary`,
+  `LargeList`, a fixed-size list as `array[f64, 2]`, and a dictionary-encoded
+  string as `cat` — the encoding is what makes it a categorical rather than a
+  `str`. Interval and union columns come back with a blank dtype rather than an
+  invented name, and Feather V1 — a different format that happens to share the
+  `.feather` extension — is left alone rather than misread.
+
 ## 0.4.0
 
 ### Added

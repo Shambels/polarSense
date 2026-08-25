@@ -158,10 +158,10 @@
     <p class="lede">Everything the build plan scoped but v1 didn't ship, every limitation that was a deliberate trade, and the features worth adding that weren't in the plan at all — with what has since been built marked <span class="tick">shipped</span>.</p>
 
     <div class="score">
-      <div class="hi"><b>17</b><span>shipped</span></div>
-      <div><b>5</b><span>remaining</span></div>
+      <div class="hi"><b>18</b><span>shipped</span></div>
+      <div><b>4</b><span>remaining</span></div>
       <div><b>1</b><span>blocked on a decision</span></div>
-      <div><b>419</b><span>tests</span></div>
+      <div><b>431</b><span>tests</span></div>
     </div>
 
     <p class="lede" style="font-size:.95rem;color:var(--muted)">Effort figures are focused working days. <strong>Impact</strong> is my read on how many users would notice, not how interesting the work is.</p>
@@ -194,12 +194,14 @@
         <div class="chips"><span class="chip">0.5 d</span></div>
       </div>
 
-      <div class="item">
+      <div class="item shipped">
         <div class="body">
-          <h3>Arrow IPC / Feather is a stub <span class="where">src/schema/parquet.ts</span></h3>
-          <p><code>readIpcSchema</code> returns an empty array with a comment explaining why. The schema is a flatbuffer at the head of the file; reading just the field names doesn't need a full Arrow implementation, but it does need a small hand-rolled flatbuffer walk.</p>
+          <h3>Arrow IPC / Feather <span class="tick">shipped</span> <span class="where">src/schema/ipc.ts · dtypes.ts</span></h3>
+          <p>The hand-rolled flatbuffer walk this entry called for, in its own file rather than tacked onto the parquet reader. Names, dtypes and a struct's own fields, in two range reads and no decompression — the cost does not move with the size of the file. <code>read_ipc_stream</code> joined the reader table on the way past, since the stream shape now reads.</p>
+          <p>Where the plan was wrong: the schema is <em>not</em> dependably at the head of a file. It is in a stream, and that is where a stream is read. But polars writes a file's first message with no length prefix in front of it, so a reader scanning forward from the magic walks straight off the end — the fixture proved it before the tests did. A file is read through its footer instead, the index its own spec puts there, which also makes the read authoritative rather than a guess about writer behaviour.</p>
+          <p>The dtype work was the half the estimate didn't see. Polars writes view types — <code>Utf8View</code>, <code>BinaryView</code> — and large lists, none of which the parquet corpus exercises, so the fixture had to be built around what polars emits today rather than what Arrow documents. A dictionary-encoded string is <code>cat</code>: the encoding is the difference. Interval and union get a blank dtype, on the usual grounds.</p>
         </div>
-        <div class="chips"><span class="chip">impact low</span><span class="chip">0.5 d</span></div>
+        <div class="chips"><span class="chip">0.5 d</span></div>
       </div>
 
       <div class="item">
@@ -448,7 +450,7 @@ def report(df):  # polarsense: data/sales.parquet</code></pre>
   </section>
 
   <footer>
-    <p>PolarSense · 17 of 22 shipped · 419 tests · companion to docs/build-plan.html</p>
+    <p>PolarSense · 18 of 22 shipped · 431 tests · companion to docs/build-plan.html</p>
   </footer>
 
 </div>
