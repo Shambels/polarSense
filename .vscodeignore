@@ -1,12 +1,44 @@
-.vscode/**
-node_modules/**
+# Everything the extension needs at runtime is bundled into dist/extension.js
+# plus the two wasm files in assets/. Everything else is development-only.
+#
+# The rule to remember: .vscodeignore is a *denylist*, so anything new in the
+# repo ships by default. A 249 MB .venv reached a package this way once.
+
+# --- source and build tooling ---
 src/**
 test/**
 scripts/**
 out/**
+node_modules/**
 *.ts
 tsconfig.json
 esbuild*.mjs
-.gitignore
 **/*.map
+
+# --- editor and CI config ---
+.vscode/**
+.vscode-test/**
+.github/**
+
+# --- the Python side: fixtures are generated locally, never shipped ---
+.venv
+.venv/**
+**/.venv/**
+pyproject.toml
+uv.lock
+**/__pycache__/**
+*.pyc
+
+# --- repository and build artefacts ---
+.gitignore
+.gitattributes
+**/.DS_Store
+*.vsix
+*.tgz
+_to_delete/**
+coverage/**
+*.log
+
+# --- developer documentation; README and CHANGELOG are the user-facing pair ---
 docs/**
+RELEASING.md
