@@ -37,6 +37,12 @@ const CASES = [
   ['rename dict key', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.rename({"|": "new"})`, 'a.parquet'],
   ['list argument', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.select(["x", "|"])`, 'a.parquet'],
   ['exclude', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.select(pl.exclude("|"))`, 'a.parquet'],
+  ['subscript', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf["|"]`, 'a.parquet'],
+  ['subscript on a chain', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.filter(x)["|"]`, 'a.parquet'],
+  ['subscript with a list', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf[["x", "|"]]`, 'a.parquet'],
+  ['subscript with a tuple', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf["x", "|"]`, 'a.parquet'],
+  ['get_column', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.get_column("|")`, 'a.parquet'],
+  ['drop_in_place', `${HEAD}df = pl.read_parquet("a.parquet")\ndf.drop_in_place("|")`, 'a.parquet'],
   ['over', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.select(pl.col("x").sum().over("|"))`, 'a.parquet'],
   ['pivot on=', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.pivot(on="|", index="i", values="v")`, 'a.parquet'],
   ['from polars import col', `from polars import col, scan_parquet\nimport polars as pl\ndf = pl.scan_parquet("a.parquet")\ndf.select(col("|"))`, 'a.parquet'],
@@ -71,7 +77,12 @@ const NEGATIVE = [
   ['the path argument itself', `${HEAD}df = pl.scan_parquet("|")`],
   ['alias creates a new name', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.select(pl.col("x").alias("|"))`],
   ['unrelated function', `${HEAD}df = pl.scan_parquet("a.parquet")\nprint("|")`],
-  ['a plain string statement', `${HEAD}x = "|"`]
+  ['a plain string statement', `${HEAD}x = "|"`],
+  // A dict subscript is structurally identical to a frame one, so the receiver
+  // has to decide it — otherwise every cfg["key"] in the file offers columns.
+  ['a dict subscript', `${HEAD}cfg = {"path": "x"}\ncfg["|"]`],
+  ['an unknown receiver subscript', `${HEAD}mystery["|"]`],
+  ['the object being subscripted', `${HEAD}frames = {}\nframes["|"]["b"]`]
 ];
 
 for (const [name, snippet] of NEGATIVE) {

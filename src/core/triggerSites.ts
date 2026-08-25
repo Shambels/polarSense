@@ -68,6 +68,9 @@ export const FRAME_METHODS: Record<string, ArgSpec> = {
   over: { positional: 'all', kwargs: ['partition_by'] },
   sort_by: { positional: 'all', kwargs: ['by'] },
   set_sorted: { positional: 'all' },
+  get_column: { positional: [0] },
+  get_column_index: { positional: [0] },
+  drop_in_place: { positional: [0] },
   agg: { positional: 'all' }
 };
 

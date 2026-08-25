@@ -2,7 +2,7 @@ import type { Node, Tree } from 'web-tree-sitter';
 import type { Resolution, SourceKind, SourceRef } from './types.js';
 import { PATH_KWARGS, SOURCE_FUNCS, type BindingTable } from './bindings.js';
 import { callArguments, dottedName, lastSegment, nearest } from './ast.js';
-import { resolveFrame } from './frame.js';
+import { resolveFrame, type FrameExpr } from './frame.js';
 import {
   EXPR_FUNCS, FRAME_METHODS, RIGHT_FRAME_KWARGS, specAccepts,
   type ArgPosition, type ArgSpec
@@ -30,6 +30,17 @@ export function resolveAtOffset(
 
   const [contentStart, contentEnd] = stringContentRange(stringNode);
   const base = { ...empty, contentStart, contentEnd };
+
+  // `df["region"]` is a subscript, not a call, so the argument walk never sees it.
+  const subscriptReceiver = findSubscriptSite(stringNode);
+  if (subscriptReceiver) {
+    const resolved = resolveReceiver(subscriptReceiver, table);
+    // A dict subscript — cfg["path"] — is structurally identical to a frame one.
+    // If the receiver is not a frame we know, say nothing at all rather than
+    // letting the all-schemas fallback offer column names inside every dict.
+    if (!resolved) return { ...base, failure: 'not-a-column-site' };
+    return { ...base, ...resolved };
+  }
 
   const site = findArgumentPosition(stringNode);
   if (!site) return { ...base, failure: 'not-a-column-site' };
@@ -78,13 +89,49 @@ export function resolveAtOffset(
     if (outer) frameExpr = outer;
   }
 
-  const source = table.resolve(frameExpr);
-  if (!source) return { ...base, failure: 'unknown-binding' };
-  if (!source.path) return { ...base, failure: 'unresolvable-path' };
+  const resolved = resolveReceiver(frameExpr, table);
+  if (!resolved) {
+    const source = table.resolve(frameExpr);
+    if (!source) return { ...base, failure: 'unknown-binding' };
+    return { ...base, failure: 'unresolvable-path' };
+  }
+  return { ...base, ...resolved };
+}
 
-  const symbol = source.symbol ?? (frameExpr.type === 'identifier' ? frameExpr.text : undefined);
-  const frame = resolveFrame(frameExpr, { table }) ?? undefined;
-  return { ...base, source: { ...source, symbol }, frame };
+/** Turn a receiver expression into the source it reads and the frame it is. */
+function resolveReceiver(
+  expr: Node,
+  table: BindingTable
+): { source: SourceRef; frame?: FrameExpr } | null {
+  const source = table.resolve(expr);
+  if (!source?.path) return null;
+  const symbol = source.symbol ?? (expr.type === 'identifier' ? expr.text : undefined);
+  return {
+    source: { ...source, symbol },
+    frame: resolveFrame(expr, { table }) ?? undefined
+  };
+}
+
+/**
+ * The receiver of a subscript whose index is this string, or null when the
+ * string is not a subscript index at all.
+ */
+function findSubscriptSite(stringNode: Node): Node | null {
+  let child: Node = stringNode;
+  let parent: Node | null = stringNode.parent;
+
+  while (parent) {
+    if (parent.type === 'subscript') {
+      // `frames["a"]["b"]` — the inner subscript is the *value*, not an index.
+      if (parent.childForFieldName('value')?.id === child.id) return null;
+      return parent.childForFieldName('value');
+    }
+    // df[["a", "b"]] and df["a", "b"] both wrap the name before the subscript.
+    if (!CONTAINERS.includes(parent.type)) return null;
+    child = parent;
+    parent = parent.parent;
+  }
+  return null;
 }
 
 function enclosingString(tree: Tree, offset: number): Node | null {

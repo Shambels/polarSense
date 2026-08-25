@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **`df["region"]` and `df.get_column("region")`** are column sites now — they
+  complete, hover and get typo-checked like every other position. Also
+  `get_column_index` and `drop_in_place`, and the list and tuple forms
+  `df[["a", "b"]]` / `df["a", "b"]`.
+
+  A dict lookup is *structurally identical* to a frame one — `cfg["path"]` and
+  `df["region"]` are the same syntax tree — so the receiver decides. If it does
+  not resolve to a frame we know, nothing is offered at all: the all-schemas
+  fallback is deliberately skipped here, or every dictionary key in a file that
+  happens to import polars would sprout column names.
+
 ## 0.1.5
 
 ### Fixed

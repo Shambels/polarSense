@@ -31,6 +31,7 @@ Column names inside string literals, wherever polars expects one:
 - `join` and `join_asof` — including `right_on=`, which completes from the frame
   being joined in rather than the receiver
 - `rename` and `cast` dict keys, `pivot`, `unpivot`, `over`, `sort_by`
+- `df["region"]`, `df[["a", "b"]]`, `get_column`, `get_column_index`, `drop_in_place`
 
 Column names are propagated through transformations, so what you are offered is
 what actually exists at that point in the chain:
