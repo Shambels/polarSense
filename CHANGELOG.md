@@ -1,5 +1,46 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Column names complete inside SQL strings.** `df.sql("SELECT ␣ FROM self")`,
+  `pl.sql("SELECT ␣ FROM df")`, `pl.SQLContext(sales=df).execute(…)` and duckdb's
+  `duckdb.sql("SELECT ␣ FROM 'sales.parquet'")` all offer the columns of whichever
+  table the statement reads.
+
+  A table reference is resolved four ways, in order: a quoted path or a
+  `read_parquet(…)` call is a file; `self` is the frame `.sql(…)` was called on; a
+  name registered with `SQLContext(sales=df)` or `.register("sales", df)` is that
+  frame; and anything else is looked up as a plain Python name in the file, which
+  is how `pl.sql("SELECT * FROM df")` finds `df` at all. Aliases work, so
+  `SELECT s.␣ FROM sales s` offers that table's columns and not the other one's.
+
+  The scan is not a SQL parser and does not pretend to be. It masks out literals
+  and comments and looks at what follows `FROM` and `JOIN`, which means every
+  table is in scope everywhere in the statement: a join offers the union of both
+  sides, marked uncertain because which side a bare name belongs to is genuinely
+  unknown. Positions that are not columns — a table name, a quoted path, a string
+  being compared against, a comment — offer nothing at all.
+
+### Fixed
+
+- **Accepting a completion inside a multi-name string replaced the whole string.**
+  `rel.project("region, reve␣")` would swallow `region, ` along with the fragment.
+  Only the identifier under the cursor is replaced now — in SQL, in
+  `rel.project(…)` / `.order(…)` / `.aggregate(…)`, in `df.query(…)` and in
+  `cs.starts_with(…)`.
+- **A path inside a SQL string could be linked at the wrong offset** when the
+  string contained an escape sequence such as `\n`, because the path was located
+  in the decoded value and the range applied to the source. Both are measured in
+  source offsets now. A statement that reads two files links both of them.
+
+### Changed
+
+- **Hover works inside a fragment.** Now that the range covers one identifier
+  rather than the whole string, hovering a column name in a SQL statement shows
+  its dtype and statistics like anywhere else.
+
 ## 0.1.9
 
 ### Added

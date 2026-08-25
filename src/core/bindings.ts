@@ -2,7 +2,7 @@ import type { Node, Tree } from 'web-tree-sitter';
 import type { SourceKind, SourceRef } from './types.js';
 import { callArguments, dottedName, lastSegment, stringValue } from './ast.js';
 import { collectConstants, constEval } from './constEval.js';
-import { SQL_FUNCS, sqlSource } from './sql.js';
+import { SQL_FUNCS, sqlSource, sqlTables, sqlText } from './sql.js';
 import { collectPragmas, parameterPragma, pragmaFor, type Pragma } from './pragma.js';
 
 /** polars entry points that open a file, and the format each one implies. */
@@ -412,14 +412,24 @@ export function buildBindingTable(tree: Tree, loader?: ModuleLoader): BindingTab
     const source = resolve(call);
     if (!source?.path) continue;
 
-    // A path inside a SQL string is a range within that string, not an argument.
+    // Paths inside a SQL string are ranges within that string, not arguments —
+    // and there can be more than one, since a join reads two files.
     const short = lastSegment(dottedName(call.childForFieldName('function')));
     if (short && SQL_FUNCS.has(short)) {
-      const fromSql = sqlSource(call);
-      if (!fromSql) continue;
-      const content = fromSql.sql.namedChildren.find((c) => c?.type === 'string_content');
-      const start = (content ? content.startIndex : fromSql.sql.startIndex + 1) + fromSql.index;
-      table.sourceSites.push({ start, end: start + fromSql.source.path!.length, source });
+      const { positional: args, keywords: kw } = callArguments(call);
+      const arg = args[0] ?? kw.get('query') ?? kw.get('sql');
+      const raw = arg ? sqlText(arg) : null;
+      if (!raw) continue;
+      for (const ref of sqlTables(raw.text)) {
+        if (!ref.path) continue;
+        const at = raw.text.indexOf(ref.path, ref.start);
+        if (at === -1) continue;
+        table.sourceSites.push({
+          start: raw.base + at,
+          end: raw.base + at + ref.path.length,
+          source: { kind: ref.kind ?? 'parquet', path: ref.path, kwargs: {} }
+        });
+      }
       continue;
     }
 
