@@ -7,6 +7,7 @@ import {
   EXPR_FUNCS, FRAME_METHODS, RIGHT_FRAME_KWARGS, specAccepts,
   type ArgPosition, type ArgSpec
 } from './triggerSites.js';
+import { PARTIAL_SELECTORS, SELECTOR_FUNCS, isSelectorNamespace } from './selectors.js';
 
 const CONTAINERS = ['list', 'tuple', 'set', 'dictionary', 'parenthesized_expression'];
 
@@ -95,7 +96,9 @@ export function resolveAtOffset(
     if (!source) return { ...base, failure: 'unknown-binding' };
     return { ...base, failure: 'unresolvable-path' };
   }
-  return { ...base, ...resolved };
+  return spec.partial
+    ? { ...base, ...resolved, partial: true }
+    : { ...base, ...resolved };
 }
 
 /** Turn a receiver expression into the source it reads and the frame it is. */
@@ -194,8 +197,8 @@ function findArgumentPosition(stringNode: Node): Site | null {
 }
 
 type CallKind =
-  | { kind: 'expr-func'; spec: ArgSpec }
-  | { kind: 'frame-method'; spec: ArgSpec };
+  | { kind: 'expr-func'; spec: ArgSpec; partial?: boolean }
+  | { kind: 'frame-method'; spec: ArgSpec; partial?: boolean };
 
 function classifyCall(call: Node, table: BindingTable): CallKind | null {
   const fn = call.childForFieldName('function');
@@ -205,6 +208,11 @@ function classifyCall(call: Node, table: BindingTable): CallKind | null {
     // from polars import col
     const spec = EXPR_FUNCS[fn.text];
     if (spec && table.bareExprFuncs.has(fn.text)) return { kind: 'expr-func', spec };
+    // from polars.selectors import by_name
+    const selector = SELECTOR_FUNCS[fn.text];
+    if (selector && table.bareSelectorFuncs.has(fn.text)) {
+      return { kind: 'expr-func', spec: selector, partial: PARTIAL_SELECTORS.has(fn.text) };
+    }
     return null;
   }
 
@@ -214,6 +222,16 @@ function classifyCall(call: Node, table: BindingTable): CallKind | null {
 
   const objName = dottedName(fn.childForFieldName('object'));
   const objRoot = objName ? objName.split('.')[0] : null;
+
+  // cs.by_name(...) — checked first, because `pl.selectors.first` and `pl.first`
+  // share a short name and are not the same thing.
+  if (isSelectorNamespace(objName, table) && SELECTOR_FUNCS[attr]) {
+    return {
+      kind: 'expr-func',
+      spec: SELECTOR_FUNCS[attr],
+      partial: PARTIAL_SELECTORS.has(attr)
+    };
+  }
 
   // pl.col(...) — a polars module function, not a method on a frame.
   if (objRoot && table.polarsAliases.has(objRoot) && EXPR_FUNCS[attr]) {
@@ -239,7 +257,7 @@ function rootsInPolars(expr: Node, table: BindingTable): boolean {
   while (cur) {
     switch (cur.type) {
       case 'identifier':
-        return table.polarsAliases.has(cur.text);
+        return table.polarsAliases.has(cur.text) || table.selectorAliases.has(cur.text);
       case 'call':
         cur = cur.childForFieldName('function');
         break;
@@ -269,8 +287,9 @@ function enclosingFrameMethod(node: Node, table: BindingTable): Node | null {
         const attr = fn.childForFieldName('attribute')?.text;
         const objName = dottedName(fn.childForFieldName('object'));
         const objRoot = objName ? objName.split('.')[0] : null;
-        const isPolarsModule = !!objRoot && table.polarsAliases.has(objRoot);
-        if (attr && FRAME_METHODS[attr] && !isPolarsModule) return cur;
+        const isModule = (!!objRoot && table.polarsAliases.has(objRoot)) ||
+          isSelectorNamespace(objName, table);
+        if (attr && FRAME_METHODS[attr] && !isModule) return cur;
       }
     }
     cur = cur.parent;

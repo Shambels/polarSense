@@ -4,6 +4,31 @@
 
 ### Added
 
+- **`polars.selectors` are understood** — `cs.by_name("region")`,
+  `cs.starts_with("q_")`, `cs.exclude(…)` and friends complete column names, and
+  `import polars.selectors as cs`, `from polars import selectors as cs` and
+  `from polars.selectors import by_name` are all recognised as the alias.
+
+  More usefully, a selector now *narrows* rather than stopping the analysis. The
+  columns a selector picks are computed against the columns the frame actually
+  has — by name for `by_name`, `starts_with`, `ends_with`, `contains` and
+  `matches`, and by dtype for `cs.numeric()`, `cs.string()`, `cs.temporal()` and
+  the rest — so `df.select(cs.numeric()).select("␣")` offers the numeric columns
+  and nothing else. Selectors compose the way polars composes them: `|`, `&`,
+  `-` and `^` between two selectors are union, intersection, difference and
+  symmetric difference.
+
+  This is one fewer reason for the unknown-column check to go quiet. A selector
+  used to make everything downstream of it a guess; now only the ones that
+  cannot be read statically do — `cs.by_dtype(pl.Int64)`, a selector method we do
+  not model, or a dtype selector over a source whose dtypes were never read, such
+  as a CSV with inference off.
+
+  `cs.starts_with("reg")` holds a *fragment* of a name rather than a whole one.
+  Those positions still complete full column names — you pick one and trim it —
+  but the typo check and hover skip them, because "reg" is not supposed to be a
+  column.
+
 - **`df["region"]` and `df.get_column("region")`** are column sites now — they
   complete, hover and get typo-checked like every other position. Also
   `get_column_index` and `drop_in_place`, and the list and tuple forms

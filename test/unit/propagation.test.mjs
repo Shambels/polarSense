@@ -8,7 +8,15 @@ import {
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const HEAD = 'import polars as pl\ndf = pl.scan_parquet("a.parquet")\n';
+const CS = 'import polars as pl\nimport polars.selectors as cs\ndf = pl.scan_parquet("a.parquet")\n';
 const SOURCE_COLUMNS = ['a', 'b', 'c'].map((name) => ({ name, dtype: 'i64' }));
+/** A mixed-dtype source, for the selectors that pick by type rather than name. */
+const TYPED_COLUMNS = [
+  { name: 'region', dtype: 'str' },
+  { name: 'revenue', dtype: 'f64' },
+  { name: 'units', dtype: 'i64' },
+  { name: 'order_date', dtype: 'date' }
+];
 
 /** Evaluate the frame at the cursor against a fixed three-column source. */
 async function columnsAt(marked, columns = SOURCE_COLUMNS) {
@@ -38,7 +46,12 @@ const CASES = [
   ['pl.all', `${HEAD}n = df.select(pl.all())\nn.select("|")`, ['a', 'b', 'c'], true],
   ['pl.exclude', `${HEAD}n = df.select(pl.exclude("b"))\nn.select("|")`, ['a', 'c'], true],
   ['name suffix', `${HEAD}n = df.select(pl.col("a").name.suffix("_x"))\nn.select("|")`, ['a_x'], true],
-  ['keyword names its column', `${HEAD}n = df.with_columns(t=pl.col("a"))\nn.select("|")`, ['a', 'b', 'c', 't'], true]
+  ['keyword names its column', `${HEAD}n = df.with_columns(t=pl.col("a"))\nn.select("|")`, ['a', 'b', 'c', 't'], true],
+  ['cs.by_name', `${CS}n = df.select(cs.by_name("a", "c"))\nn.select("|")`, ['a', 'c'], true],
+  ['cs.by_name with a list', `${CS}n = df.select(cs.by_name(["b"]))\nn.select("|")`, ['b'], true],
+  ['cs.exclude', `${CS}n = df.select(cs.exclude("b"))\nn.select("|")`, ['a', 'c'], true],
+  ['cs.all', `${CS}n = df.select(cs.all())\nn.select("|")`, ['a', 'b', 'c'], true],
+  ['a bare selector import', `import polars as pl\nfrom polars.selectors import by_name\ndf = pl.scan_parquet("a.parquet")\nn = df.select(by_name("a"))\nn.select("|")`, ['a'], true]
 ];
 
 for (const [name, snippet, expected, certain] of CASES) {
@@ -50,10 +63,44 @@ for (const [name, snippet, expected, certain] of CASES) {
   });
 }
 
+/** Selectors that pick by name or dtype, against a source with mixed dtypes. */
+const SELECTOR_CASES = [
+  ['cs.numeric', `${CS}n = df.select(cs.numeric())\nn.select("|")`, ['revenue', 'units']],
+  ['cs.string', `${CS}n = df.select(cs.string())\nn.select("|")`, ['region']],
+  ['cs.temporal', `${CS}n = df.select(cs.temporal())\nn.select("|")`, ['order_date']],
+  ['cs.starts_with', `${CS}n = df.select(cs.starts_with("re"))\nn.select("|")`, ['region', 'revenue']],
+  ['cs.ends_with', `${CS}n = df.select(cs.ends_with("s"))\nn.select("|")`, ['units']],
+  ['cs.contains', `${CS}n = df.select(cs.contains("_"))\nn.select("|")`, ['order_date']],
+  ['cs.matches', `${CS}n = df.select(cs.matches("^re"))\nn.select("|")`, ['region', 'revenue']],
+  ['difference', `${CS}n = df.select(cs.numeric() - cs.by_name("units"))\nn.select("|")`, ['revenue']],
+  ['intersection', `${CS}n = df.select(cs.numeric() & cs.starts_with("re"))\nn.select("|")`, ['revenue']],
+  ['drop by selector', `${CS}n = df.drop(cs.temporal())\nn.select("|")`, ['region', 'revenue', 'units']]
+];
+
+for (const [name, snippet, expected] of SELECTOR_CASES) {
+  test(`narrows through a selector: ${name}`, async () => {
+    const got = await columnsAt(snippet, TYPED_COLUMNS);
+    assert.ok(got, 'no frame resolved');
+    assert.deepEqual(got.names, expected);
+    assert.equal(got.certain, true, 'a selector we can evaluate is not a guess');
+  });
+}
+
+test('a dtype selector stays quiet when the dtypes are unknown', async () => {
+  // A CSV read without dtype inference has names but no types; picking the
+  // "numeric" ones out of that would be invention.
+  const blank = TYPED_COLUMNS.map((c) => ({ ...c, dtype: '' }));
+  const got = await columnsAt(`${CS}n = df.select(cs.numeric())\nn.select("|")`, blank);
+  assert.equal(got.certain, false);
+  assert.equal(got.names.length, blank.length, 'keeps offering what it had');
+});
+
 /** When a step cannot be modelled, keep the columns but stop claiming certainty. */
 const UNCERTAIN = [
   ['a reshape we do not model', `${HEAD}n = df.unpivot()\nn.select("|")`],
-  ['a selector', `${HEAD}n = df.select(cs.numeric())\nn.select("|")`],
+  ['a selector on a module we never saw imported', `${HEAD}n = df.select(cs.numeric())\nn.select("|")`],
+  ['a selector taking arguments we do not model', `${CS}n = df.select(cs.by_dtype(pl.Int64))\nn.select("|")`],
+  ['a method on top of a selector', `${CS}n = df.select(cs.numeric().meta.output_name())\nn.select("|")`],
   ['a regex column pattern', `${HEAD}n = df.select("^a.*$")\nn.select("|")`],
   ['a rename with a computed key', `${HEAD}n = df.rename({key: "z"})\nn.select("|")`],
   ['an unknown helper method', `${HEAD}n = df.my_helper()\nn.select("|")`]
@@ -77,7 +124,12 @@ test('narrowing never loses a column that survived', async () => {
 
 test('expression names: the shapes that matter', async () => {
   const parser = await initParser(ROOT);
-  const ctx = { polarsAliases: new Set(['pl']), bareExprFuncs: new Set() };
+  const ctx = {
+    polarsAliases: new Set(['pl']),
+    bareExprFuncs: new Set(),
+    selectorAliases: new Set(['cs']),
+    bareSelectorFuncs: new Set()
+  };
   const nameOf = (expr) => {
     const tree = parse(parser, `x = ${expr}\n`);
     const rhs = tree.rootNode.descendantsOfType('assignment')[0].childForFieldName('right');
@@ -92,7 +144,15 @@ test('expression names: the shapes that matter', async () => {
   assert.deepEqual(nameOf('pl.lit(1).alias("k")'), { kind: 'names', names: ['k'] });
   assert.deepEqual(nameOf('pl.all()'), { kind: 'all' });
   assert.deepEqual(nameOf('pl.exclude("a")'), { kind: 'except', names: ['a'] });
-  assert.equal(nameOf('cs.numeric()').kind, 'unknown');
+  assert.deepEqual(nameOf('cs.by_name("a")'), { kind: 'names', names: ['a'] });
+  assert.deepEqual(nameOf('cs.exclude("a")'), { kind: 'except', names: ['a'] });
+  assert.equal(nameOf('cs.numeric()').kind, 'match');
+  assert.equal(nameOf('cs.by_dtype(pl.Int64)').kind, 'unknown');
+  // Set algebra. The union lives here rather than in the propagation corpus
+  // above because `|` is also that corpus's cursor marker.
+  const union = nameOf('cs.string() | cs.temporal()');
+  assert.equal(union.kind, 'match');
+  assert.deepEqual(TYPED_COLUMNS.filter(union.test).map((c) => c.name), ['region', 'order_date']);
   assert.equal(nameOf('"^regex$"').kind, 'unknown');
 });
 

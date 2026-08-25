@@ -3,6 +3,7 @@ import type { Node } from 'web-tree-sitter';
 import type { Analyzer } from './analysis.js';
 import type { SchemaService } from './schema/index.js';
 import type { Column } from './core/types.js';
+import type { ExprContext } from './core/exprNames.js';
 import { resolveAtOffset } from './core/resolve.js';
 import { framesSources } from './core/frame.js';
 import { evaluateFrame } from './core/schemaEval.js';
@@ -29,8 +30,8 @@ const DEBOUNCE_MS = 400;
  * gets switched off and never switched back on, so this only speaks when the
  * schema evaluator reports `certain`: the frame was identified, its file was
  * read, and every transform between the two was one we model. An unmodelled
- * reshape, a selector, an unresolved frame or a truncated schema all mean
- * silence, not a guess.
+ * reshape, a selector it cannot narrow, an unresolved frame or a truncated
+ * schema all mean silence, not a guess.
  */
 export class ColumnDiagnostics {
   private collection = vscode.languages.createDiagnosticCollection(SOURCE);
@@ -80,6 +81,8 @@ export class ColumnDiagnostics {
 
       const resolution = resolveAtOffset(analysis.tree, analysis.table, node.startIndex + 1);
       if (!resolution.source || resolution.contentEnd <= resolution.contentStart) continue;
+      // `cs.starts_with("reg")` holds a fragment, not a name that must exist.
+      if (resolution.partial) continue;
 
       const name = assembled.source.slice(resolution.contentStart, resolution.contentEnd);
       if (!name) continue;
@@ -122,7 +125,7 @@ export class ColumnDiagnostics {
     resolution: ReturnType<typeof resolveAtOffset>,
     ctx: PathContext,
     maxColumns: number,
-    exprCtx: { polarsAliases: Set<string>; bareExprFuncs: Set<string> }
+    exprCtx: ExprContext
   ): Promise<Column[] | null> {
     if (!resolution.source) return null;
     const sources = resolution.frame ? framesSources(resolution.frame) : [resolution.source];

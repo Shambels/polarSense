@@ -65,6 +65,12 @@ export interface Resolution {
   frame?: import('./frame.js').FrameExpr;
   /** Set instead of `source` when the cursor is in a reader's path argument. */
   pathSite?: PathSite;
+  /**
+   * The string is a *fragment* of a column name — `cs.starts_with("reg")` —
+   * rather than a whole one. Completion still offers full names; anything that
+   * checks a name against the schema must not, because it will not be there.
+   */
+  partial?: boolean;
   /** Every source known in the document, used for the fallback offer. */
   allSources: SourceRef[];
   /** The range of the string contents being completed, as byte offsets in the source. */

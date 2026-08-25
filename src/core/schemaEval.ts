@@ -186,6 +186,12 @@ function expand(set: NameSet, columns: Column[]): string[] | null {
       const gone = new Set(set.names);
       return columns.map((c) => c.name).filter((n) => !gone.has(n));
     }
+    case 'match': {
+      // A dtype selector cannot be applied to columns whose dtype we never read
+      // — a CSV without inference, a column added upstream — so say so instead.
+      if (set.needsDtype && columns.some((c) => !c.dtype)) return null;
+      return columns.filter((c) => set.test(c)).map((c) => c.name);
+    }
     case 'unknown': return null;
   }
 }

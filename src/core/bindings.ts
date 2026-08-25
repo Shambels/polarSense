@@ -54,6 +54,10 @@ export interface BindingTable {
   polarsAliases: Set<string>;
   /** Expression constructors imported bare: `from polars import col`. */
   bareExprFuncs: Set<string>;
+  /** Local names for the polars.selectors module, e.g. {"cs"}. */
+  selectorAliases: Set<string>;
+  /** Selectors imported bare: `from polars.selectors import numeric`. */
+  bareSelectorFuncs: Set<string>;
   /** Every source found anywhere in the document, for the fallback offer. */
   allSources: SourceRef[];
   /** Every reader call site with a foldable path, in document order. */
@@ -71,6 +75,8 @@ export function buildBindingTable(tree: Tree): BindingTable {
   const parameters = new Map<number, Set<string>>();
   const polarsAliases = new Set<string>();
   const bareExprFuncs = new Set<string>();
+  const selectorAliases = new Set<string>();
+  const bareSelectorFuncs = new Set<string>();
 
   const visit = (node: Node, scopeId: number | null) => {
     if (node.type === 'function_definition') {
@@ -107,7 +113,7 @@ export function buildBindingTable(tree: Tree): BindingTable {
     }
 
     if (node.type === 'import_statement' || node.type === 'import_from_statement') {
-      collectImports(node, polarsAliases, bareExprFuncs);
+      collectImports(node, { polarsAliases, bareExprFuncs, selectorAliases, bareSelectorFuncs });
     }
 
     for (const child of node.namedChildren) if (child) visit(child, scopeId);
@@ -245,6 +251,7 @@ export function buildBindingTable(tree: Tree): BindingTable {
 
   const table: BindingTable = {
     bindings, constants, parameters, polarsAliases, bareExprFuncs,
+    selectorAliases, bareSelectorFuncs,
     allSources: [], sourceSites: [], resolve, lookup, lookupBinding
   };
 
@@ -298,31 +305,57 @@ function enclosingScopeIds(node: Node): number[] {
   return out;
 }
 
-function collectImports(node: Node, aliases: Set<string>, bare: Set<string>): void {
+interface ImportNames {
+  polarsAliases: Set<string>;
+  bareExprFuncs: Set<string>;
+  selectorAliases: Set<string>;
+  bareSelectorFuncs: Set<string>;
+}
+
+const SELECTORS_MODULE = 'polars.selectors';
+
+function collectImports(node: Node, names: ImportNames): void {
   const text = node.text;
   if (node.type === 'import_statement') {
     for (const child of node.namedChildren) {
       if (!child) continue;
       if (child.type === 'aliased_import') {
+        // import polars as pl  /  import polars.selectors as cs
         const name = child.childForFieldName('name')?.text;
         const alias = child.childForFieldName('alias')?.text;
-        if (name === 'polars' && alias) aliases.add(alias);
-      } else if (child.type === 'dotted_name' && child.text === 'polars') {
-        aliases.add('polars');
+        if (!alias) continue;
+        if (name === 'polars') names.polarsAliases.add(alias);
+        else if (name === SELECTORS_MODULE) names.selectorAliases.add(alias);
+      } else if (child.type === 'dotted_name') {
+        if (child.text === 'polars') names.polarsAliases.add('polars');
+        else if (child.text === SELECTORS_MODULE) {
+          names.polarsAliases.add('polars');
+          names.selectorAliases.add(SELECTORS_MODULE);
+        }
       }
     }
     return;
   }
-  // from polars import col, lit  /  from polars.selectors import ...
+  // from polars import col, lit  /  from polars import selectors as cs
+  // from polars.selectors import numeric, by_name
   const moduleName = node.childForFieldName('module_name')?.text;
-  if (moduleName !== 'polars') return;
+  const moduleId = node.childForFieldName('module_name')?.id;
+  if (moduleName !== 'polars' && moduleName !== SELECTORS_MODULE) return;
   if (text.includes('*')) return;
+  const fromSelectors = moduleName === SELECTORS_MODULE;
   for (const child of node.namedChildren) {
-    if (!child || child === node.childForFieldName('module_name')) continue;
-    if (child.type === 'dotted_name') bare.add(child.text);
+    if (!child || child.id === moduleId) continue;
+    let name: string | null = null;
+    let alias: string | null = null;
+    if (child.type === 'dotted_name') name = child.text;
     else if (child.type === 'aliased_import') {
-      const alias = child.childForFieldName('alias')?.text;
-      if (alias) bare.add(alias);
+      name = child.childForFieldName('name')?.text ?? null;
+      alias = child.childForFieldName('alias')?.text ?? null;
     }
+    if (!name) continue;
+    const local = alias ?? name;
+    if (fromSelectors) names.bareSelectorFuncs.add(local);
+    else if (name === 'selectors') names.selectorAliases.add(local);
+    else names.bareExprFuncs.add(local);
   }
 }

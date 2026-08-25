@@ -107,7 +107,7 @@
         "polarsense.diagnostics.enable": {
           "type": "boolean",
           "default": true,
-          "description": "Warn about column names that do not exist in the frame’s schema. Only reported where the schema is known with certainty — an unmodelled reshape or a selector silences the check rather than guessing."
+          "description": "Warn about column names that do not exist in the frame’s schema. Only reported where the schema is known with certainty — an unmodelled reshape, or a selector that cannot be read statically, silences the check rather than guessing."
         },
         "polarsense.trace": {
           "type": "boolean",

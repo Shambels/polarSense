@@ -32,6 +32,8 @@ Column names inside string literals, wherever polars expects one:
   being joined in rather than the receiver
 - `rename` and `cast` dict keys, `pivot`, `unpivot`, `over`, `sort_by`
 - `df["region"]`, `df[["a", "b"]]`, `get_column`, `get_column_index`, `drop_in_place`
+- `polars.selectors` — `cs.by_name`, `cs.exclude`, `cs.starts_with`, `cs.ends_with`,
+  `cs.contains`
 
 Column names are propagated through transformations, so what you are offered is
 what actually exists at that point in the chain:
@@ -44,7 +46,15 @@ joined = a.join(b, on="region")
 joined.select("␣")           # both frames' columns, collisions suffixed _right
 
 df.group_by("region").agg(pl.col("revenue").sum()).select("␣")   # region, revenue
+
+df.select(cs.numeric()).select("␣")          # revenue, units — the numeric ones
+df.select(cs.starts_with("re")).select("␣")  # region, revenue
 ```
+
+Selectors narrow rather than stopping the analysis: `cs.numeric()`, `cs.string()`,
+`cs.temporal()` and the other dtype groups are matched against the dtypes already
+read from the file, the name-based selectors against the names, and `|`, `&`, `-`
+and `^` compose two selectors the way polars composes them.
 
 Hover a column name for its dtype, the file it comes from, and whatever statistics
 that file records — for parquet, null count, min and max, read from the same footer
@@ -64,9 +74,11 @@ df.select("regoin")
 ```
 
 The check only speaks when it is sure. If anything between the file and the cursor
-could not be modelled — an unmodelled reshape, a selector, a frame it could not
-identify, a file it could not read — it stays silent rather than guessing. A
-diagnostic that cries wolf gets switched off and never switched back on.
+could not be modelled — an unmodelled reshape, a selector it cannot read, a frame
+it could not identify, a file it could not read — it stays silent rather than
+guessing. A diagnostic that cries wolf gets switched off and never switched back
+on. It also stays silent inside `cs.starts_with("reg")` and its siblings, where
+the string is a fragment of a name and was never meant to be a whole one.
 
 It finds the frame by tracking assignments within the file:
 
@@ -139,9 +151,11 @@ reshapes are beyond what static reading can predict.
 - **A warning means the file on disk disagrees with the code**, which is usually
   a typo but occasionally means the data is older than the script that writes it.
   That is why it is a warning rather than an error: polars has the last word.
-- **Selectors are opaque.** `cs.numeric()`, regex patterns like `"^total_.*$"` and
-  computed names cannot be read statically, so a `select` using them widens rather
-  than narrows, and is again marked uncertain.
+- **Some selectors are still opaque.** `cs.by_dtype(pl.Int64)`, a selector method
+  we do not model, and a dtype selector over a source whose dtypes were never read
+  — a CSV with `inferDtypes` off — all widen rather than narrow, and are marked
+  uncertain. Bare regex patterns like `"^total_.*$"` in a `select` and computed
+  names do the same.
 - **Frames crossing module boundaries are invisible.** A frame built in
   `loaders.py` and imported gets nothing.
 - **Frames from function parameters or config objects are invisible.** A type
