@@ -63,6 +63,8 @@ export class ColumnHoverProvider implements vscode.HoverProvider {
 
     const hovered = assembled.source.slice(resolution.contentStart, resolution.contentEnd);
     if (!hovered) return undefined;
+    // A selector fragment is not a column name; there is nothing to describe.
+    if (resolution.partial) return undefined;
 
     if (!resolution.source) {
       if (resolution.failure === 'not-in-string' || resolution.failure === 'not-a-column-site') {

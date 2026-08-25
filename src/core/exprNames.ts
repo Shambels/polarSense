@@ -1,12 +1,15 @@
 import type { Node } from 'web-tree-sitter';
 import { callArguments, dottedName, methodName, stringValue } from './ast.js';
+import { isSelectorNamespace, selectorSet } from './selectors.js';
+import type { Column } from './types.js';
 
 /**
  * What names does a polars expression produce?
  *
  * `pl.col("a")` makes a column called "a"; `.alias("z")` renames it; `pl.all()`
- * means every column of the input; `cs.numeric()` means something we cannot work
- * out statically. That last case is the important one — answering "unknown"
+ * means every column of the input; `cs.numeric()` means whichever of the input's
+ * columns are numbers. When none of those fit — a computed name, a regex, a
+ * selector method we do not model — the answer is "unknown", and answering that
  * honestly is what stops the schema evaluator from inventing a column list.
  */
 export type NameSet =
@@ -15,7 +18,13 @@ export type NameSet =
   | { kind: 'all' }
   /** Every column of the input frame except these. */
   | { kind: 'except'; names: string[] }
-  /** Not statically knowable — a selector, a regex, a computed name. */
+  /**
+   * A selector: whichever of the input's columns the predicate picks. Unlike the
+   * cases above this needs the input's columns to mean anything, so it is only
+   * ever resolved where they are known — see `expand` in schemaEval.
+   */
+  | { kind: 'match'; test: (column: Column) => boolean; needsDtype?: boolean }
+  /** Not statically knowable — a regex, a computed name, an unmodelled selector. */
   | { kind: 'unknown' };
 
 export const UNKNOWN: NameSet = { kind: 'unknown' };
@@ -45,6 +54,10 @@ export interface ExprContext {
   polarsAliases: Set<string>;
   /** Expression constructors imported bare: `from polars import col`. */
   bareExprFuncs: Set<string>;
+  /** Local names for the polars.selectors module, e.g. {"cs"}. */
+  selectorAliases: Set<string>;
+  /** Selectors imported bare: `from polars.selectors import numeric`. */
+  bareSelectorFuncs: Set<string>;
 }
 
 /** Names produced by one expression node. */
@@ -72,10 +85,23 @@ export function exprNames(node: Node, ctx: ExprContext, depth = 0): NameSet {
     case 'set':
       return mergeAll(node.namedChildren.map((c) => (c ? exprNames(c, ctx, depth + 1) : UNKNOWN)));
 
-    case 'binary_operator':
+    case 'binary_operator': {
+      const left = node.namedChildren[0];
+      if (!left) return UNKNOWN;
+      const a = exprNames(left, ctx, depth + 1);
+      const right = node.namedChildren[1];
+      const b = right ? exprNames(right, ctx, depth + 1) : UNKNOWN;
+      // Selectors compose with set algebra: `cs.numeric() - cs.by_name("id")`.
+      if (a.kind === 'match' || b.kind === 'match') {
+        return combine(node.childForFieldName('operator')?.text ?? '', a, b);
+      }
+      // Otherwise it is arithmetic, and polars keeps the leftmost name.
+      return a;
+    }
+
     case 'comparison_operator':
     case 'boolean_operator': {
-      // `pl.col("a") + pl.col("b")` keeps the leftmost name, as polars does.
+      // `pl.col("a") > 3` keeps the leftmost name, as polars does.
       const left = node.namedChildren[0];
       return left ? exprNames(left, ctx, depth + 1) : UNKNOWN;
     }
@@ -111,6 +137,14 @@ function callNames(call: Node, ctx: ExprContext, depth: number): NameSet {
     return !!objRoot && ctx.polarsAliases.has(objRoot);
   })();
   const isBare = fn?.type === 'identifier' && ctx.bareExprFuncs.has(fn.text);
+
+  // Checked before the polars-module case: `pl.selectors.first()` is a selector,
+  // not the `pl.first()` expression constructor of the same short name.
+  const isSelector = fn?.type === 'identifier'
+    ? ctx.bareSelectorFuncs.has(fn.text)
+    : fn?.type === 'attribute' &&
+      isSelectorNamespace(dottedName(fn.childForFieldName('object')), ctx);
+  if (short && isSelector) return selectorSet(short, call);
 
   if (short && (isPolarsModule || isBare)) {
     if (short === 'all') return { kind: 'all' };
@@ -156,33 +190,83 @@ function callNames(call: Node, ctx: ExprContext, depth: number): NameSet {
         names: base.names.map((n) => (short === 'suffix' ? `${n}${affix}` : `${affix}${n}`))
       };
     }
-    if (short === 'keep' || short === 'to_lowercase' || short === 'to_uppercase') {
+    if (short === 'keep') return exprNames(receiver, ctx, depth + 1);
+    if (short === 'to_lowercase' || short === 'to_uppercase') {
+      // Rewriting names we do not have — `pl.all()`, a selector — is guesswork.
       const base = exprNames(receiver, ctx, depth + 1);
-      if (base.kind !== 'names') return base;
-      if (short === 'keep') return base;
+      if (base.kind !== 'names') return UNKNOWN;
       const f = short === 'to_lowercase' ? (n: string) => n.toLowerCase() : (n: string) => n.toUpperCase();
       return { kind: 'names', names: base.names.map(f) };
     }
     if (NAME_PRESERVING.has(short)) return exprNames(receiver, ctx, depth + 1);
 
     // Namespaces pass through: `.str`, `.dt`, `.list`, `.name`, `.struct`.
-    return exprNames(receiver, ctx, depth + 1);
+    const base = exprNames(receiver, ctx, depth + 1);
+    // …but a method we do not model on top of a selector can change which
+    // columns it picks — `cs.numeric().exclude(…)` — so stop claiming to know.
+    if (base.kind === 'match') return UNKNOWN;
+    return base;
   }
 
   return UNKNOWN;
 }
 
-/** Attribute access like `pl.col("a").name` resolves through to the receiver. */
+/** The union of several name sets, in argument order. */
 export function mergeAll(sets: NameSet[]): NameSet {
+  // A selector among them makes the whole thing a predicate: order stops
+  // mattering, because what comes back is a subset of the input's own columns.
+  if (sets.some((s) => s.kind === 'match')) {
+    const tests = sets.map(asTest);
+    if (tests.some((t) => !t)) return UNKNOWN;
+    return {
+      kind: 'match',
+      test: (column) => tests.some((t) => t!(column)),
+      needsDtype: sets.some((s) => s.kind === 'match' && s.needsDtype)
+    };
+  }
+
   const names: string[] = [];
   let sawAll = false;
   for (const set of sets) {
     if (set.kind === 'unknown') return UNKNOWN;
     if (set.kind === 'except') return UNKNOWN; // only meaningful on its own
     if (set.kind === 'all') { sawAll = true; continue; }
-    names.push(...set.names);
+    if (set.kind === 'names') names.push(...set.names);
   }
   if (sawAll && names.length === 0) return { kind: 'all' };
   if (sawAll) return UNKNOWN; // `pl.all(), pl.col("x")` — order matters, don't guess
   return { kind: 'names', names };
+}
+
+/** A name set as a predicate, for the cases where a selector is involved. */
+function asTest(set: NameSet): ((column: Column) => boolean) | null {
+  switch (set.kind) {
+    case 'match': return set.test;
+    case 'all': return () => true;
+    case 'names': {
+      const wanted = new Set(set.names);
+      return (column) => wanted.has(column.name);
+    }
+    case 'except': {
+      const gone = new Set(set.names);
+      return (column) => !gone.has(column.name);
+    }
+    case 'unknown': return null;
+  }
+}
+
+/** Selector set algebra: union, intersection, difference, symmetric difference. */
+function combine(operator: string, a: NameSet, b: NameSet): NameSet {
+  const left = asTest(a);
+  const right = asTest(b);
+  if (!left || !right) return UNKNOWN;
+  const needsDtype =
+    (a.kind === 'match' && !!a.needsDtype) || (b.kind === 'match' && !!b.needsDtype);
+  switch (operator) {
+    case '|': return { kind: 'match', test: (c) => left(c) || right(c), needsDtype };
+    case '&': return { kind: 'match', test: (c) => left(c) && right(c), needsDtype };
+    case '-': return { kind: 'match', test: (c) => left(c) && !right(c), needsDtype };
+    case '^': return { kind: 'match', test: (c) => left(c) !== right(c), needsDtype };
+    default: return UNKNOWN;
+  }
 }

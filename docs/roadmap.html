@@ -153,15 +153,15 @@
 <div class="wrap">
 
   <header style="display:flex;flex-direction:column;gap:1.1rem">
-    <p class="eyebrow">Roadmap · PolarSense · updated 24 Aug 2026</p>
+    <p class="eyebrow">Roadmap · PolarSense · updated 25 Aug 2026</p>
     <h1>What PolarSense doesn't do yet</h1>
     <p class="lede">Everything the build plan scoped but v1 didn't ship, every limitation that was a deliberate trade, and the features worth adding that weren't in the plan at all — with what has since been built marked <span class="tick">shipped</span>.</p>
 
     <div class="score">
-      <div class="hi"><b>6</b><span>shipped</span></div>
-      <div><b>16</b><span>remaining</span></div>
+      <div class="hi"><b>8</b><span>shipped</span></div>
+      <div><b>14</b><span>remaining</span></div>
       <div><b>1</b><span>blocked on a decision</span></div>
-      <div><b>170</b><span>tests</span></div>
+      <div><b>226</b><span>tests</span></div>
     </div>
 
     <p class="lede" style="font-size:.95rem;color:var(--muted)">Effort figures are focused working days. <strong>Impact</strong> is my read on how many users would notice, not how interesting the work is.</p>
@@ -270,12 +270,12 @@ return pl.scan_parquet(cfg.source_path)</code></pre>
         <div class="chips"><span class="chip med">impact med</span><span class="chip">0.5 d</span></div>
       </div>
 
-      <div class="item">
+      <div class="item shipped">
         <div class="body">
-          <h3><code>df["…"]</code> and <code>get_column</code> <span class="where">src/core/triggerSites.ts</span></h3>
-          <p>You scoped these out of v1. Subscript access needs one branch in <code>findArgumentPosition</code>; <code>get_column</code> is literally one table row. Still the smallest useful thing on this page — and now that diagnostics exist, adding the site also means those positions get typo-checked.</p>
+          <h3><code>df["…"]</code> and <code>get_column</code> <span class="tick">shipped</span> <span class="where">src/core/resolve.ts · triggerSites.ts</span></h3>
+          <p>One branch in <code>findArgumentPosition</code> for subscripts, one table row each for <code>get_column</code>, <code>get_column_index</code> and <code>drop_in_place</code>. The catch was that a dict lookup has the same syntax tree as a frame one, so the receiver decides: <code>cfg["path"]</code> offers nothing at all rather than falling back to every schema in the file.</p>
         </div>
-        <div class="chips"><span class="chip med">impact med</span><span class="chip">1 h</span></div>
+        <div class="chips"><span class="chip">1 h</span></div>
       </div>
 
       <div class="item">
@@ -301,7 +301,7 @@ return pl.scan_parquet(cfg.source_path)</code></pre>
     <div class="sechead">
       <span class="num">Part 03</span>
       <h2>Not in the plan, worth adding</h2>
-      <p>Ideas the build plan never considered, mostly because v1 was scoped to completion alone. Four of these are now built.</p>
+      <p>Ideas the build plan never considered, mostly because v1 was scoped to completion alone. Five of these are now built.</p>
     </div>
 
     <div class="items">
@@ -317,7 +317,7 @@ return pl.scan_parquet(cfg.source_path)</code></pre>
       <div class="item shipped">
         <div class="body">
           <h3>Diagnostics for unknown columns <span class="tick">shipped</span> <span class="where">src/diagnostics.ts</span></h3>
-          <p>A warning on <code>pl.col("regoin")</code> with a quick fix offering <code>"region"</code>. Reports only where the schema evaluator says <code>certain</code>; an unmodelled reshape, a selector, an unidentified frame, an unreadable file or a truncated schema all mean silence. Twelve of its nineteen tests assert that it says nothing.</p>
+          <p>A warning on <code>pl.col("regoin")</code> with a quick fix offering <code>"region"</code>. Reports only where the schema evaluator says <code>certain</code>; an unmodelled reshape, a selector it cannot narrow, an unidentified frame, an unreadable file or a truncated schema all mean silence. Twelve of its nineteen tests assert that it says nothing.</p>
         </div>
         <div class="chips"><span class="chip">1 d</span></div>
       </div>
@@ -346,12 +346,13 @@ return pl.scan_parquet(cfg.source_path)</code></pre>
         <div class="chips"><span class="chip">2 h</span></div>
       </div>
 
-      <div class="item">
+      <div class="item shipped">
         <div class="body">
-          <h3>polars.selectors</h3>
-          <p><code>cs.by_name("…")</code>, <code>cs.starts_with("…")</code>, <code>cs.ends_with("…")</code> — a real and growing part of the polars API that the trigger table doesn't know about. Mostly new rows plus recognising the <code>import polars.selectors as cs</code> alias. Doing this would also let the propagation model narrow through a selector instead of giving up, which currently costs both accuracy and a diagnostic.</p>
+          <h3>polars.selectors <span class="tick">shipped</span> <span class="where">src/core/selectors.ts</span></h3>
+          <p>The trigger table gained the name-taking selectors and the alias forms — <code>import polars.selectors as cs</code>, <code>from polars import selectors as cs</code>, <code>from polars.selectors import by_name</code>. The half that pays, though, is the other one: a selector is now a <em>predicate over the frame's own columns</em>, so <code>cs.numeric()</code>, <code>cs.starts_with("q_")</code> and <code>cs.matches("^re")</code> narrow instead of surrendering, and <code>|</code>, <code>&amp;</code>, <code>-</code>, <code>^</code> compose them as polars does. One fewer reason for the diagnostic to go quiet.</p>
+          <p>Two places it still says nothing, on purpose. A dtype selector over a source whose dtypes were never read — a CSV with inference off — cannot be resolved without inventing types. And <code>cs.starts_with("reg")</code> holds a <em>fragment</em> of a name: completion still offers whole column names there, but the typo check skips it, because "reg" was never meant to be one.</p>
         </div>
-        <div class="chips"><span class="chip med">impact med</span><span class="chip">0.5 d</span></div>
+        <div class="chips"><span class="chip">0.5 d</span></div>
       </div>
 
       <div class="item">
@@ -409,22 +410,19 @@ return pl.scan_parquet(cfg.source_path)</code></pre>
     <div class="sechead">
       <span class="num">Part 04</span>
       <h2>What I'd do next</h2>
-      <p>The original six are done except object storage, which is waiting on you. This is the re-ordered remainder.</p>
+      <p>Published, and the two smallest items behind it are done. What is left is four pieces of real work, one of them waiting on an answer from you.</p>
     </div>
 
     <ol class="next">
-      <li><span class="n">1</span><span class="what"><b>Publish what exists</b><span>Six features in, 170 tests, a demo GIF and a release process. Real files will find bugs fixtures cannot, and that feedback should reorder everything below this line.</span></span><span class="est">—</span></li>
-      <li><span class="n">2</span><span class="what"><b><code>df["…"]</code> and <code>get_column</code></b><span>An hour, and now it buys typo-checking on those positions too, not just completion.</span></span><span class="est">1 h</span></li>
-      <li><span class="n">3</span><span class="what"><b>polars.selectors</b><span>Half a day that pays three times: completion inside <code>cs.by_name</code>, narrowing through a selector instead of giving up, and one fewer reason for diagnostics to go quiet.</span></span><span class="est">0.5 d</span></li>
-      <li><span class="n">4</span><span class="what"><b>Object storage</b><span>Blocked, not deferred. One answer unblocks it: named AWS profile, SSO, or a custom S3-compatible endpoint.</span></span><span class="est">2 d</span></li>
-      <li><span class="n">5</span><span class="what"><b>Cross-module frames</b><span>The largest remaining blind spot. A frame built in another file is invisible, and there is no escape hatch — so this or the pragma, whichever you'd rather live with.</span></span><span class="est">2 d</span></li>
-      <li><span class="n">6</span><span class="what"><b>pandas and duckdb</b><span>The resolver, readers, paths and cache are not polars-specific. Only the trigger table is.</span></span><span class="est">1–2 d</span></li>
-      <li><span class="n">7</span><span class="what"><b>Value completion</b><span>The feature people screenshot. Deliberately last of the big ones: it reads data rather than metadata, so it needs an opt-in and a plain explanation before it ships.</span></span><span class="est">2 d</span></li>
+      <li><span class="n">1</span><span class="what"><b>Object storage</b><span>Blocked, not deferred. One answer unblocks it: named AWS profile, SSO, or a custom S3-compatible endpoint.</span></span><span class="est">2 d</span></li>
+      <li><span class="n">2</span><span class="what"><b>Cross-module frames</b><span>The largest remaining blind spot. A frame built in another file is invisible, and there is no escape hatch — so this or the pragma, whichever you'd rather live with.</span></span><span class="est">2 d</span></li>
+      <li><span class="n">3</span><span class="what"><b>pandas and duckdb</b><span>The resolver, readers, paths and cache are not polars-specific. Only the trigger table is.</span></span><span class="est">1–2 d</span></li>
+      <li><span class="n">4</span><span class="what"><b>Value completion</b><span>The feature people screenshot. Deliberately last of the big ones: it reads data rather than metadata, so it needs an opt-in and a plain explanation before it ships.</span></span><span class="est">2 d</span></li>
     </ol>
 
     <div class="note pick">
       <span class="k">What changed in the ordering</span>
-      <p>Schema propagation was the constraint, and it has landed — so nothing on this list blocks anything else any more. What replaces that constraint is feedback: every item below the first is a guess about what users need, and one week of real usage is worth more than any of these estimates.</p>
+      <p>Schema propagation was the constraint, and it has landed — so nothing on this list blocks anything else any more. What replaces that constraint is feedback. The extension is published now, and every item above is a guess about what users need; one week of real usage on real files is worth more than any of these estimates, and should be allowed to reorder the whole list.</p>
     </div>
 
     <div class="note">
@@ -434,7 +432,7 @@ return pl.scan_parquet(cfg.source_path)</code></pre>
   </section>
 
   <footer>
-    <p>PolarSense · 6 of 22 shipped · 170 tests · companion to docs/build-plan.html</p>
+    <p>PolarSense · 8 of 22 shipped · 226 tests · companion to docs/build-plan.html</p>
   </footer>
 
 </div>

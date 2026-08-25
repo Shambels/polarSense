@@ -6,6 +6,7 @@ import { resolveMarked, analyzeSource } from '../harness.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const HEAD = 'import polars as pl\n';
+const CS = 'import polars as pl\nimport polars.selectors as cs\n';
 
 /** `|` marks the cursor. Expected value is the path the frame resolves to. */
 const CASES = [
@@ -48,6 +49,20 @@ const CASES = [
   ['from polars import col', `from polars import col, scan_parquet\nimport polars as pl\ndf = pl.scan_parquet("a.parquet")\ndf.select(col("|"))`, 'a.parquet'],
   ['custom polars alias', `import polars as polars_lib\ndf = polars_lib.scan_parquet("a.parquet")\ndf.select(polars_lib.col("|"))`, 'a.parquet'],
 
+  // --- polars.selectors ---
+  ['cs.by_name', `${CS}df = pl.scan_parquet("a.parquet")\ndf.select(cs.by_name("|"))`, 'a.parquet'],
+  ['cs.by_name in a list', `${CS}df = pl.scan_parquet("a.parquet")\ndf.select(cs.by_name(["x", "|"]))`, 'a.parquet'],
+  ['cs.exclude', `${CS}df = pl.scan_parquet("a.parquet")\ndf.select(cs.exclude("|"))`, 'a.parquet'],
+  ['cs.starts_with', `${CS}df = pl.scan_parquet("a.parquet")\ndf.select(cs.starts_with("|"))`, 'a.parquet'],
+  ['cs.ends_with', `${CS}df = pl.scan_parquet("a.parquet")\ndf.select(cs.ends_with("|"))`, 'a.parquet'],
+  ['cs.contains', `${CS}df = pl.scan_parquet("a.parquet")\ndf.select(cs.contains("|"))`, 'a.parquet'],
+  ['selector inside with_columns', `${CS}df = pl.scan_parquet("a.parquet")\ndf.with_columns(cs.by_name("|"))`, 'a.parquet'],
+  ['selector under a set operation', `${CS}df = pl.scan_parquet("a.parquet")\ndf.select(cs.numeric() - cs.by_name("|"))`, 'a.parquet'],
+  ['from polars import selectors as cs', `import polars as pl\nfrom polars import selectors as cs\ndf = pl.scan_parquet("a.parquet")\ndf.select(cs.by_name("|"))`, 'a.parquet'],
+  ['from polars.selectors import by_name', `import polars as pl\nfrom polars.selectors import by_name\ndf = pl.scan_parquet("a.parquet")\ndf.select(by_name("|"))`, 'a.parquet'],
+  ['pl.selectors spelt out', `import polars as pl\nimport polars.selectors\ndf = pl.scan_parquet("a.parquet")\ndf.select(polars.selectors.by_name("|"))`, 'a.parquet'],
+  ['selector then over', `${CS}df = pl.scan_parquet("a.parquet")\ndf.select(cs.numeric().sum().over("|"))`, 'a.parquet'],
+
   // --- join: left and right resolve to different frames ---
   ['join on= uses the receiver', `${HEAD}a = pl.scan_parquet("a.parquet")\nb = pl.scan_parquet("b.parquet")\na.join(b, on="|")`, 'a.parquet'],
   ['join left_on= uses the receiver', `${HEAD}a = pl.scan_parquet("a.parquet")\nb = pl.scan_parquet("b.parquet")\na.join(b, left_on="|", right_on="y")`, 'a.parquet'],
@@ -82,6 +97,10 @@ const NEGATIVE = [
   // has to decide it — otherwise every cfg["key"] in the file offers columns.
   ['a dict subscript', `${HEAD}cfg = {"path": "x"}\ncfg["|"]`],
   ['an unknown receiver subscript', `${HEAD}mystery["|"]`],
+  // cs is just a name until polars.selectors is imported under it.
+  ['a selector call with no selectors import', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.select(cs.by_name("|"))`],
+  // A regex is a pattern, not a name — nothing to complete and nothing to check.
+  ['cs.matches takes a pattern', `${CS}df = pl.scan_parquet("a.parquet")\ndf.select(cs.matches("|"))`],
   ['the object being subscripted', `${HEAD}frames = {}\nframes["|"]["b"]`]
 ];
 
@@ -215,4 +234,31 @@ test('an inline reader chain is a call site too', async () => {
   const { table } = await analyzeSource(source, ROOT);
   assert.equal(table.sourceSites.length, 1);
   assert.equal(source.slice(table.sourceSites[0].start, table.sourceSites[0].end), 'x.parquet');
+});
+
+/**
+ * `cs.starts_with("reg")` holds a fragment of a name, not a whole one. Offering
+ * full column names there is useful; warning that "reg" is not a column is not,
+ * so the site says which kind it is.
+ */
+test('fragment selector sites are marked partial', async () => {
+  for (const method of ['starts_with', 'ends_with', 'contains']) {
+    const res = await resolveMarked(
+      `${CS}df = pl.scan_parquet("a.parquet")\ndf.select(cs.${method}("|"))`,
+      ROOT
+    );
+    assert.equal(res.source?.path, 'a.parquet', method);
+    assert.equal(res.partial, true, `${method} should be a fragment`);
+  }
+});
+
+test('whole-name selector sites are not partial', async () => {
+  for (const method of ['by_name', 'exclude']) {
+    const res = await resolveMarked(
+      `${CS}df = pl.scan_parquet("a.parquet")\ndf.select(cs.${method}("|"))`,
+      ROOT
+    );
+    assert.equal(res.source?.path, 'a.parquet', method);
+    assert.equal(res.partial, undefined, `${method} names a column outright`);
+  }
 });
