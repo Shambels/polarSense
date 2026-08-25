@@ -84,8 +84,22 @@ Two things that break packaging, both with unhelpful errors:
 - **Images must use markdown syntax**, `![alt](assets/demo.gif)`. vsce does not
   rewrite `<img src>`, so an HTML tag produces a broken image on the listing.
 
-Check the file list vsce prints. `src/`, `test/`, `docs/` and `scripts/` should
-not be in it — `.vscodeignore` controls that.
+Check the file list vsce prints. A healthy package is **8 files, about 200 KB**:
+
+```
+package.json  README.md  LICENSE  CHANGELOG.md
+dist/extension.js
+assets/tree-sitter.wasm  assets/tree-sitter-python.wasm  assets/icon.png
+```
+
+`.vscodeignore` is a **denylist**: anything new in the repo ships unless it is
+named there. That is how a 249 MB `.venv` once reached a package — packaging
+succeeded, nothing warned, and the file was 73 MB compressed. `npm run package`
+now fails above 5 MB via `scripts/check-vsix.mjs`. If it does fail:
+
+```bash
+npx @vscode/vsce ls --no-dependencies    # exactly what would ship
+```
 
 ## 5. Smoke-test the actual artifact
 

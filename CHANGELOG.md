@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.6
+
+### Fixed
+
+- **The packaged extension was 250 MB.** `.vscodeignore` is a denylist, so
+  anything not named in it ships — and a local `.venv` was not named. 429 files
+  of Python virtualenv, polars included, were inside the VSIX. Excluded now,
+  along with previous `.vsix` files, `_sync`/`.tgz` scratch, `__pycache__`,
+  `.DS_Store`, `pyproject.toml`/`uv.lock` and `RELEASING.md`. The package is back
+  to 8 files and 207 KB.
+- `npm run package` now fails if the result exceeds 5 MB
+  (`scripts/check-vsix.mjs`), so this cannot recur quietly. Override with
+  `VSIX_LIMIT_MB` if the extension one day genuinely gets bigger.
+
+
 ## 0.1.4
 
 ### Added
