@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { initParser } from './core/parser.js';
 import { Analyzer } from './analysis.js';
+import { ModuleService } from './modules.js';
 import { SchemaService } from './schema/index.js';
 import { ColumnCompletionProvider } from './completion/provider.js';
 import { DataFileLinkProvider } from './links.js';
@@ -51,18 +52,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }
 
   const analyzer = new Analyzer(parser);
+  const modules = new ModuleService(parser);
 
   context.subscriptions.push(
     vscode.languages.registerCompletionItemProvider(
       PYTHON,
-      new ColumnCompletionProvider(analyzer, schemas, reporter),
+      new ColumnCompletionProvider(analyzer, schemas, modules, reporter),
       '"', "'"
     ),
     vscode.languages.registerDocumentLinkProvider(PYTHON, new DataFileLinkProvider(analyzer)),
-    vscode.languages.registerHoverProvider(PYTHON, new ColumnHoverProvider(analyzer, schemas))
+    vscode.languages.registerHoverProvider(
+      PYTHON, new ColumnHoverProvider(analyzer, schemas, modules)
+    )
   );
 
-  const diagnostics = new ColumnDiagnostics(analyzer, schemas);
+  const diagnostics = new ColumnDiagnostics(analyzer, schemas, modules);
   context.subscriptions.push(
     diagnostics,
     vscode.languages.registerCodeActionsProvider(
@@ -100,6 +104,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   watcher.onDidDelete(invalidate);
   context.subscriptions.push(watcher);
 
+  // A module the open file imports can define its frames; editing one elsewhere
+  // should re-check this file. The parse cache notices the mtime by itself.
+  const pythonWatcher = vscode.workspace.createFileSystemWatcher('**/*.py');
+  const recheck = () => {
+    for (const doc of vscode.workspace.textDocuments) diagnostics.schedule(doc);
+  };
+  pythonWatcher.onDidChange(recheck);
+  pythonWatcher.onDidCreate(recheck);
+  pythonWatcher.onDidDelete(recheck);
+  context.subscriptions.push(pythonWatcher);
+
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (!event.affectsConfiguration('polarsense')) return;
@@ -120,6 +135,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(
     vscode.commands.registerCommand('polarsense.clearCache', () => {
       schemas.clear();
+      modules.clear();
       analyzer.drop('');
       vscode.window.showInformationMessage('PolarSense: schema cache cleared.');
     }),

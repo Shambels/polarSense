@@ -10,6 +10,7 @@ import { readSettings, workspaceDirs, type Settings } from '../config.js';
 import { buildItems, buildPathItems, mergeSchemas } from './items.js';
 import { trace } from '../log.js';
 import { completeDataPaths, type PathContext } from '../paths.js';
+import { NO_MODULES, type ModuleService } from '../modules.js';
 
 /** How long a completion may wait for a cold read before answering "ask me again". */
 const BUDGET_MS = 120;
@@ -22,6 +23,7 @@ export class ColumnCompletionProvider implements vscode.CompletionItemProvider {
   constructor(
     private analyzer: Analyzer,
     private schemas: SchemaService,
+    private modules: ModuleService,
     private status: StatusReporter
   ) {}
 
@@ -34,7 +36,16 @@ export class ColumnCompletionProvider implements vscode.CompletionItemProvider {
     if (!settings.enable) return undefined;
 
     const assembled = assemble(document, position);
-    const analysis = this.analyzer.atCursor(assembled.key, assembled.source, assembled.offset);
+    const modules = settings.followImports
+      ? await this.modules.load(
+          this.analyzer.tree(assembled.key, assembled.source),
+          { documentDir: assembled.documentDir, workspaceDirs: workspaceDirs() }
+        )
+      : NO_MODULES;
+    if (token.isCancellationRequested) return undefined;
+    const analysis = this.analyzer.atCursor(
+      assembled.key, assembled.source, assembled.offset, modules
+    );
     const resolution = resolveAtOffset(analysis.tree, analysis.table, assembled.offset);
 
     if (resolution.failure === 'not-in-string' || resolution.failure === 'not-a-column-site') {

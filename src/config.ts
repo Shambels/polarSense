@@ -8,6 +8,7 @@ export interface Settings {
   csvSniffBytes: number;
   csvInferDtypes: boolean;
   httpsEnabled: boolean;
+  followImports: boolean;
   cacheSize: number;
   diagnosticsEnabled: boolean;
   trace: boolean;
@@ -23,6 +24,7 @@ export function readSettings(): Settings {
     csvSniffBytes: config.get('csv.sniffBytes', 262_144),
     csvInferDtypes: config.get('csv.inferDtypes', false),
     httpsEnabled: config.get('https.enabled', false),
+    followImports: config.get('followImports', true),
     cacheSize: config.get('cacheSize', 200),
     diagnosticsEnabled: config.get('diagnostics.enable', true),
     trace: config.get('trace', false)
