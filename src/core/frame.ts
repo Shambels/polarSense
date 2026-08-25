@@ -2,6 +2,7 @@ import type { Node } from 'web-tree-sitter';
 import type { SourceRef } from './types.js';
 import { callArguments, dottedName, methodName, stringValue } from './ast.js';
 import type { BindingTable, Definition } from './bindings.js';
+import { SQL_FUNCS, sqlSource } from './sql.js';
 
 /**
  * A frame as an *expression*, not a file: the source it started from plus every
@@ -37,18 +38,32 @@ export type Transform =
   /** Reshapes the frame in a way we do not model — pivot, unpivot, transpose. */
   | { op: 'opaque'; method: string };
 
-/** Methods that change which rows come back but never which columns. */
+/**
+ * Methods that change which rows come back but never which columns — including
+ * the conversions between libraries, which is what lets a duckdb relation become
+ * a pandas frame without the analysis losing track of it.
+ */
 const IDENTITY_METHODS = new Set([
   'filter', 'sort', 'head', 'tail', 'limit', 'slice', 'unique', 'drop_nulls', 'drop_nans',
   'reverse', 'sample', 'shift', 'top_k', 'bottom_k', 'lazy', 'collect', 'clone', 'cache',
   'fill_null', 'fill_nan', 'interpolate', 'set_sorted', 'rechunk', 'clear', 'first', 'last',
-  'sort_by', 'gather', 'take', 'extend', 'vstack', 'remove'
+  'sort_by', 'gather', 'take', 'extend', 'vstack', 'remove',
+  // pandas
+  'sort_values', 'sort_index', 'dropna', 'drop_duplicates', 'query', 'nlargest',
+  'nsmallest', 'astype', 'fillna', 'ffill', 'bfill', 'copy', 'where', 'mask', 'round',
+  'abs', 'reindex',
+  // duckdb, and the conversions out of it
+  'order', 'distinct', 'to_df', 'df', 'fetchdf', 'to_pandas', 'to_arrow', 'to_polars',
+  'from_pandas', 'from_arrow'
 ]);
 
 /** Methods that reshape the frame in ways this model does not attempt. */
 const OPAQUE_METHODS = new Set([
   'pivot', 'unpivot', 'melt', 'transpose', 'explode', 'unnest', 'unstack',
-  'group_by_dynamic', 'rolling', 'upsample', 'join_asof', 'partition_by', 'to_dummies'
+  'group_by_dynamic', 'rolling', 'upsample', 'join_asof', 'partition_by', 'to_dummies',
+  // pandas moves columns in and out of the index; duckdb's project and aggregate
+  // take SQL this does not parse.
+  'set_index', 'reset_index', 'stack', 'pivot_table', 'crosstab', 'project', 'aggregate'
 ]);
 
 export interface FrameContext {
@@ -88,24 +103,41 @@ export function resolveFrame(node: Node, ctx: FrameContext, depth = 0): FrameExp
     case 'call':
       return callFrame(node, ctx, depth);
 
-    default: {
-      // `loaders.sales` — a frame another module exports. Resolved as an
-      // expression rather than a source, so its transforms come across too.
-      if (node.type === 'attribute') {
-        const attr = node.childForFieldName('attribute')?.text;
-        const module = table.moduleFor(dottedName(node.childForFieldName('object')));
-        const found = attr && module
-          ? fromDefinition(
-              module.resolveName(attr, Number.MAX_SAFE_INTEGER, [], false), depth
-            )
-          : null;
-        if (found) return found;
+    case 'subscript': {
+      const value = node.childForFieldName('value');
+      const input = value ? resolveFrame(value, ctx, depth + 1) : null;
+      if (!input) return fallbackFrame(node, ctx, depth);
+      // `df[["a", "b"]]` is how pandas selects. `df["a"]` is a single column
+      // rather than a frame, so it stays the frame it came from.
+      const index = node.childForFieldName('subscript');
+      if (index && (index.type === 'list' || index.type === 'tuple')) {
+        const exprs = index.namedChildren.filter((c): c is Node => !!c);
+        return { kind: 'transform', op: { op: 'select', exprs, named: [] }, input };
       }
-      // `df.lazy` used without calling, subscripts, etc: follow the receiver.
-      const source = table.resolve(node);
-      return source ? { kind: 'source', source } : null;
+      return input;
     }
+
+    default:
+      return fallbackFrame(node, ctx, depth);
   }
+}
+
+/** Anything the walk above does not claim: an exported name, or a bare source. */
+function fallbackFrame(node: Node, ctx: FrameContext, depth: number): FrameExpr | null {
+  const { table } = ctx;
+  // `loaders.sales` — a frame another module exports. Resolved as an expression
+  // rather than a source, so its transforms come across too.
+  if (node.type === 'attribute') {
+    const attr = node.childForFieldName('attribute')?.text;
+    const module = table.moduleFor(dottedName(node.childForFieldName('object')));
+    const found = attr && module
+      ? fromDefinition(module.resolveName(attr, Number.MAX_SAFE_INTEGER, [], false), depth)
+      : null;
+    if (found) return found;
+  }
+  // `df.lazy` used without calling, subscripts, etc: follow the receiver.
+  const source = table.resolve(node);
+  return source ? { kind: 'source', source } : null;
 }
 
 function callFrame(call: Node, ctx: FrameContext, depth: number): FrameExpr | null {
@@ -116,6 +148,12 @@ function callFrame(call: Node, ctx: FrameContext, depth: number): FrameExpr | nu
   // A reader call is where every chain ends.
   const asSource = table.resolve(call);
   if (short && asSource && isReader(short)) return { kind: 'source', source: asSource };
+
+  // So is a SQL statement naming a file — but only when it really does, or
+  // `df.sql("SELECT * FROM self")` would throw away everything done to `df`.
+  if (short && asSource && SQL_FUNCS.has(short) && sqlSource(call)) {
+    return { kind: 'source', source: asSource };
+  }
 
   if (short === 'concat') {
     const { positional } = callArguments(call);
@@ -144,7 +182,9 @@ function callFrame(call: Node, ctx: FrameContext, depth: number): FrameExpr | nu
   const input = resolveFrame(receiver, ctx, depth + 1);
   if (!input) return null;
 
-  if (short === 'join') return joinFrame(call, input, ctx, depth);
+  if (short === 'join' || short === 'merge') {
+    return joinFrame(call, input, ctx, depth, short === 'merge');
+  }
 
   const op = classify(short, call);
   return op ? { kind: 'transform', op, input } : input;
@@ -154,14 +194,20 @@ function isReader(short: string): boolean {
   return /^(read|scan)_/.test(short);
 }
 
-function joinFrame(call: Node, left: FrameExpr, ctx: FrameContext, depth: number): FrameExpr | null {
+function joinFrame(
+  call: Node, left: FrameExpr, ctx: FrameContext, depth: number, pandas = false
+): FrameExpr | null {
   const { positional, keywords } = callArguments(call);
-  const otherNode = positional[0] ?? keywords.get('other');
+  const otherNode = positional[0] ?? keywords.get('other') ?? keywords.get('right');
   const right = otherNode ? resolveFrame(otherNode, ctx, depth + 1) : null;
   if (!right) return null;
 
   const how = literalString(keywords.get('how')) ?? 'inner';
-  const suffix = literalString(keywords.get('suffix')) ?? '_right';
+  // pandas spells it `suffixes=("_x", "_y")`, and only the second half applies
+  // to the frame being merged in.
+  const suffix = literalString(keywords.get('suffix'))
+    ?? rightSuffix(keywords.get('suffixes'))
+    ?? (pandas ? '_y' : '_right');
 
   // polars drops the right frame's key columns only when `on=` is used; with
   // left_on/right_on both sides keep their own names.
@@ -185,7 +231,11 @@ function classify(method: string, call: Node): Transform | null {
     case 'with_columns':
       return { op: 'with_columns', exprs: positional, named: [...keywords.entries()] };
     case 'drop':
-      return { op: 'drop', exprs: positional };
+      return { op: 'drop', exprs: positional.concat(listOf(keywords.get('columns'))) };
+    // pandas builds columns by keyword: `df.assign(total=…)`.
+    case 'assign':
+      return { op: 'with_columns', exprs: [], named: [...keywords.entries()] };
+    case 'groupby':
     case 'group_by':
       return {
         op: 'group_by',
@@ -195,7 +245,7 @@ function classify(method: string, call: Node): Transform | null {
     case 'agg':
       return { op: 'agg', exprs: positional, named: [...keywords.entries()] };
     case 'rename': {
-      const arg = positional[0] ?? keywords.get('mapping');
+      const arg = positional[0] ?? keywords.get('mapping') ?? keywords.get('columns');
       if (!arg || arg.type !== 'dictionary') return { op: 'rename', pairs: [], unknown: true };
       const pairs: [string, string][] = [];
       let unknown = false;
@@ -222,6 +272,13 @@ function classify(method: string, call: Node): Transform | null {
       // An unknown method is most likely a user helper returning the same frame.
       return { op: 'opaque', method };
   }
+}
+
+/** The right-hand half of pandas' `suffixes=("_x", "_y")`. */
+function rightSuffix(node: Node | undefined): string | null {
+  if (!node || (node.type !== 'tuple' && node.type !== 'list')) return null;
+  const second = node.namedChildren[1];
+  return second ? stringValue(second) : null;
 }
 
 function listOf(node: Node | undefined): Node[] {

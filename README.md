@@ -1,7 +1,7 @@
 # PolarSense
 
-Column-name autocompletion for [polars](https://pola.rs), read from the file your
-DataFrame actually comes from.
+Column-name autocompletion for [polars](https://pola.rs), pandas and duckdb, read
+from the file your DataFrame actually comes from.
 
 ```python
 import polars as pl
@@ -13,9 +13,9 @@ out = df.select(pl.col("re␣"))
 #                      ◆ returns_qty i32
 ```
 
-Polars column names are strings, so no type checker can see inside them. But the
-schema is sitting in the file on disk — a parquet footer, a CSV header row, a Delta
-commit log, an Iceberg metadata pointer. PolarSense reads it and offers the names.
+Column names are strings, so no type checker can see inside them. But the schema is
+sitting in the file on disk — a parquet footer, a CSV header row, a Delta commit
+log, an Iceberg metadata pointer. PolarSense reads it and offers the names.
 
 It never imports polars, never spawns a Python interpreter, and never runs your
 code. It reads bytes out of your data files and nothing else.
@@ -34,6 +34,26 @@ Column names inside string literals, wherever polars expects one:
 - `df["region"]`, `df[["a", "b"]]`, `get_column`, `get_column_index`, `drop_in_place`
 - `polars.selectors` — `cs.by_name`, `cs.exclude`, `cs.starts_with`, `cs.ends_with`,
   `cs.contains`
+
+And the same wherever pandas or duckdb expects one:
+
+- `groupby`, `sort_values`, `set_index`, `merge`, `drop(columns=…)`,
+  `rename(columns={…})`, `astype`, `dropna(subset=…)`, `drop_duplicates`,
+  `nlargest`, `value_counts`, `pivot_table`, `query`
+- duckdb's relational API — `project`, `order`, `aggregate` — on a relation from
+  `duckdb.read_parquet(…)` or from SQL:
+
+```python
+import duckdb
+
+rel = duckdb.sql("SELECT * FROM 'data/sales.parquet'")
+rel.project("␣")             # completes, and the path in the SQL is ctrl-clickable
+
+df = rel.df().groupby("␣")   # a duckdb relation converted to pandas keeps its schema
+```
+
+The SQL is scanned for a reader call or a quoted path with a known extension, not
+parsed — `con.execute("SELECT * FROM users")` names no file and stays quiet.
 
 Column names are propagated through transformations, so what you are offered is
 what actually exists at that point in the chain:
@@ -171,6 +191,11 @@ reshapes are beyond what static reading can predict.
 - **A warning means the file on disk disagrees with the code**, which is usually
   a typo but occasionally means the data is older than the script that writes it.
   That is why it is a warning rather than an error: polars has the last word.
+- **SQL is scanned, not parsed.** duckdb's SQL is read only for the file it opens.
+  The column names inside a `SELECT` are not offered, in duckdb or in
+  `pl.SQLContext`.
+- **pyarrow is not supported.** Its `read_table` means parquet where pandas' means
+  CSV, and telling those apart needs to know which module the call came from.
 - **Some selectors are still opaque.** `cs.by_dtype(pl.Int64)`, a selector method
   we do not model, and a dtype selector over a source whose dtypes were never read
   — a CSV with `inferDtypes` off — all widen rather than narrow, and are marked

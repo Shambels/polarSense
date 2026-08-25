@@ -158,10 +158,10 @@
     <p class="lede">Everything the build plan scoped but v1 didn't ship, every limitation that was a deliberate trade, and the features worth adding that weren't in the plan at all — with what has since been built marked <span class="tick">shipped</span>.</p>
 
     <div class="score">
-      <div class="hi"><b>9</b><span>shipped</span></div>
-      <div><b>13</b><span>remaining</span></div>
+      <div class="hi"><b>10</b><span>shipped</span></div>
+      <div><b>12</b><span>remaining</span></div>
       <div><b>1</b><span>blocked on a decision</span></div>
-      <div><b>253</b><span>tests</span></div>
+      <div><b>302</b><span>tests</span></div>
     </div>
 
     <p class="lede" style="font-size:.95rem;color:var(--muted)">Effort figures are focused working days. <strong>Impact</strong> is my read on how many users would notice, not how interesting the work is.</p>
@@ -373,12 +373,14 @@ return pl.scan_parquet(cfg.source_path)</code></pre>
         <div class="chips"><span class="chip">impact low</span><span class="chip">2 d</span></div>
       </div>
 
-      <div class="item">
+      <div class="item shipped">
         <div class="body">
-          <h3>pandas, pyarrow, duckdb</h3>
-          <p>The machinery is not polars-specific — <code>pd.read_parquet("x.parquet")</code> and <code>duckdb.sql("SELECT * FROM 'x.parquet'")</code> read the same footers. The trigger table is polars-shaped, but the resolver, readers, paths and cache are not. Still the largest audience increase per day of work available.</p>
+          <h3>pandas and duckdb <span class="tick">shipped</span> <span class="where">src/core/triggerSites.ts · sql.ts · frame.ts</span></h3>
+          <p>The bet in this entry paid: the trigger table got longer and almost nothing else changed. Rows are keyed by method name and the receiver still has to resolve to a file, so <code>groupby</code> and <code>sort_values</code> cost nothing in a polars file — no dialect detection, no second resolver. Propagation needed real work only where pandas differs in kind: <code>df[["a","b"]]</code> is a select written as a subscript, and <code>merge</code> suffixes collisions <code>_y</code> where polars says <code>_right</code>.</p>
+          <p>duckdb needed one new idea. Its path lives inside a string — <code>duckdb.sql("SELECT * FROM 'sales.parquet'")</code> — so <code>core/sql.ts</code> looks for a reader call or a quoted path with a known extension and finds nothing otherwise, which is what keeps <code>execute("SELECT * FROM users")</code> quiet. The relational API's arguments are SQL fragments rather than names, so they complete and are never typo-checked, reusing the marker <code>cs.starts_with</code> introduced.</p>
+          <p>pyarrow was left out. Its <code>read_table</code> means parquet where pandas' means CSV, and telling them apart needs the module the call came from — the one place where a dialect really would have to be detected.</p>
         </div>
-        <div class="chips"><span class="chip hi">impact high</span><span class="chip">1–2 d</span></div>
+        <div class="chips"><span class="chip">1–2 d</span></div>
       </div>
 
       <div class="item">
@@ -412,13 +414,13 @@ return pl.scan_parquet(cfg.source_path)</code></pre>
     <div class="sechead">
       <span class="num">Part 04</span>
       <h2>What I'd do next</h2>
-      <p>Published, and the blind spot that mattered most is closed. What is left is four items, one waiting on an answer from you and one that only earns its place if real code turns out to build frames in ways static reading cannot follow.</p>
+      <p>Published, the blind spot that mattered most is closed, and the audience is no longer polars-only. What is left is four items, one waiting on an answer from you and one that only earns its place if real code turns out to build frames in ways static reading cannot follow.</p>
     </div>
 
     <ol class="next">
       <li><span class="n">1</span><span class="what"><b>Object storage</b><span>Blocked, not deferred. One answer unblocks it: named AWS profile, SSO, or a custom S3-compatible endpoint.</span></span><span class="est">2 d</span></li>
-      <li><span class="n">2</span><span class="what"><b>pandas and duckdb</b><span>The resolver, readers, paths and cache are not polars-specific. Only the trigger table is.</span></span><span class="est">1–2 d</span></li>
-      <li><span class="n">3</span><span class="what"><b>Value completion</b><span>The feature people screenshot. Deliberately last of the big ones: it reads data rather than metadata, so it needs an opt-in and a plain explanation before it ships.</span></span><span class="est">2 d</span></li>
+      <li><span class="n">2</span><span class="what"><b>Value completion</b><span>The feature people screenshot. Deliberately last of the big ones: it reads data rather than metadata, so it needs an opt-in and a plain explanation before it ships.</span></span><span class="est">2 d</span></li>
+      <li><span class="n">3</span><span class="what"><b>Columns inside SQL strings</b><span>duckdb made half the case for it: the path in a SQL string is read now, but the column names in it are not. <code>pl.SQLContext</code> and <code>df.sql</code> want the same scan.</span></span><span class="est">2 d</span></li>
       <li><span class="n">4</span><span class="what"><b>The pragma escape hatch</b><span>Half a day, and now the only remaining answer for a frame that comes from a function parameter or a config object — the one blind spot cross-module frames did not close.</span></span><span class="est">0.5 d</span></li>
     </ol>
 
@@ -434,7 +436,7 @@ return pl.scan_parquet(cfg.source_path)</code></pre>
   </section>
 
   <footer>
-    <p>PolarSense · 9 of 22 shipped · 253 tests · companion to docs/build-plan.html</p>
+    <p>PolarSense · 10 of 22 shipped · 302 tests · companion to docs/build-plan.html</p>
   </footer>
 
 </div>

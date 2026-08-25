@@ -1,5 +1,52 @@
 # Changelog
 
+## Unreleased
+
+- **pandas and duckdb get the same treatment as polars.** `pd.read_parquet`,
+  `pd.read_csv` and `duckdb.read_parquet` were already recognised as readers —
+  what was missing was everywhere those frames are used. `groupby`,
+  `sort_values`, `drop(columns=…)`, `rename(columns={…})`, `astype`, `set_index`,
+  `merge`, `dropna(subset=…)`, `drop_duplicates`, `nlargest`, `value_counts`,
+  `pivot_table` and `query` are all column sites now, and pandas transforms
+  propagate: `df[["a", "b"]]` narrows, `assign` adds, `rename(columns=…)` renames,
+  and a `merge` suffixes collisions `_y` rather than polars' `_right` — reading
+  `suffixes=` when it is given.
+
+  Supporting a second library turned out to be mostly the trigger table getting
+  longer. Rows are keyed by method name and the receiver still has to resolve to
+  a file, so a pandas row costs nothing in a polars file — no dialect detection,
+  no second resolver.
+
+- **duckdb's SQL is read for the file it opens.**
+  `duckdb.sql("SELECT * FROM 'sales.parquet'")` resolves to that parquet file, as
+  do `read_parquet('…')` and friends written inside the SQL, and the same through
+  a connection's `.execute(…)` / `.query(…)`. The path inside the string is
+  ctrl-clickable like any other. This is not a SQL parser and does not try to be:
+  it looks for a reader call or a quoted path with a known extension and finds
+  nothing otherwise, so `con.execute("SELECT * FROM users")` stays silent.
+
+  From there the relational API completes — `.project(…)`, `.order(…)`,
+  `.aggregate(…)` — and `.df()`, `.to_pandas()` and the other conversions are
+  understood as column-preserving, so a duckdb relation turned into a pandas
+  frame does not lose its schema on the way.
+
+- **String arguments that hold an expression rather than a name** —
+  `df.query("revenue > 100")`, `rel.project("region, revenue")` — complete full
+  column names but are never typo-checked, the same treatment
+  `cs.starts_with("reg")` already had.
+
+### Fixed
+
+- **`rename(columns={"old": "new"})` offered column names on both halves.** A dict
+  key passed as a keyword argument was read as a keyword rather than a dict key,
+  so the new name was treated as one that had to exist. The key and the value are
+  told apart now, which also makes polars' `rename(mapping={…})` complete at all.
+- **pandas CSV options were ignored.** `pd.read_csv(…, sep=";")` produced a single
+  column whose name was the whole header row, because the reader only knew
+  polars' `separator`. `sep`, `delimiter`, `delim`, `skiprows`, `comment`,
+  `quotechar`, `names` and `header=None` are understood now.
+
+
 ## 0.1.7
 
 ### Added

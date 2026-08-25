@@ -2,6 +2,7 @@ import type { Node, Tree } from 'web-tree-sitter';
 import type { SourceKind, SourceRef } from './types.js';
 import { callArguments, dottedName, lastSegment, stringValue } from './ast.js';
 import { collectConstants, constEval } from './constEval.js';
+import { SQL_FUNCS, sqlSource } from './sql.js';
 
 /** polars entry points that open a file, and the format each one implies. */
 export const SOURCE_FUNCS: Record<string, SourceKind> = {
@@ -15,7 +16,10 @@ export const SOURCE_FUNCS: Record<string, SourceKind> = {
   read_feather: 'ipc',
   read_delta: 'delta',
   scan_delta: 'delta',
-  scan_iceberg: 'iceberg'
+  scan_iceberg: 'iceberg',
+  // duckdb spells two of them differently; pandas and pyarrow share the rest.
+  read_csv_auto: 'csv',
+  parquet_scan: 'parquet'
 };
 
 /** Keywords that carry the path, when it is not the first positional argument. */
@@ -26,6 +30,21 @@ const KEPT_KWARGS = [
   'separator', 'has_header', 'skip_rows', 'skip_lines', 'comment_prefix',
   'quote_char', 'new_columns', 'encoding', 'storage_options'
 ];
+
+/**
+ * The same options, spelled the way pandas and duckdb spell them. Without this a
+ * semicolon CSV read through `pd.read_csv(…, sep=";")` comes back as one column
+ * whose name is the whole header row — the most confusing possible answer.
+ */
+const KWARG_ALIASES: Record<string, string> = {
+  sep: 'separator',
+  delim: 'separator',
+  delimiter: 'separator',
+  skiprows: 'skip_rows',
+  comment: 'comment_prefix',
+  quotechar: 'quote_char',
+  names: 'new_columns'
+};
 
 /** A name this file imports from another module. */
 export interface ImportedName {
@@ -155,7 +174,7 @@ export function buildBindingTable(tree: Tree, loader?: ModuleLoader): BindingTab
 
     if (node.type === 'call') {
       const short = lastSegment(dottedName(node.childForFieldName('function')));
-      if (short && SOURCE_FUNCS[short]) callSites.push(node);
+      if (short && (SOURCE_FUNCS[short] || SQL_FUNCS.has(short))) callSites.push(node);
     }
 
     if (node.type === 'import_statement' || node.type === 'import_from_statement') {
@@ -308,6 +327,11 @@ export function buildBindingTable(tree: Tree, loader?: ModuleLoader): BindingTab
         if (short && SOURCE_FUNCS[short]) {
           return buildSourceRef(node, SOURCE_FUNCS[short]);
         }
+        // `duckdb.sql("SELECT * FROM 'sales.parquet'")` — the path is in the SQL.
+        if (short && SQL_FUNCS.has(short)) {
+          const fromSql = sqlSource(node);
+          if (fromSql) return fromSql.source;
+        }
         // pl.concat([a, b]) — the first frame decides the columns.
         if (short === 'concat') {
           const { positional } = callArguments(node);
@@ -345,10 +369,15 @@ export function buildBindingTable(tree: Tree, loader?: ModuleLoader): BindingTab
     const pathArg = positional[0] ??
       PATH_KWARGS.reduce<Node | null>((found, key) => found ?? keywords.get(key) ?? null, null);
     const kwargs: SourceRef['kwargs'] = {};
-    for (const key of KEPT_KWARGS) {
-      const value = keywords.get(key);
-      if (value) kwargs[key] = literalValue(value);
+    for (const [key, value] of keywords) {
+      const name = KWARG_ALIASES[key] ?? key;
+      if (!KEPT_KWARGS.includes(name) || name in kwargs) continue;
+      kwargs[name] = literalValue(value);
     }
+    // pandas says `header=None` where polars says `has_header=False`, and
+    // `header=0` where polars says nothing at all.
+    const header = keywords.get('header');
+    if (header && !('has_header' in kwargs)) kwargs.has_header = literalValue(header) !== null;
     return { kind, path: pathArg ? constEval(pathArg, constants) : null, kwargs };
   }
 
@@ -363,6 +392,18 @@ export function buildBindingTable(tree: Tree, loader?: ModuleLoader): BindingTab
   for (const call of callSites) {
     const source = resolve(call);
     if (!source?.path) continue;
+
+    // A path inside a SQL string is a range within that string, not an argument.
+    const short = lastSegment(dottedName(call.childForFieldName('function')));
+    if (short && SQL_FUNCS.has(short)) {
+      const fromSql = sqlSource(call);
+      if (!fromSql) continue;
+      const content = fromSql.sql.namedChildren.find((c) => c?.type === 'string_content');
+      const start = (content ? content.startIndex : fromSql.sql.startIndex + 1) + fromSql.index;
+      table.sourceSites.push({ start, end: start + fromSql.source.path!.length, source });
+      continue;
+    }
+
     const { positional, keywords } = callArguments(call);
     const pathArg = positional[0] ??
       PATH_KWARGS.reduce<Node | null>((found, key) => found ?? keywords.get(key) ?? null, null);

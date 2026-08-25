@@ -1,7 +1,7 @@
 {
   "name": "polarsense",
   "displayName": "PolarSense",
-  "description": "Column-name autocompletion for polars, read from the parquet, CSV, Delta or Iceberg file behind your DataFrame.",
+  "description": "Column-name autocompletion for polars, pandas and duckdb, read from the parquet, CSV, Delta or Iceberg file behind your DataFrame.",
   "version": "0.1.7",
   "license": "MIT",
   "publisher": "Pinch",
@@ -28,6 +28,8 @@
   },
   "keywords": [
     "polars",
+    "pandas",
+    "duckdb",
     "parquet",
     "python",
     "dataframe",
