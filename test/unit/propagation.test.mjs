@@ -63,6 +63,48 @@ for (const [name, snippet, expected, certain] of CASES) {
   });
 }
 
+/** pandas builds the same frames with different words. */
+const PANDAS = 'import pandas as pd\ndf = pd.read_parquet("a.parquet")\n';
+
+const PANDAS_CASES = [
+  ['a column list', `${PANDAS}n = df[["a", "b"]]\nn.groupby("|")`, ['a', 'b'], true],
+  ['rename columns=', `${PANDAS}n = df.rename(columns={"a": "z"})\nn.groupby("|")`, ['z', 'b', 'c'], true],
+  ['drop columns=', `${PANDAS}n = df.drop(columns=["b"])\nn.groupby("|")`, ['a', 'c'], true],
+  ['assign', `${PANDAS}n = df.assign(total=1)\nn.groupby("|")`, ['a', 'b', 'c', 'total'], true],
+  ['identity methods', `${PANDAS}n = df.dropna().sort_values("a").head(3)\nn.groupby("|")`, ['a', 'b', 'c'], true],
+  ['a single column stays the frame', `${PANDAS}n = df[["a"]]\nn.groupby("|")`, ['a'], true]
+];
+
+for (const [name, snippet, expected, certain] of PANDAS_CASES) {
+  test(`propagates through pandas: ${name}`, async () => {
+    const got = await columnsAt(snippet);
+    assert.ok(got, 'no frame resolved');
+    assert.deepEqual(got.names, expected);
+    assert.equal(got.certain, certain);
+  });
+}
+
+test('a pandas merge suffixes the way pandas does', async () => {
+  const got = await columnsAt(
+    'import pandas as pd\n' +
+    'a = pd.read_parquet("a.parquet")\n' +
+    'b = pd.read_parquet("b.parquet")\n' +
+    'n = a.merge(b, on="a")\nn.groupby("|")'
+  );
+  // The shared key drops from the right; the rest collide and take _y, not _right.
+  assert.deepEqual(got.names, ['a', 'b', 'c', 'b_y', 'c_y']);
+});
+
+test('an explicit suffixes= is honoured', async () => {
+  const got = await columnsAt(
+    'import pandas as pd\n' +
+    'a = pd.read_parquet("a.parquet")\n' +
+    'b = pd.read_parquet("b.parquet")\n' +
+    'n = a.merge(b, on="a", suffixes=("_l", "_r"))\nn.groupby("|")'
+  );
+  assert.deepEqual(got.names, ['a', 'b', 'c', 'b_r', 'c_r']);
+});
+
 /** Selectors that pick by name or dtype, against a source with mixed dtypes. */
 const SELECTOR_CASES = [
   ['cs.numeric', `${CS}n = df.select(cs.numeric())\nn.select("|")`, ['revenue', 'units']],
@@ -103,7 +145,9 @@ const UNCERTAIN = [
   ['a method on top of a selector', `${CS}n = df.select(cs.numeric().meta.output_name())\nn.select("|")`],
   ['a regex column pattern', `${HEAD}n = df.select("^a.*$")\nn.select("|")`],
   ['a rename with a computed key', `${HEAD}n = df.rename({key: "z"})\nn.select("|")`],
-  ['an unknown helper method', `${HEAD}n = df.my_helper()\nn.select("|")`]
+  ['an unknown helper method', `${HEAD}n = df.my_helper()\nn.select("|")`],
+  ['pandas moving a column into the index', `${PANDAS}n = df.set_index("a")\nn.groupby("|")`],
+  ['a duckdb projection, which is SQL we do not parse', `${PANDAS}n = df.project("a, b")\nn.groupby("|")`]
 ];
 
 for (const [name, snippet] of UNCERTAIN) {

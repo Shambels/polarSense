@@ -4,7 +4,7 @@ import { PATH_KWARGS, SOURCE_FUNCS, type BindingTable } from './bindings.js';
 import { callArguments, dottedName, lastSegment, nearest } from './ast.js';
 import { resolveFrame, type FrameExpr } from './frame.js';
 import {
-  EXPR_FUNCS, FRAME_METHODS, RIGHT_FRAME_KWARGS, specAccepts,
+  EXPR_FUNCS, FRAGMENT_METHODS, FRAME_METHODS, RIGHT_FRAME_KWARGS, specAccepts,
   type ArgPosition, type ArgSpec
 } from './triggerSites.js';
 import { PARTIAL_SELECTORS, SELECTOR_FUNCS, isSelectorNamespace } from './selectors.js';
@@ -186,9 +186,11 @@ function findArgumentPosition(stringNode: Node): Site | null {
   const call = parent.parent;
   if (!call || call.type !== 'call') return null;
 
-  if (keyword) return { call, position: { kind: 'keyword', name: keyword } };
+  // Checked before the keyword: `rename(columns={"old": "new"})` is a dict key
+  // *and* a keyword argument, and only the key half is a column that exists.
   if (dictRole === 'value') return null;
-  if (dictRole === 'key') return { call, position: { kind: 'dictKey' } };
+  if (dictRole === 'key') return { call, position: { kind: 'dictKey', keyword } };
+  if (keyword) return { call, position: { kind: 'keyword', name: keyword } };
 
   const { positional } = callArguments(call);
   const index = positional.findIndex((n) => n.id === child.id);
@@ -237,7 +239,13 @@ function classifyCall(call: Node, table: BindingTable): CallKind | null {
   if (objRoot && table.polarsAliases.has(objRoot) && EXPR_FUNCS[attr]) {
     return { kind: 'expr-func', spec: EXPR_FUNCS[attr] };
   }
-  if (FRAME_METHODS[attr]) return { kind: 'frame-method', spec: FRAME_METHODS[attr] };
+  if (FRAME_METHODS[attr]) {
+    return {
+      kind: 'frame-method',
+      spec: FRAME_METHODS[attr],
+      partial: FRAGMENT_METHODS.has(attr)
+    };
+  }
   return null;
 }
 
