@@ -86,7 +86,7 @@ export function resolveFrame(node: Node, ctx: FrameContext, depth = 0): FrameExp
       return fromDefinition(
         table.resolveName(node.text, node.startIndex, enclosingScopeIds(node), false),
         depth
-      );
+      ) ?? fallbackFrame(node, ctx, depth);
 
     case 'await':
       return node.namedChildren[0] ? resolveFrame(node.namedChildren[0]!, ctx, depth + 1) : null;
@@ -175,7 +175,11 @@ function callFrame(call: Node, ctx: FrameContext, depth: number): FrameExpr | nu
   const returned = fromDefinition(table.callDefinition(call), depth);
   if (returned) return returned;
 
-  if (fn?.type !== 'attribute' || !short) return null;
+  if (fn?.type !== 'attribute' || !short) {
+    // A call this cannot see into — but a pragma may have named its source, and
+    // for a bare `get_frame()` that is the only way a path could be here at all.
+    return asSource?.path ? { kind: 'source', source: asSource } : null;
+  }
   const receiver = fn.childForFieldName('object');
   if (!receiver) return null;
 

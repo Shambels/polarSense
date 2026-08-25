@@ -12,6 +12,7 @@ export { localStorage } from '../src/storage/local.js';
 export { resolvePath, hiveColumns, completeDataPaths } from '../src/paths.js';
 export { EXPR_FUNCS, FRAME_METHODS, FRAGMENT_METHODS } from '../src/core/triggerSites.js';
 export { dataPathInSql, sqlSource, SQL_FUNCS } from '../src/core/sql.js';
+export { collectPragmas } from '../src/core/pragma.js';
 export { SELECTOR_FUNCS, PARTIAL_SELECTORS } from '../src/core/selectors.js';
 export { resolveFrame, framesSources } from '../src/core/frame.js';
 export { evaluateFrame } from '../src/core/schemaEval.js';
