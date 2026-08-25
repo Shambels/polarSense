@@ -58,6 +58,7 @@ export const FRAME_METHODS: Record<string, ArgSpec> = {
   with_columns: { positional: 'all' },
   drop: { positional: 'all', kwargs: ['columns'] },
   explode: { positional: 'all', kwargs: ['column'] },
+  unnest: { positional: 'all', kwargs: ['columns'] },
   filter: { positional: 'all', kwargs: ['items'], constraintKeywords: true },
   remove: { positional: 'all', constraintKeywords: true },
   unique: { positional: 'all', kwargs: ['subset'] },

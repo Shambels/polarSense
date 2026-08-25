@@ -58,6 +58,41 @@ def write_csv(df: pl.DataFrame) -> None:
     quoted.write_text('"region, long name",revenue\n"EU, west",1.5\n', encoding="utf-8")
 
 
+def write_nested() -> None:
+    """A struct column, and a struct inside it, for `.struct.field(…)`.
+
+    Kept apart from the main frame so the reader corpus above stays a flat
+    schema — the point here is the tree, not another column of it.
+    """
+    frame = pl.DataFrame(
+        {
+            "id": [1, 2],
+            "address": [
+                {"city": "Ghent", "postcode": "9000", "geo": {"lat": 51.05, "lon": 3.72}},
+                {"city": "Lisbon", "postcode": "1100", "geo": {"lat": 38.72, "lon": -9.14}},
+            ],
+            "tags": [["a", "b"], ["c"]],
+        },
+        schema={
+            "id": pl.Int64,
+            "address": pl.Struct(
+                [
+                    pl.Field("city", pl.String),
+                    pl.Field("postcode", pl.String),
+                    pl.Field(
+                        "geo",
+                        pl.Struct([pl.Field("lat", pl.Float64), pl.Field("lon", pl.Float64)]),
+                    ),
+                ]
+            ),
+            "tags": pl.List(pl.String),
+        },
+    )
+    # Named so it still sorts after sales.parquet: the glob corpus asserts which
+    # file a `*.parquet` pattern lands on, and that is the first one by name.
+    frame.write_parquet(DATA / "structs.parquet")
+
+
 def write_delta() -> None:
     """A minimal but protocol-shaped _delta_log."""
     table = DATA / "delta_sales"
@@ -234,6 +269,7 @@ def main() -> None:
     df = build_frame()
     write_parquet(df)
     write_csv(df)
+    write_nested()
     write_delta()
     write_delta_checkpoint()
     write_iceberg()

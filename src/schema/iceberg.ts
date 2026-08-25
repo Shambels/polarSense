@@ -56,11 +56,21 @@ export function parseIcebergMetadata(json: string): Column[] {
   }
   // format-version 1 tables keep the schema at the top level.
   if (!schema && parsed['schema']) schema = parsed['schema'] as Record<string, unknown>;
-  const fields = schema?.['fields'];
-  if (!Array.isArray(fields)) return [];
-  return fields.map((field) => {
+  return icebergFields(schema?.['fields']);
+}
+
+/** A schema's fields, keeping a struct's own fields rather than flattening them. */
+function icebergFields(value: unknown): Column[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((field) => {
     const f = field as Record<string, unknown>;
-    return { name: String(f['name'] ?? ''), dtype: icebergDtype(f['type']) };
+    const type = f['type'] as Record<string, unknown> | undefined;
+    const nested = type?.['type'] === 'struct' ? icebergFields(type['fields']) : [];
+    return {
+      name: String(f['name'] ?? ''),
+      dtype: icebergDtype(f['type']),
+      ...(nested.length ? { fields: nested } : {})
+    };
   }).filter((c) => c.name !== '');
 }
 

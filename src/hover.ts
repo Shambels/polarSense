@@ -4,7 +4,7 @@ import type { Analyzer } from './analysis.js';
 import type { SchemaService } from './schema/index.js';
 import { resolveAtOffset } from './core/resolve.js';
 import { framesSources } from './core/frame.js';
-import { evaluateFrame } from './core/schemaEval.js';
+import { evaluateFrame, structFields } from './core/schemaEval.js';
 import { assemble } from './notebook.js';
 import { readSettings, workspaceDirs } from './config.js';
 import type { PathContext } from './paths.js';
@@ -99,9 +99,10 @@ export class ColumnHoverProvider implements vscode.HoverProvider {
     const evaluated = resolution.frame
       ? evaluateFrame(resolution.frame, (s) => byIndex.get(s), analysis.table)
       : null;
-    const columns = evaluated?.columns ?? result.schema.columns;
+    const all = evaluated?.columns ?? result.schema.columns;
+    const columns = resolution.structPath ? structFields(all, resolution.structPath) : all;
 
-    const column = columns.find((c) => c.name === hovered);
+    const column = columns?.find((c) => c.name === hovered);
     if (!column) return undefined;
 
     const md = new vscode.MarkdownString();

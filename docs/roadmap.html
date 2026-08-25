@@ -158,10 +158,10 @@
     <p class="lede">Everything the build plan scoped but v1 didn't ship, every limitation that was a deliberate trade, and the features worth adding that weren't in the plan at all — with what has since been built marked <span class="tick">shipped</span>.</p>
 
     <div class="score">
-      <div class="hi"><b>16</b><span>shipped</span></div>
-      <div><b>6</b><span>remaining</span></div>
+      <div class="hi"><b>17</b><span>shipped</span></div>
+      <div><b>5</b><span>remaining</span></div>
       <div><b>1</b><span>blocked on a decision</span></div>
-      <div><b>398</b><span>tests</span></div>
+      <div><b>419</b><span>tests</span></div>
     </div>
 
     <p class="lede" style="font-size:.95rem;color:var(--muted)">Effort figures are focused working days. <strong>Impact</strong> is my read on how many users would notice, not how interesting the work is.</p>
@@ -286,12 +286,14 @@ def report(df):  # polarsense: data/sales.parquet</code></pre>
         <div class="chips"><span class="chip">1 h</span></div>
       </div>
 
-      <div class="item">
+      <div class="item shipped">
         <div class="body">
-          <h3>Nested struct fields</h3>
-          <p><code>.struct.field("…")</code> completes nothing, because the readers flatten to top-level names. The parquet schema is already a tree — the flattening happens in <code>readParquetSchema</code> and would need to be preserved rather than discarded.</p>
+          <h3>Nested struct fields <span class="tick">shipped</span> <span class="where">src/schema/parquet.ts · core/resolve.ts</span></h3>
+          <p>The tree is kept rather than discarded, and not only in parquet — Delta's <code>schemaString</code> and Iceberg's metadata nest the same way, so all three recurse. A <code>Column</code> can now carry its own columns, which is the whole feature: the rest is a path — <code>["address", "geo"]</code> — carried on the resolution, and one walk down it before the columns are offered.</p>
+          <p>Because the site produces an ordinary resolution and range, hover and the unknown-column check followed without asking: <code>.struct.field("citt")</code> warns and offers <code>city</code>. A path the schema cannot follow returns null rather than an empty list, so "no idea" stays distinguishable from "this struct has no fields" and the diagnostic stays quiet.</p>
+          <p>The perf guard earned its place here. Keeping the tree meant asking every node whether it is a struct, which cost a 5000-column file about 10%; the guard flagged it, and reordering the check to look at the child count first made a flat file <em>faster</em> than before. Two smaller finds came with it: a struct field can have its own statistics, since the footer keys them by full path, and <code>.struct.field("city")</code> had been propagating downstream under the name of the struct rather than the field.</p>
         </div>
-        <div class="chips"><span class="chip">impact low</span><span class="chip">1 d</span></div>
+        <div class="chips"><span class="chip">1 d</span></div>
       </div>
 
       <div class="item">
@@ -446,7 +448,7 @@ def report(df):  # polarsense: data/sales.parquet</code></pre>
   </section>
 
   <footer>
-    <p>PolarSense · 16 of 22 shipped · 398 tests · companion to docs/build-plan.html</p>
+    <p>PolarSense · 17 of 22 shipped · 419 tests · companion to docs/build-plan.html</p>
   </footer>
 
 </div>

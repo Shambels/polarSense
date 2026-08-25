@@ -3,6 +3,7 @@ import type { Resolution, SourceKind, SourceRef } from './types.js';
 import { PATH_KWARGS, SOURCE_FUNCS, type BindingTable } from './bindings.js';
 import { callArguments, dottedName, lastSegment, methodName, nearest, stringValue } from './ast.js';
 import { resolveFrame, type FrameExpr } from './frame.js';
+import { exprNames } from './exprNames.js';
 import {
   EXPR_FUNCS, FRAGMENT_METHODS, FRAME_METHODS, RIGHT_FRAME_KWARGS, specAccepts,
   type ArgPosition, type ArgSpec
@@ -70,6 +71,11 @@ export function resolveAtOffset(
     const prefix = typed.slice(0, Math.max(0, offset - contentStart));
     return { ...base, pathSite: { kind: pathKind, prefix } };
   }
+
+  // `pl.col("address").struct.field("…")` wants the fields of one column rather
+  // than the columns of the frame.
+  const struct = structSite(call, position, table, base);
+  if (struct) return struct;
 
   const spec = classifyCall(call, table);
   if (!spec || !specAccepts(spec.spec, position)) {
@@ -170,6 +176,63 @@ function siteNode(tree: Tree, offset: number): Node | null {
   const before = offset > 0 ? tree.rootNode.namedDescendantForIndex(offset - 1) : null;
   if (before?.type === 'identifier' && before.endIndex === offset) return before;
   return at;
+}
+
+/**
+ * A struct field position. The frame is found exactly as it is for `pl.col` —
+ * by walking out to the enclosing frame method — and the path says which column
+ * of it, and which field of that, the names should come from.
+ */
+function structSite(
+  call: Node, position: ArgPosition, table: BindingTable, base: Resolution
+): Resolution | null {
+  if (position.kind !== 'positional' || position.index !== 0) return null;
+  const fn = call.childForFieldName('function');
+  if (fn?.type !== 'attribute') return null;
+  if (fn.childForFieldName('attribute')?.text !== 'field') return null;
+
+  const chain = structChain(fn.childForFieldName('object'));
+  if (!chain) return null;
+  const names = exprNames(chain.base, table);
+  if (names.kind !== 'names' || names.names.length !== 1) return null;
+
+  const owner = enclosingFrameMethod(call, table);
+  const frameExpr = owner?.childForFieldName('function')?.childForFieldName('object');
+  const resolved = frameExpr ? resolveReceiver(frameExpr, table) : null;
+  if (!resolved) return null;
+
+  return { ...base, ...resolved, structPath: [names.names[0], ...chain.path] };
+}
+
+/**
+ * Peel `.struct.field("x")` off the front of an expression, as many times as it
+ * repeats, and hand back what it was applied to. A computed field name gives up
+ * rather than guessing which struct is meant.
+ */
+function structChain(node: Node | null): { base: Node; path: string[] } | null {
+  if (node?.type !== 'attribute' || node.childForFieldName('attribute')?.text !== 'struct') {
+    return null;
+  }
+  const path: string[] = [];
+  let cur: Node | null = node.childForFieldName('object');
+
+  for (let depth = 0; cur && depth < 16; depth++) {
+    const fn = cur.type === 'call' ? cur.childForFieldName('function') : null;
+    if (fn?.type !== 'attribute' || fn.childForFieldName('attribute')?.text !== 'field') {
+      return { base: cur, path: path.reverse() };
+    }
+    const arg = callArguments(cur).positional[0];
+    const name = arg ? stringValue(arg) : null;
+    if (name === null) return null;
+    path.push(name);
+
+    const inner = fn.childForFieldName('object');
+    if (inner?.type !== 'attribute' || inner.childForFieldName('attribute')?.text !== 'struct') {
+      return null;
+    }
+    cur = inner.childForFieldName('object');
+  }
+  return null;
 }
 
 /** The call whose SQL argument this string is, if it is one. */

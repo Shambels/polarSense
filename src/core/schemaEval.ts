@@ -12,6 +12,21 @@ export interface EvaluatedSchema {
   certain: boolean;
 }
 
+/**
+ * The fields of a struct column, by path. Null when a step is missing or is not
+ * a struct — which is different from an empty list, and reads as "no idea"
+ * rather than "this struct has no fields".
+ */
+export function structFields(columns: Column[], path: string[]): Column[] | null {
+  let current = columns;
+  for (const name of path) {
+    const column = current.find((c) => c.name === name);
+    if (!column?.fields?.length) return null;
+    current = column.fields;
+  }
+  return current;
+}
+
 /** Resolves a source to the columns of the file it reads. */
 export type SchemaLookup = (source: SourceRef) => Column[] | undefined;
 

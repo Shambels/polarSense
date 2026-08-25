@@ -6,7 +6,7 @@ import type { Column } from './core/types.js';
 import type { ExprContext } from './core/exprNames.js';
 import { resolveAtOffset } from './core/resolve.js';
 import { framesSources } from './core/frame.js';
-import { evaluateFrame } from './core/schemaEval.js';
+import { evaluateFrame, structFields } from './core/schemaEval.js';
 import { assemble } from './notebook.js';
 import { readSettings, workspaceDirs } from './config.js';
 import type { PathContext } from './paths.js';
@@ -163,6 +163,10 @@ export class ColumnDiagnostics {
 
     // A schema clipped by maxColumns cannot answer "does this column exist".
     if (evaluated.columns.length >= maxColumns) return null;
+
+    // Inside `.struct.field("…")` the names that must exist are the struct's,
+    // and a path this schema cannot follow means silence rather than a warning.
+    if (resolution.structPath) return structFields(evaluated.columns, resolution.structPath);
 
     return evaluated.columns;
   }

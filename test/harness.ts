@@ -6,8 +6,10 @@ export { resolveAtOffset } from '../src/core/resolve.js';
 export { constEval, collectConstants } from '../src/core/constEval.js';
 export { readParquetSchema } from '../src/schema/parquet.js';
 export { readCsvSchema } from '../src/schema/csv.js';
-export { readDeltaSchema, checkpointFiles } from '../src/schema/delta.js';
-export { readIcebergSchema } from '../src/schema/iceberg.js';
+export {
+  readDeltaSchema, checkpointFiles, parseDeltaSchemaString
+} from '../src/schema/delta.js';
+export { readIcebergSchema, parseIcebergMetadata } from '../src/schema/iceberg.js';
 export { localStorage } from '../src/storage/local.js';
 export { resolvePath, hiveColumns, completeDataPaths } from '../src/paths.js';
 export { EXPR_FUNCS, FRAME_METHODS, FRAGMENT_METHODS } from '../src/core/triggerSites.js';
@@ -17,7 +19,7 @@ export {
 export { collectPragmas } from '../src/core/pragma.js';
 export { SELECTOR_FUNCS, PARTIAL_SELECTORS } from '../src/core/selectors.js';
 export { resolveFrame, framesSources } from '../src/core/frame.js';
-export { evaluateFrame } from '../src/core/schemaEval.js';
+export { evaluateFrame, structFields } from '../src/core/schemaEval.js';
 export { exprNames } from '../src/core/exprNames.js';
 export { nearest } from '../src/core/nearest.js';
 
