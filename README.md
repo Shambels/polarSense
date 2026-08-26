@@ -383,6 +383,29 @@ imports `vscode`, so it is testable in plain node — that is what `test/unit` r
 against. `test/unit/extension.test.mjs` activates the *bundled* extension against a
 stub of the VS Code API, which is what catches bundling and activation failures.
 
+### For other extensions
+
+`activate()` returns the resolver, so another extension can ask which file is behind
+a frame without running any Python:
+
+```ts
+const polarsense = vscode.extensions.getExtension('Pinch.polarsense');
+const api = await polarsense?.activate();   // undefined if the parser failed to start
+
+const frame = await api?.resolveFrameAt(editor.document.uri, editor.selection.active);
+// { uri, kind, columns, rowCount?, certain, transformed, symbol? }
+```
+
+The position is on the frame — a variable, a method chain, or a column name inside
+one; all three land on the same frame. `columns` are the columns that exist *at that
+position*, with the statistics the file's own metadata carried, and `certain` is false
+when a transform on the way there could not be modelled.
+
+`uri` and `rowCount` describe the **file**, not the frame: when `transformed` is true
+the frame is that file with a filter, a select or a join applied, and anything reading
+rows from `uri` is reading the source rather than what the code would print. Say so
+rather than quietly showing the wrong count.
+
 ### Releasing a new version
 
 Write the changelog entry first and commit it — `npm version` refuses to run on a

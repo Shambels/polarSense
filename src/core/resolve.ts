@@ -702,4 +702,30 @@ export function describeResolution(res: Resolution): string {
   }
 }
 
+/**
+ * The frame a cursor is *on*, rather than the column position it is in.
+ * `resolveAtOffset` answers "what name belongs in this string"; this answers
+ * "what is this thing" — the cursor sits on a variable or anywhere in the chain
+ * hanging off one, which is where it sits when someone asks to see the data.
+ *
+ * The outermost expression that still resolves wins, so a cursor on `df` in
+ * `df.filter(...).head()` gives the filtered frame rather than the bare file:
+ * the transforms are exactly what tells a viewer it is not showing the frame.
+ */
+export function frameAtOffset(
+  tree: Tree,
+  table: BindingTable,
+  offset: number
+): { source: SourceRef; frame?: FrameExpr } | null {
+  let best: { source: SourceRef; frame?: FrameExpr } | null = null;
+  for (let node = tree.rootNode.namedDescendantForIndex(offset); node; node = node.parent) {
+    // A statement is where one expression ends and the next begins; walking past
+    // it would resolve the frame on the line below the cursor.
+    if (node.type === 'module' || node.type.endsWith('_statement')) break;
+    const resolved = resolveReceiver(node, table);
+    if (resolved) best = resolved;
+  }
+  return best;
+}
+
 export type { SourceRef };

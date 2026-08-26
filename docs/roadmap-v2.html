@@ -127,6 +127,11 @@
   ol.next .what b{font-family:"Archivo",sans-serif;font-size:.97rem;font-weight:600}
   ol.next .what span{font-size:.88rem;color:var(--ink-2)}
   ol.next .est{font-family:"IBM Plex Mono",monospace;font-size:.72rem;color:var(--muted);text-align:right;padding-top:.2rem}
+  ol.next .what b .tick{align-self:center}
+  ol.next .where{font-family:"IBM Plex Mono",monospace;font-size:.72rem;font-weight:400;color:var(--muted)}
+  ol.next li.shipped{background:linear-gradient(90deg,var(--accent-soft) 0 3px,transparent 3px)}
+  ol.next li.shipped .what b{color:var(--accent-ink);display:flex;align-items:baseline;gap:.55rem;flex-wrap:wrap}
+  ol.next li.shipped .what span{color:var(--muted)}
   @media (max-width:620px){
     ol.next li{grid-template-columns:2.2rem minmax(0,1fr)}
     ol.next .est{grid-column:2;text-align:left}
@@ -184,7 +189,7 @@
       <div class="hi"><b>3</b><span>features asked for</span></div>
       <div><b>2</b><span>possible data sources</span></div>
       <div><b>0</b><span>new deps in phase 1</span></div>
-      <div><b>~5</b><span>days to phase 1</span></div>
+      <div><b>~4.5</b><span>days left to phase 1</span></div>
     </div>
 
     <p class="lede" style="font-size:.95rem;color:var(--muted)">Effort figures are focused working days, on the same basis as the v1 roadmap. Every API named here was checked against its current documentation, not remembered.</p>
@@ -361,7 +366,7 @@
     </div>
 
     <ol class="next">
-      <li><span class="n">1</span><span class="what"><b>Export the resolver</b><span>An API object off <code>activate()</code>. Makes the eventual split a packaging change rather than a rewrite, and is the only thing here that is harder to retrofit than to do now.</span></span><span class="est">0.5 d</span></li>
+      <li class="shipped"><span class="n">1</span><span class="what"><b>Export the resolver <span class="tick">shipped</span><span class="where">src/api.ts · src/core/resolve.ts</span></b><span><code>activate()</code> now returns <code>{ version, resolveFrameAt(uri, position) }</code>: the resolved file, its kind, the columns at that position with the statistics the footer already gave up, the file’s row count, and two flags a viewer has to show rather than swallow — <code>certain</code>, and <code>transformed</code> for a frame whose source no longer matches what is on screen. One thing the plan did not foresee: <code>resolveAtOffset</code> only answers inside a column string, and a cursor asking to <em>see</em> the data sits on <code>df</code>, so <code>frameAtOffset</code> was added beside it — it walks out from the cursor to the widest expression that still resolves, which is also what makes the transform chain visible rather than just the file.</span></span><span class="est">0.5 d</span></li>
       <li><span class="n">2</span><span class="what"><b>Show details</b><span>The hover, in a panel, per column. Footer data only, so no new I/O and no new reader. The cheapest real proof that a viewer is worth having.</span></span><span class="est">0.5 d</span></li>
       <li><span class="n">3</span><span class="what"><b>The paginated table</b><span>Webview, virtualised rows <em>and</em> columns, <code>rowStart</code>/<code>rowEnd</code> against parquet. CSV and the table formats follow once the shell exists.</span></span><span class="est">2 d</span></li>
       <li><span class="n">4</span><span class="what"><b>The notebook renderer</b><span>Three buttons under the cell output, opening the panels above. No kernel involved. This is the point at which it looks like the tool in the brief.</span></span><span class="est">1.5 d</span></li>
@@ -383,7 +388,7 @@
   </section>
 
   <footer>
-    <p>PolarSense v2.0 · 3 features · phase 1 ≈ 5 days, no new dependencies · companion to docs/roadmap.html and docs/build-plan.html</p>
+    <p>PolarSense v2.0 · 3 features · 1 of 6 steps shipped · phase 1 ≈ 4.5 days left, no new dependencies · companion to docs/roadmap.html and docs/build-plan.html</p>
   </footer>
 
 </div>

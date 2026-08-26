@@ -11,6 +11,7 @@ import { ColumnHoverProvider } from './hover.js';
 import { ColumnDiagnostics, ColumnQuickFix } from './diagnostics.js';
 import { readSettings } from './config.js';
 import { initLog, setTrace, showLog, trace, warn } from './log.js';
+import { createApi, type PolarSenseApi } from './api.js';
 
 const PYTHON: vscode.DocumentSelector = [
   { language: 'python', scheme: 'file' },
@@ -18,7 +19,9 @@ const PYTHON: vscode.DocumentSelector = [
   { language: 'python', scheme: 'vscode-notebook-cell' }
 ];
 
-export async function activate(context: vscode.ExtensionContext): Promise<void> {
+export async function activate(
+  context: vscode.ExtensionContext
+): Promise<PolarSenseApi | undefined> {
   initLog(context);
   const settings = readSettings();
   setTrace(settings.trace);
@@ -171,6 +174,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
 
   trace('PolarSense activated');
+
+  // The resolver is the part of this nobody else has. Handing it out costs an
+  // object and makes the viewer's eventual move to its own extension a change of
+  // packaging rather than of code — undefined when the parser never started, so
+  // a caller checks once instead of catching per call.
+  return createApi(analyzer, schemas, modules);
 }
 
 /**
