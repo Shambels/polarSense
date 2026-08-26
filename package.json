@@ -39,7 +39,8 @@
   "icon": "assets/icon.png",
   "main": "./dist/extension.js",
   "activationEvents": [
-    "onLanguage:python"
+    "onLanguage:python",
+    "onRenderer:polarsense.dataframe"
   ],
   "contributes": {
     "configurationDefaults": {
@@ -77,6 +78,17 @@
       {
         "command": "polarsense.showData",
         "title": "PolarSense: Show data (reads rows)"
+      }
+    ],
+    "notebookRenderer": [
+      {
+        "id": "polarsense.dataframe",
+        "displayName": "PolarSense DataFrame output",
+        "entrypoint": "./dist/renderer.js",
+        "requiresMessaging": "optional",
+        "mimeTypes": [
+          "text/html"
+        ]
       }
     ],
     "configuration": {
@@ -153,6 +165,11 @@
           "default": true,
           "description": "Warn about column names that do not exist in the frame’s schema. Only reported where the schema is known with certainty — an unmodelled reshape, or a selector that cannot be read statically, silences the check rather than guessing."
         },
+        "polarsense.notebook.buttons": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show PolarSense buttons under a DataFrame printed in a notebook, opening the details and data panels for the frame that cell built. They read nothing until one is clicked. Turning them off leaves notebook output rendered exactly as it is now."
+        },
         "polarsense.trace": {
           "type": "boolean",
           "default": false,
@@ -164,7 +181,7 @@
   "scripts": {
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p src/renderer",
     "fixtures": "python3 scripts/make_fixtures.py",
     "test": "npm run build && node esbuild.test.mjs && node --test test/unit/*.test.mjs",
     "preversion": "npm test",

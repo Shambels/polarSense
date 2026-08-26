@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import type { Column } from '../core/types.js';
 import type { PolarSenseApi, ResolvedFrame } from '../api.js';
 import { escape, fmt, frameFacts, frameNotes } from './facts.js';
+import { cursorTarget, NO_PYTHON, type FrameTarget } from './target.js';
 
 /**
  * The hover, in a panel, with a row per column instead of a tooltip for one.
@@ -19,21 +20,18 @@ import { escape, fmt, frameFacts, frameNotes } from './facts.js';
  */
 let panel: vscode.WebviewPanel | undefined;
 
-export async function showDetails(api: PolarSenseApi): Promise<void> {
-  const editor = vscode.window.activeTextEditor;
-  if (!editor || editor.document.languageId !== 'python') {
-    vscode.window.showInformationMessage('PolarSense: open a Python file to see a frame.');
+export async function showDetails(api: PolarSenseApi, at?: FrameTarget): Promise<void> {
+  const target = at ?? cursorTarget();
+  if (!target) {
+    vscode.window.showInformationMessage(NO_PYTHON);
     return;
   }
 
-  const frame = await api.resolveFrameAt(editor.document.uri, editor.selection.active);
+  const frame = await api.resolveFrameAt(target.uri, target.position);
   if (!frame) {
-    // The panel opens on a frame, so the cursor has to be on one. Saying which
-    // is missing beats an empty panel that looks like a failed read.
-    vscode.window.showInformationMessage(
-      'PolarSense: no frame at the cursor. Put it on a DataFrame — the variable, ' +
-      'or anywhere in the chain hanging off it.'
-    );
+    // The panel opens on a frame, so there has to be one where we looked.
+    // Saying which is missing beats an empty panel that looks like a failed read.
+    vscode.window.showInformationMessage(target.missing);
     return;
   }
 

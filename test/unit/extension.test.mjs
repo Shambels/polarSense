@@ -6,8 +6,10 @@ import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import {
-  makeVscode, installVscodeStub, makeDocument, noCancel, setSetting, unregisterSetting
+  makeVscode, installVscodeStub, makeDocument, makeNotebook, noCancel, setSetting,
+  unregisterSetting
 } from '../vscode-stub.mjs';
+import { looksLikeFrame, lastStatementOffset } from '../harness.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const DATA = path.join(ROOT, 'test', 'fixtures', 'data');
@@ -1115,4 +1117,133 @@ test('a transformed frame still says the rows are the file’s', async () => {
   assert.equal(payload.rows.length, 100);
   assert.ok(payload.facts.includes('transforms not applied'));
   assert.ok(payload.notes.some((note) => /nothing here applies the transforms/.test(note)));
+});
+
+/**
+ * The buttons under a cell's output. Nothing here runs Python: the renderer
+ * says which output was clicked, the cell's own source says which frame that
+ * is, and the panels are the same two the command palette opens.
+ */
+const POLARS_REPR =
+  '<div><style>...</style><small>shape: (3, 9)</small>' +
+  '<table border="1" class="dataframe"><thead><tr><th>region</th></tr></thead>' +
+  '<tbody><tr><td>EU</td></tr></tbody></table></div>';
+
+test('a frame repr is recognised and an ordinary HTML output is left alone', () => {
+  assert.equal(looksLikeFrame(POLARS_REPR), true);
+  // pandas writes the same class, which is why one test covers both.
+  assert.equal(looksLikeFrame('<table border="1" class="dataframe">\n<tbody></tbody></table>'), true);
+  // The negative case is the point: every HTML output in the notebook comes
+  // through this renderer, and a button on a chart would be a lie.
+  assert.equal(looksLikeFrame('<div id="fig"><script>Plotly.newPlot()</script></div>'), false);
+  assert.equal(looksLikeFrame('<table><tr><td>a</td></tr></table>'), false);
+  assert.equal(looksLikeFrame('<p>shape: (3, 9)</p>'), false);
+});
+
+test('the frame a cell printed is its last statement, past blanks and comments', () => {
+  const source = 'import polars as pl\ndf = pl.scan_parquet("sales.parquet")\ndf.head()\n\n# done\n';
+  assert.equal(source.slice(lastStatementOffset(source), lastStatementOffset(source) + 9), 'df.head()');
+  // Indentation belongs to the block, not to the statement inside it.
+  const indented = 'if True:\n    df\n';
+  assert.equal(indented.slice(lastStatementOffset(indented)), 'df\n');
+  assert.equal(lastStatementOffset('\n\n# nothing here\n'), undefined);
+});
+
+/**
+ * A click under an output, end to end: the renderer posts, the host finds the
+ * cell, and the panel opens on the frame that cell built.
+ */
+async function clickButton(command, sources, { outputId, focus } = {}) {
+  const { notebook, editor, documents, focus: focusOn } =
+    makeNotebook(sources, path.join(DATA, 'analysis.ipynb'));
+  if (focus !== undefined) focusOn(focus);
+  vscode.workspace.notebookDocuments.push(notebook);
+  vscode.workspace.textDocuments.push(...documents);
+  vscode._registered.info = undefined;
+  try {
+    await vscode._registered.renderer.receive({ editor, message: { command, outputId } });
+    return { message: vscode._registered.info };
+  } finally {
+    vscode.workspace.notebookDocuments.length = 0;
+    vscode.workspace.textDocuments.length = 0;
+  }
+}
+
+/** What the data panel was told to draw after a click, the way the page asks for it. */
+async function drawnAfterClick(...args) {
+  const { message } = await clickButton('showData', ...args);
+  const panel = vscode._registered.webviews.find((p) => p.viewType === 'polarsense.data');
+  panel.messages.length = 0;
+  await panel.receive({ type: 'ready' });
+  return { payload: panel.messages.at(-1), message };
+}
+
+test('a button under a cell opens the panel on the frame that cell printed', async () => {
+  const { payload } = await drawnAfterClick([
+    'import polars as pl\ndf = pl.scan_parquet("values.parquet")\n',
+    'df.head()\n'
+  ], { outputId: 'out-1' });
+  assert.equal(payload.file, 'values.parquet');
+  assert.equal(payload.rows.length, 100);
+  // The frame was defined in an earlier cell: the assembler reads the notebook
+  // as one module, so the button works without the cell having been run.
+  assert.ok(payload.columns.includes('region'));
+});
+
+test('the output that was clicked wins over the cell that happens to be focused', async () => {
+  const { payload } = await drawnAfterClick([
+    'import polars as pl\ndf = pl.scan_parquet("values.parquet")\nwide = pl.scan_parquet("wide.parquet")\n',
+    'df\n',
+    'wide\n'
+  ], { outputId: 'out-1', focus: 2 });
+  assert.equal(payload.file, 'values.parquet');
+});
+
+test('an output id the API never exposed falls back to the focused cell', async () => {
+  // NotebookCellOutput carries no id in the typed API, so the match can miss.
+  // Clicking inside an output is what focuses its cell, which is the answer.
+  const { payload } = await drawnAfterClick([
+    'import polars as pl\ndf = pl.scan_parquet("values.parquet")\nwide = pl.scan_parquet("wide.parquet")\n',
+    'df\n',
+    'wide\n'
+  ], { outputId: 'not-an-output', focus: 2 });
+  assert.equal(payload.file, 'wide.parquet');
+});
+
+test('the details panel opens from a cell too, with no rows read', async () => {
+  const { message } = await clickButton('showDetails', [
+    'import polars as pl\ndf = pl.scan_parquet("sales.parquet")\n',
+    'df.select("region", "units")\n'
+  ], { outputId: 'out-1' });
+  assert.equal(message, undefined, `the panel said: ${message}`);
+  const panel = vscode._registered.webviews.find((p) => p.viewType === 'polarsense.details');
+  assert.match(panel.webview.html, /<td class="name">region<\/td>/);
+  // A select is a transform, and the file behind it is what the panel shows.
+  assert.match(panel.webview.html, /transforms not applied/);
+});
+
+test('a cell whose frame has no file behind it says so instead of opening', async () => {
+  const before = vscode._registered.webviews.length;
+  const { message } = await clickButton('showDetails', [
+    'import polars as pl\ndf = pl.DataFrame({"a": [1, 2]})\n',
+    'df\n'
+  ], { outputId: 'out-1' });
+  assert.match(message ?? '', /no file behind it/);
+  assert.equal(vscode._registered.webviews.length, before, 'a panel was opened anyway');
+});
+
+test('a page that has just loaded is told whether the buttons are on', async () => {
+  const wire = vscode._registered.renderer;
+  const { editor } = makeNotebook(['df\n'], path.join(DATA, 'analysis.ipynb'));
+  wire.posted.length = 0;
+  await wire.receive({ editor, message: { type: 'ready' } });
+  assert.deepEqual(wire.posted.at(-1).message, { type: 'config', buttons: true });
+
+  setSetting(vscode, 'notebook.buttons', false);
+  try {
+    // Turning them off reaches the outputs already drawn, not only the next one.
+    assert.deepEqual(wire.posted.at(-1).message, { type: 'config', buttons: false });
+  } finally {
+    setSetting(vscode, 'notebook.buttons', true);
+  }
 });

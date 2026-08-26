@@ -24,9 +24,30 @@ const options = {
   loader: { '.wasm': 'file' }
 };
 
+/**
+ * The notebook renderer is a second bundle because it runs somewhere else: an
+ * output iframe, not the extension host. Browser platform, ESM, no `vscode` —
+ * the only thing the two share is the pure module that decides whether an HTML
+ * output looks like a frame.
+ */
+/** @type {import('esbuild').BuildOptions} */
+const renderer = {
+  entryPoints: ['src/renderer/index.ts'],
+  bundle: true,
+  outfile: 'dist/renderer.js',
+  platform: 'browser',
+  target: 'es2020',
+  format: 'esm',
+  sourcemap: true,
+  minify: !watch,
+  logLevel: 'info'
+};
+
 if (watch) {
-  const ctx = await esbuild.context(options);
-  await ctx.watch();
+  for (const config of [options, renderer]) {
+    const ctx = await esbuild.context(config);
+    await ctx.watch();
+  }
 } else {
-  await esbuild.build(options);
+  await Promise.all([esbuild.build(options), esbuild.build(renderer)]);
 }

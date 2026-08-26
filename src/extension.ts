@@ -14,6 +14,7 @@ import { initLog, setTrace, showLog, trace, warn } from './log.js';
 import { createApi, type PolarSenseApi } from './api.js';
 import { showDetails } from './preview/details.js';
 import { showData } from './preview/table.js';
+import { registerNotebookButtons } from './preview/buttons.js';
 
 const PYTHON: vscode.DocumentSelector = [
   { language: 'python', scheme: 'file' },
@@ -163,6 +164,11 @@ export async function activate(
   // ships in this VSIX today and what may ship in its own tomorrow ask the same
   // question the same way.
   const api = createApi(analyzer, schemas, modules);
+
+  // The same two panels, reached from under a cell's output instead of from the
+  // command palette. No kernel: the renderer says which output was clicked and
+  // the cell's own source says which frame that is.
+  registerNotebookButtons(context, api);
 
   context.subscriptions.push(
     vscode.commands.registerCommand('polarsense.showDetails', () => showDetails(api)),

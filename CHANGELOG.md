@@ -1,5 +1,54 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Buttons under a DataFrame printed in a notebook.** A cell that ends in a
+  frame now carries *Details* and *Data* under its output, opening the same two
+  panels the command palette opens, for the frame that cell built. **No kernel
+  is involved and none is needed:** the button says which output was clicked,
+  the cell's last statement says which frame that is, and the resolver says
+  which file is behind it — so the buttons work in an `.ipynb` that has never
+  been run, on a frame defined eight cells earlier.
+
+  Two buttons, not three: the graph is not built yet, and a button that opens
+  nothing is worse than no button.
+
+  Which cell an output belongs to is answered exactly where it can be and
+  plausibly where it cannot. VS Code hands the renderer an output id, but
+  `NotebookCellOutput` does not carry one in the extension API, so when the
+  match misses the focused cell answers instead — clicking inside an output is
+  what focuses the cell holding it. When that misses too, the panel says so
+  rather than opening on whichever frame was nearest.
+
+  A cell whose frame is built in memory — `pl.DataFrame({...})` — gets a
+  sentence saying there is no file to read, which is the same limit the panels
+  have always had, now visible in the place where it is most tempting to
+  assume otherwise.
+
+### Changed
+
+- **PolarSense renders `text/html` notebook output.** Carrying a button under
+  the output means registering a renderer for that mime type, and VS Code has
+  no supported way to *add* to the built-in HTML renderer — so this one stands
+  in its place, for every HTML output in the notebook rather than only for
+  frames. It draws them the way the built-in renderer does, scripts included,
+  so charts and rich displays are unaffected; if something renders differently
+  under PolarSense, that is a bug and worth reporting. `notebook.buttons` turns
+  the bar off and leaves the rendering exactly as it is.
+
+### Internal
+
+- `showDetails` and `showData` take where to look rather than reading the
+  active editor's cursor themselves, because a button under a cell output is a
+  second way in and there is no cursor in it. Same resolver, same failure
+  message for a cursor, a different one for a cell.
+- The renderer is a second esbuild bundle — browser platform, ESM, no `vscode` —
+  with its own `tsconfig` so the DOM stays out of the extension host's types.
+  The only thing the two bundles share is the pure module that decides whether
+  an HTML output looks like a frame and where a cell's last statement begins.
+
 ## 1.5.0
 
 ### Added
