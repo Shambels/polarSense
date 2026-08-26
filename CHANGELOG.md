@@ -1,5 +1,40 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Columns a reshape creates are now offered.** `transpose`, `unnest`,
+  `unpivot`/`melt` and `explode` used to end the analysis: the extension knew the
+  frame had changed shape, could not say how, and fell back to offering the
+  source file's original columns marked as a guess. Each of them is now evaluated
+  where the call says enough to evaluate it.
+
+  `df.transpose(column_names=["null_count"], include_header=True,
+  header_name="column")` completes `column` and `null_count`, because
+  `column_names` states the whole output schema. That makes it the one transform
+  whose answer is *certain even when its input was not* — the input's columns
+  became rows, so what they were called stopped bearing on the result. A
+  `transpose` with no `column_names` is still unknowable, since polars would name
+  the columns `column_0…` and how many there are is the input's row count.
+
+  `df.unnest("address")` replaces the struct with its own fields, in its place —
+  the schema readers already carry the field tree, so nothing new had to be read.
+  `df.unpivot(index=["region"])` gives `region`, `variable` and `value`, honouring
+  `variable_name`/`value_name` and pandas' `id_vars`/`var_name` spellings.
+  `explode` turns list elements into rows without touching the names at all, so it
+  is now simply schema-preserving, as are the whole-frame reducers — `null_count`,
+  `sum`, `mean`, `min`, `max` and the rest — which return one row with every
+  column still named.
+
+  What still says nothing: `pivot`, `pivot_table` and `to_dummies`, whose columns
+  are the *values* in the file rather than anything in the code. Nor is an
+  `unpivot` read when its arguments are positional — polars puts `on` first and
+  pandas' `melt` puts `id_vars` there, and reading one as the other would not
+  fail, it would quietly produce the other library's column list. An `unnest` of a
+  name the frame does not have, or of a struct whose fields were never read, keeps
+  the struct column and drops certainty rather than dropping the column.
+
 ## 1.0.1
 
 ### Added

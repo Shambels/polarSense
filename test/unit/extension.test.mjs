@@ -370,7 +370,7 @@ test('pl.exclude() removes from the whole set', async () => {
 });
 
 test('an unmodelled reshape keeps the columns but marks them uncertain', async () => {
-  const result = await complete(`${HEAD_PY}p = df.explode("tags")\np.select("|")\n`);
+  const result = await complete(`${HEAD_PY}p = df.pivot(on="region")\np.select("|")\n`);
   assert.ok(result.items.length > 0, 'should still offer something useful');
   assert.ok(
     result.items.every((i) => i.sortText.startsWith('1')),
@@ -466,7 +466,7 @@ test('silent: an unmodelled reshape', async () => {
   const { items } = await diagnose(
     'import polars as pl\n' +
     'df = pl.scan_parquet("sales.parquet")\n' +
-    'p = df.explode("tags")\n' +
+    'p = df.pivot(on="region")\n' +
     'p.select("anything_at_all")\n'
   );
   assert.deepEqual(items, [], 'must not accuse after a step it cannot model');
