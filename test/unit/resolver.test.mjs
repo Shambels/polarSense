@@ -239,6 +239,52 @@ test('an inline reader chain is a call site too', async () => {
   assert.equal(source.slice(table.sourceSites[0].start, table.sourceSites[0].end), 'x.parquet');
 });
 
+
+/**
+ * A value site: the string holds a value of a column rather than the name of
+ * one. The negative half matters more than the positive half — every one of
+ * these positions used to be silent, and a value site that fires where a column
+ * name belongs would offer data in place of names.
+ */
+const VALUE_SITES = [
+  ['equality', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.filter(pl.col("region") == "|")`, 'region'],
+  ['inequality', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.filter(pl.col("region") != "|")`, 'region'],
+  ['written the other way round', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.filter("|" == pl.col("region"))`, 'region'],
+  ['is_in list', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.filter(pl.col("region").is_in(["|"]))`, 'region'],
+  ['is_in, second element', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.filter(pl.col("region").is_in(["EU", "|"]))`, 'region'],
+  ['eq method', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.filter(pl.col("region").eq("|"))`, 'region'],
+  ['constraint keyword value', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.filter(region="|")`, 'region'],
+  ['remove takes constraints too', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.remove(region="|")`, 'region'],
+  ['half-typed value', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.filter(pl.col("region") == "E|")`, 'region'],
+  ['the frame is the one at the cursor', `${HEAD}a = pl.scan_parquet("a.parquet")\nb = pl.scan_parquet("b.parquet")\nb.filter(pl.col("region") == "|")`, 'region']
+];
+
+for (const [name, snippet, column] of VALUE_SITES) {
+  test(`value site: ${name}`, async () => {
+    const res = await resolveMarked(snippet, ROOT);
+    assert.equal(res.valueSite?.column, column, `failure was: ${res.failure ?? 'none'}`);
+    assert.ok(res.source, 'a value site still has to know which file to read');
+  });
+}
+
+const NOT_VALUE_SITES = [
+  ['a column name is not a value', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.select("|")`],
+  ['the name half of a constraint keyword', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.filter(re|gion="EU")`],
+  ['filter(items=…) spells a column, not a value', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.filter(items="|")`],
+  ['a comparison with no frame around it', `${HEAD}e = pl.col("region") == "|"`],
+  ['a computed column name has no single column', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.filter(pl.col(name) == "|")`],
+  ['two columns compared', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.filter(pl.col("region") == pl.col("|"))`],
+  ['a path argument is not a value', `${HEAD}pl.read_parquet("|")`],
+  ['a rename target is neither', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.rename({"region": "|"})`]
+];
+
+for (const [name, snippet] of NOT_VALUE_SITES) {
+  test(`not a value site: ${name}`, async () => {
+    const res = await resolveMarked(snippet, ROOT);
+    assert.equal(res.valueSite, undefined);
+  });
+}
+
 /**
  * `cs.starts_with("reg")` holds a fragment of a name, not a whole one. Offering
  * full column names there is useful; warning that "reg" is not a column is not,

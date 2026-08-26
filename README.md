@@ -19,7 +19,9 @@ footer, a Delta commit log, an Iceberg metadata pointer. PolarSense reads it and
 offers the names.
 
 It never imports polars, never spawns a Python interpreter, and never runs your
-code. It reads bytes out of your data files and nothing else.
+code. It reads bytes out of your data files and nothing else — and by default only
+the metadata part of them. One feature reads the rows themselves, and it is off
+until you [turn it on](#values-if-you-ask-for-them).
 
 ## What it completes
 
@@ -39,6 +41,39 @@ Column names inside string literals, wherever polars expects one:
   one column position that is not inside a string
 - `pl.col("address").struct.field("␣")` — a struct's own fields, as deep as they
   go, and `df.unnest("␣")`
+
+### Values, if you ask for them
+
+Everything above reads *metadata*. Turn on `polarsense.values.enable` and one more
+position starts answering — the other side of a comparison, where what belongs is
+data:
+
+```python
+df = pl.scan_parquet("data/sales.parquet")
+df.filter(pl.col("region") == "␣")     # US, EU, APAC — read out of the file
+df.filter(region="␣")                  # the same, on a constraint keyword
+df.filter(pl.col("region").is_in(["␣"]))
+```
+
+This is the only feature here that reads the rows of your data file, which is why
+it is off until you turn it on. It reads one column of the first
+`values.maxRows` rows — parquet is columnar, so that is one column chunk rather
+than a scan — and caches the answer against the file's mtime like a schema.
+
+It stays quiet more often than it speaks, on purpose:
+
+- More than `values.maxDistinct` distinct values (50) offers **nothing**, not a
+  truncated list. A hundred of four million order ids is a claim about how many
+  there are, and a false one.
+- Columns whose values aren't strings offer nothing — a value position is always
+  inside quotes, where a number would be the wrong literal.
+- A read that didn't cover every row marks each item `value (sampled)` and says
+  how many rows it saw.
+- Hive partition columns are exact and free: `region=EU/`, `region=US/` *are* the
+  values, read from the directory names with no data touched at all.
+
+Values are never typo-checked and never hovered. They're data; the file has no
+opinion about which of them you meant to type.
 
 And the same wherever pandas or duckdb expects one:
 
@@ -192,6 +227,9 @@ segments are added as hive partition columns, the way polars adds them.
 | Delta | `_delta_log` walked newest-first to the most recent `metaData` action, falling back to the checkpoint parquet when the commits have been vacuumed |
 | Iceberg | `metadata/version-hint.text` → the current schema in that metadata file |
 
+Values — when `values.enable` is on — come from parquet only, plus hive partition
+directory names.
+
 Schemas are read when a file opens rather than when you first ask for a column, so
 the first completion is a cache hit. They are cached on the file's mtime and size,
 and a rewritten file invalidates itself.
@@ -212,6 +250,9 @@ so a frame defined in cell 1 completes in cell 8.
 | `polarsense.followImports` | `true` | Follow imports into other files in the workspace |
 | `polarsense.https.enabled` | `false` | Allow reading schemas over `https://` |
 | `polarsense.cacheSize` | `200` | File schemas held in memory |
+| `polarsense.values.enable` | `false` | Offer real values from your data. **Reads rows, not just metadata** |
+| `polarsense.values.maxRows` | `10000` | Rows of one column to read when offering values |
+| `polarsense.values.maxDistinct` | `50` | Above this many distinct values, offer none |
 | `polarsense.diagnostics.enable` | `true` | Warn about column names that don't exist |
 | `polarsense.trace` | `false` | Log every resolution to the PolarSense output channel |
 
@@ -271,9 +312,14 @@ reshapes are beyond what static reading can predict.
   timezone-aware types may read slightly differently than `print(df.schema)`.
 - **Notebook order is document order.** Cells run out of order resolve as if they
   hadn't been.
-- **A Delta checkpoint compressed with ZSTD or brotli reports nothing.** Reading
-  a checkpoint is the one place a parquet page is decompressed rather than a
-  footer read, and only snappy — what Spark and delta-rs write — is understood.
+- **A parquet page compressed with brotli or LZ4 reports nothing.** Two things
+  decompress a page rather than reading a footer — value completion and the Delta
+  checkpoint fallback — and between hyparquet's snappy and `fzstd`, those two are
+  what is left over.
+- **Values are parquet only.** Delta and Iceberg would mean finding their data
+  files first, and Arrow IPC would mean decoding its buffers. A column renamed
+  between the file and the cursor has no values either: the file has never heard
+  of the new name, and matching it back would be guesswork.
 
 ## Development
 

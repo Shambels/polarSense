@@ -7,7 +7,7 @@ import { framesSources } from '../core/frame.js';
 import { evaluateFrame, structFields } from '../core/schemaEval.js';
 import { assemble } from '../notebook.js';
 import { readSettings, workspaceDirs, type Settings } from '../config.js';
-import { buildItems, buildPathItems, mergeSchemas } from './items.js';
+import { buildItems, buildPathItems, buildValueItems, mergeSchemas } from './items.js';
 import { trace } from '../log.js';
 import { completeDataPaths, type PathContext } from '../paths.js';
 import { NO_MODULES, type ModuleService } from '../modules.js';
@@ -71,6 +71,42 @@ export class ColumnCompletionProvider implements vscode.CompletionItemProvider {
       );
       this.status.report(`$(folder) ${candidates.length} paths`);
       return new vscode.CompletionList(buildPathItems(candidates, segmentRange), true);
+    }
+
+    // A value position — `pl.col("region") == "…"`. This is the one place the
+    // extension reads the rows of a file rather than its metadata, so it happens
+    // only when the setting says so, and nothing else is offered instead: the
+    // names of a frame are never what belongs on the right of an `==`.
+    //
+    // Not raced against a budget the way a schema read is. The read is one
+    // column of a bounded number of rows and is remembered afterwards, and a
+    // feature you had to turn on may take a moment the first time.
+    if (resolution.valueSite) {
+      const { column } = resolution.valueSite;
+      if (!settings.valuesEnabled || !resolution.source) return undefined;
+      const values = await this.schemas.values(resolution.source, ctx, column);
+      if (token.isCancellationRequested || !values) {
+        // Silence covers every "no": too many distinct values, a column whose
+        // values are not strings, a format that cannot be read — and a column
+        // renamed on the way here, which the file has never heard of.
+        this.status.report('$(circle-slash) no values for this column', column);
+        return undefined;
+      }
+      const origin = this.schemas.peek(resolution.source, ctx)?.uri ?? resolution.source.path ?? '';
+      this.status.report(
+        `$(symbol-enum) ${values.values.length} values${values.complete ? '' : ' (sampled)'}`,
+        `${column} in ${origin}`
+      );
+      return new vscode.CompletionList(
+        buildValueItems(values.values, {
+          range,
+          origin,
+          column,
+          complete: values.complete,
+          rows: settings.valueMaxRows
+        }),
+        false
+      );
     }
 
     if (resolution.source) {

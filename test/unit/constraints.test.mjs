@@ -65,10 +65,13 @@ for (const [name, snippet] of NOTHING) {
   });
 }
 
-test('a string inside a constraint is still not a column', async () => {
-  // `region="EU"` — the value is data. The keyword beside it is the column.
+test('a string inside a constraint is a value, not a column', async () => {
+  // `region="EU"` — the keyword beside it is the column, and the string is data.
+  // It resolves now, because data is exactly what a value site offers; what it
+  // must never do is come back as a column name.
   const res = await resolveMarked(`${PL}df.filter(region="|EU")`, ROOT);
-  assert.equal(res.source?.path, undefined);
+  assert.equal(res.valueSite?.column, 'region');
+  assert.notEqual(res.keywordSite, true);
 });
 
 test('constraints narrow through the transforms above them', async () => {

@@ -87,7 +87,7 @@ const noopEvent = () => ({ dispose() {} });
 export function makeVscode(settings = {}, workspaceFolders = []) {
   const registered = {
     providers: [], linkProviders: [], hoverProviders: [], codeActionProviders: [],
-    diagnostics: null, commands: new Map()
+    diagnostics: null, commands: new Map(), configHandlers: []
   };
   const defaults = {
     enable: true,
@@ -139,7 +139,10 @@ export function makeVscode(settings = {}, workspaceFolders = []) {
       createFileSystemWatcher: () => ({
         onDidChange: noopEvent, onDidCreate: noopEvent, onDidDelete: noopEvent, dispose() {}
       }),
-      onDidChangeConfiguration: noopEvent,
+      onDidChangeConfiguration: (handler) => {
+        registered.configHandlers.push(handler);
+        return { dispose() {} };
+      },
       textDocuments: [],
       onDidOpenTextDocument: noopEvent,
       onDidChangeTextDocument: noopEvent,
@@ -231,3 +234,15 @@ export function makeDocument(marked, fsPath) {
 }
 
 export const noCancel = { isCancellationRequested: false, onCancellationRequested: noopEvent };
+
+/**
+ * Change a setting the way VS Code does: write it, then tell the extension. The
+ * extension caches some settings in services at activation, so a test that only
+ * writes the value is testing something the user cannot do.
+ */
+export function setSetting(vscode, key, value) {
+  vscode._settings[key] = value;
+  for (const handler of vscode._registered.configHandlers) {
+    handler({ affectsConfiguration: () => true });
+  }
+}

@@ -2,6 +2,7 @@ import { parquetMetadataAsync, parquetReadObjects } from 'hyparquet';
 import type { Column } from '../core/types.js';
 import { joinUri, type Storage } from '../storage/index.js';
 import { deltaDtype } from './dtypes.js';
+import { COMPRESSORS } from './compressors.js';
 
 const COMMIT = /^\d{20}\.json$/;
 
@@ -111,6 +112,7 @@ async function readCheckpointFile(storage: Storage, uri: string): Promise<Column
     file,
     metadata,
     columns: ['metaData'],
+    compressors: COMPRESSORS,
     rowStart: range.start,
     rowEnd: range.end
   });

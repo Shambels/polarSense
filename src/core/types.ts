@@ -77,6 +77,14 @@ export interface Resolution {
    */
   keywordSite?: boolean;
   /**
+   * The string holds a *value* of a column rather than the name of one:
+   * `pl.col("region") == "…"`, `.is_in(["…"])`, `df.filter(region="…")`.
+   * `source` and `frame` describe the frame exactly as they do at a column
+   * site — but what belongs here is data, so anything that checks a string
+   * against the schema must skip it rather than warn about a name it is not.
+   */
+  valueSite?: { column: string };
+  /**
    * `pl.col("address").struct.field("…")` — the columns wanted here are the
    * fields of this path into the frame's schema, not the frame's own columns.
    */

@@ -11,6 +11,9 @@ export interface Settings {
   followImports: boolean;
   cacheSize: number;
   diagnosticsEnabled: boolean;
+  valuesEnabled: boolean;
+  valueMaxRows: number;
+  valueMaxDistinct: number;
   trace: boolean;
 }
 
@@ -27,6 +30,9 @@ export function readSettings(): Settings {
     followImports: config.get('followImports', true),
     cacheSize: config.get('cacheSize', 200),
     diagnosticsEnabled: config.get('diagnostics.enable', true),
+    valuesEnabled: config.get('values.enable', false),
+    valueMaxRows: config.get('values.maxRows', 10_000),
+    valueMaxDistinct: config.get('values.maxDistinct', 50),
     trace: config.get('trace', false)
   };
 }

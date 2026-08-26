@@ -158,10 +158,10 @@
     <p class="lede">Everything the build plan scoped but v1 didn't ship, every limitation that was a deliberate trade, and the features worth adding that weren't in the plan at all — with what has since been built marked <span class="tick">shipped</span>.</p>
 
     <div class="score">
-      <div class="hi"><b>18</b><span>shipped</span></div>
-      <div><b>4</b><span>remaining</span></div>
+      <div class="hi"><b>19</b><span>shipped</span></div>
+      <div><b>3</b><span>remaining</span></div>
       <div><b>1</b><span>blocked on a decision</span></div>
-      <div><b>431</b><span>tests</span></div>
+      <div><b>475</b><span>tests</span></div>
     </div>
 
     <p class="lede" style="font-size:.95rem;color:var(--muted)">Effort figures are focused working days. <strong>Impact</strong> is my read on how many users would notice, not how interesting the work is.</p>
@@ -189,7 +189,7 @@
           <h3>Delta checkpoint fallback <span class="tick">shipped</span> <span class="where">plan M5b · src/schema/delta.ts</span></h3>
           <p>Through the hyparquet path already in the repo, as planned. It runs second on purpose — a JSON commit is always newer than the checkpoint beneath it, so the walk keeps the last word and a stale checkpoint can never surface. The checkpoint is chosen from the directory listing already in hand rather than from <code>_last_checkpoint</code>, which can be missing or stale without the checkpoints themselves being either.</p>
           <p>A checkpoint of a million files still decodes a handful of rows: the row group holding the <code>metaData</code> action is located from the footer's own null counts — the same statistics hover already reads — so the read is targeted rather than a scan. Without statistics it reads the head of the file, where every writer puts <code>protocol</code> and <code>metaData</code>.</p>
-          <p>One thing the estimate did not see coming. This is the only place the extension decompresses a parquet page rather than reading a footer, so it is the only place the compression codec matters. Snappy, which Spark and delta-rs write, works; a checkpoint written with ZSTD or brotli reports nothing rather than failing — hyparquet decodes neither, and a third dependency to decode them is not worth it.</p>
+          <p>One thing the estimate did not see coming. This is the only place the extension decompresses a parquet page rather than reading a footer, so it is the only place the compression codec matters. Snappy, which Spark and delta-rs write, worked from the start; ZSTD reported nothing, on the grounds that a third dependency to decode it was not worth it for this one path. Value completion changed that arithmetic — it needed zstd or it did nothing at all — so <code>fzstd</code> arrived and this reader got it too. Brotli and LZ4 still report nothing.</p>
         </div>
         <div class="chips"><span class="chip">0.5 d</span></div>
       </div>
@@ -342,10 +342,13 @@ def report(df):  # polarsense: data/sales.parquet</code></pre>
         <div class="chips"><span class="chip">1 d</span></div>
       </div>
 
-      <div class="item">
+      <div class="item shipped">
         <div class="body">
-          <h3>Value completion</h3>
-          <p>The showpiece. <code>pl.col("region") == "…"</code> offering <code>EU</code>, <code>US</code>, <code>APAC</code> — real values, read from the parquet dictionary pages of low-cardinality columns. Nobody's editor does this. It also crosses a line the extension has so far respected: it reads <em>data</em>, not just metadata, so it wants to be opt-in and documented plainly.</p>
+          <h3>Value completion <span class="tick">shipped</span> <span class="where">src/schema/values.ts · core/resolve.ts</span></h3>
+          <p>The showpiece, and off until <code>polarsense.values.enable</code> says otherwise. <code>== "…"</code>, <code>!=</code>, <code>.is_in([…])</code>, <code>.eq</code>/<code>.ne</code>, and the right-hand side of a constraint keyword — which is the same position whose left-hand side has always completed column names.</p>
+          <p>Not dictionary pages. hyparquet does not expose them, and it turned out not to matter: reading the first <code>values.maxRows</code> rows of one column is one column chunk either way, and on a dictionary-encoded column that is the dictionary page plus a run of indices into it. What the entry called low-cardinality became a rule instead of a hope — past <code>values.maxDistinct</code> the answer is <em>nothing</em>, not a truncated list, and a column whose values are not strings gets the same silence, because a value site is always inside quotes.</p>
+          <p>The thing the estimate missed: polars writes parquet with zstd, and hyparquet decodes snappy. Without a decompressor the showpiece would have done nothing on a file polars had just written — so <code>fzstd</code> is a third runtime dependency now, and the Delta checkpoint reader, the only other place a page rather than a footer is decompressed, stopped being zstd-blind as a side effect.</p>
+          <p>Free and exact in one case: hive partition columns. The directory names <em>are</em> the domain, so no data is read and the list can never be a sample — everywhere else, a read that did not cover every row says <code>value (sampled)</code> on the item itself.</p>
         </div>
         <div class="chips"><span class="chip hi">impact high</span><span class="chip">2 d</span></div>
       </div>
@@ -430,17 +433,16 @@ def report(df):  # polarsense: data/sales.parquet</code></pre>
     <div class="sechead">
       <span class="num">Part 04</span>
       <h2>What I'd do next</h2>
-      <p>Published, the audience is no longer polars-only, and every frame the resolver cannot see now has either a way in or a way to be told. Two items left: one waiting on an answer from you, and one that has been last on purpose since the beginning.</p>
+      <p>Published, the audience is no longer polars-only, and every frame the resolver cannot see now has either a way in or a way to be told. The one that had been last on purpose since the beginning has shipped, which leaves a single item — and it is not waiting on work, it is waiting on an answer from you.</p>
     </div>
 
     <ol class="next">
       <li><span class="n">1</span><span class="what"><b>Object storage</b><span>Blocked, not deferred. One answer unblocks it: named AWS profile, SSO, or a custom S3-compatible endpoint.</span></span><span class="est">2 d</span></li>
-      <li><span class="n">2</span><span class="what"><b>Value completion</b><span>The feature people screenshot. Deliberately last of the big ones: it reads data rather than metadata, so it needs an opt-in and a plain explanation before it ships.</span></span><span class="est">2 d</span></li>
     </ol>
 
     <div class="note pick">
       <span class="k">What changed in the ordering</span>
-      <p>Schema propagation was the constraint, and it has landed — so nothing on this list blocks anything else any more. What replaces that constraint is feedback. The extension is published now, and every item above is a guess about what users need; one week of real usage on real files is worth more than any of these estimates, and should be allowed to reorder the whole list.</p>
+      <p>Schema propagation was the constraint, and it has landed — so nothing on this list blocks anything else any more. Value completion has landed too, which is the one that changes what feedback is worth: it is the first feature here that is off by default, so how many people turn it on says more than any estimate above ever could. One week of real usage on real files should be allowed to reorder what is left.</p>
     </div>
 
     <div class="note">
@@ -450,7 +452,7 @@ def report(df):  # polarsense: data/sales.parquet</code></pre>
   </section>
 
   <footer>
-    <p>PolarSense · 18 of 22 shipped · 431 tests · companion to docs/build-plan.html</p>
+    <p>PolarSense · 19 of 22 shipped · 475 tests · companion to docs/build-plan.html</p>
   </footer>
 
 </div>

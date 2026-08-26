@@ -1,5 +1,51 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Value completion.** `df.filter(pl.col("region") == "␣")` now offers `US`,
+  `EU`, `APAC` — the values the column actually holds, read out of the file.
+  Also on `!=`, `.is_in([…])`, `.eq`/`.ne`, and on the right-hand side of a
+  constraint keyword, `df.filter(region="␣")`, whose left-hand side has always
+  completed column names.
+
+  **It reads your data.** Everything else here reads metadata — a footer, a
+  header row, a commit log — and this reads rows, so it is off until you turn it
+  on with `polarsense.values.enable`. What it reads is one column of the first
+  `values.maxRows` rows; parquet is columnar, so that is one column chunk rather
+  than a scan, and the answer is cached against the file's mtime like a schema —
+  including the answer "there is nothing worth offering", so a four-million-id
+  column is asked about once rather than once per keystroke.
+
+  Silence is the answer more often than not, on purpose. More than
+  `values.maxDistinct` distinct values (50 by default) offers *nothing* rather
+  than a truncated list — a hundred of four million order ids is not a
+  completion list, it is a claim about how many there are. Columns whose values
+  are not strings offer nothing either: a value site is always inside quotes,
+  where a float would be the wrong literal. Nor does a column the file has never
+  heard of, which is what a rename upstream leaves behind.
+
+  When the read did not cover every row, each item says `value (sampled)` and
+  the tooltip says how many rows it saw. Hive partition columns are the one case
+  that is never a sample and never reads data at all: the partitioning *is* the
+  list, so `region=EU/`, `region=US/` are the values, read from the directory
+  names.
+
+  Parquet only. Delta and Iceberg would mean finding their data files first, and
+  Arrow IPC would mean decoding its buffers — both are more than a column read.
+  Values are never typo-checked and never hovered: they are data, and the
+  unknown-column warning would fire on every value anyone filters on.
+
+### Changed
+
+- **A Delta checkpoint compressed with zstd reads now.** Value completion needed
+  a zstd decompressor — polars writes it by default — and the checkpoint reader
+  is the other place a parquet *page* is decompressed rather than a footer read,
+  so it got the same one. `fzstd` is the third runtime dependency: decompression
+  only, plain JavaScript, no dependencies of its own. Brotli and LZ4 still report
+  nothing.
+
 ## 0.5.0
 
 ### Added

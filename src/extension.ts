@@ -28,7 +28,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     maxColumns: settings.maxColumns,
     httpsEnabled: settings.httpsEnabled,
     csvSniffBytes: settings.csvSniffBytes,
-    csvInferDtypes: settings.csvInferDtypes
+    csvInferDtypes: settings.csvInferDtypes,
+    valuesEnabled: settings.valuesEnabled,
+    valueMaxRows: settings.valueMaxRows,
+    valueMaxDistinct: settings.valueMaxDistinct
   });
 
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 90);
@@ -138,7 +141,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         maxColumns: next.maxColumns,
         httpsEnabled: next.httpsEnabled,
         csvSniffBytes: next.csvSniffBytes,
-        csvInferDtypes: next.csvInferDtypes
+        csvInferDtypes: next.csvInferDtypes,
+        valuesEnabled: next.valuesEnabled,
+        valueMaxRows: next.valueMaxRows,
+        valueMaxDistinct: next.valueMaxDistinct
       });
       schemas.clear();
       for (const doc of vscode.workspace.textDocuments) {

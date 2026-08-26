@@ -15,6 +15,11 @@ export interface ResolvedPath {
   uri: string;
   /** Columns contributed by `key=value` directory segments, as polars adds them. */
   hivePartitions: Column[];
+  /**
+   * The directory the partitions were read out of, when there were any. The
+   * resolved file names one value of each; the tree above it holds them all.
+   */
+  hiveRoot?: string;
 }
 
 const GLOB = /[*?[]/;
@@ -59,7 +64,9 @@ export async function resolvePath(
 async function tryCandidate(candidate: string, kind: SourceRef['kind']): Promise<ResolvedPath | null> {
   if (GLOB.test(candidate)) {
     const match = await firstGlobMatch(candidate);
-    return match ? { uri: match, hivePartitions: hiveColumns(candidate, match) } : null;
+    if (!match) return null;
+    const base = candidate.replace(/[*?[].*$/, '');
+    return { uri: match, hivePartitions: hiveColumns(candidate, match), hiveRoot: base };
   }
 
   const info = await fs.stat(candidate).catch(() => null);
@@ -72,7 +79,7 @@ async function tryCandidate(candidate: string, kind: SourceRef['kind']): Promise
     if (kind === 'delta' || kind === 'iceberg') return { uri: candidate, hivePartitions: [] };
     const file = await firstFileUnder(candidate, extensionFor(kind));
     if (!file) return null;
-    return { uri: file, hivePartitions: hiveColumns(candidate, file) };
+    return { uri: file, hivePartitions: hiveColumns(candidate, file), hiveRoot: candidate };
   }
   return null;
 }
@@ -258,4 +265,45 @@ export function hiveColumns(root: string, file: string): Column[] {
     columns.push({ name, dtype: 'str' });
   }
   return columns;
+}
+
+/** polars' spelling of a null partition key, which is not a value anyone types. */
+const HIVE_NULL = '__HIVE_DEFAULT_PARTITION__';
+
+/**
+ * Every value a hive partition column takes, read off the directory names.
+ *
+ * This is the one value lookup that costs nothing and cannot be a sample: the
+ * partitioning *is* the list, so the answer is the whole domain of the column.
+ * Null when there are more than `limit` of them — the same silence a
+ * high-cardinality parquet column gets, for the same reason.
+ */
+export async function hiveValues(
+  root: string, column: string, limit: number, depth = 5
+): Promise<string[] | null> {
+  const prefix = `${column}=`;
+  const found = new Set<string>();
+
+  const walk = async (dir: string, left: number): Promise<boolean> => {
+    if (left <= 0) return true;
+    const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const child = path.join(dir, entry.name);
+      if (entry.name.startsWith(prefix)) {
+        const value = entry.name.slice(prefix.length);
+        if (value && value !== HIVE_NULL) found.add(value);
+        if (found.size > limit) return false;
+        // Its own subdirectories partition on something else, not on this.
+        continue;
+      }
+      if (entry.name.startsWith('_') || entry.name.startsWith('.')) continue;
+      if (!(await walk(child, left - 1))) return false;
+    }
+    return true;
+  };
+
+  if (!(await walk(root, depth))) return null;
+  if (!found.size) return null;
+  return [...found].sort((a, b) => a.localeCompare(b));
 }

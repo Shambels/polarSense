@@ -5,8 +5,8 @@ import { callArguments, dottedName, lastSegment, methodName, nearest, stringValu
 import { resolveFrame, type FrameExpr } from './frame.js';
 import { exprNames } from './exprNames.js';
 import {
-  EXPR_FUNCS, FRAGMENT_METHODS, FRAME_METHODS, RIGHT_FRAME_KWARGS, specAccepts,
-  type ArgPosition, type ArgSpec
+  EXPR_FUNCS, FRAGMENT_METHODS, FRAME_METHODS, RIGHT_FRAME_KWARGS, VALUE_METHODS,
+  specAccepts, type ArgPosition, type ArgSpec
 } from './triggerSites.js';
 import { PARTIAL_SELECTORS, SELECTOR_FUNCS, isSelectorNamespace } from './selectors.js';
 import {
@@ -57,6 +57,12 @@ export function resolveAtOffset(
     if (!resolved) return { ...base, failure: 'not-a-column-site' };
     return { ...base, ...resolved };
   }
+
+  // A value of a column rather than the name of one — `pl.col("region") == "…"`.
+  // Checked before the argument walk, because none of these positions is an
+  // argument that wants a column name and the walk would only say so.
+  const value = valueSite(stringNode, table, base);
+  if (value) return value;
 
   const site = findArgumentPosition(stringNode);
   if (!site) return { ...base, failure: 'not-a-column-site' };
@@ -120,6 +126,82 @@ export function resolveAtOffset(
   return spec.partial
     ? { ...base, ...wordRange(stringNode, offset, base), ...resolved, partial: true }
     : { ...base, ...resolved };
+}
+
+/** Comparisons whose operands are a column and one of its values. */
+const EQUALITY = new Set(['==', '!=']);
+
+/**
+ * A value position. The string is being compared against a column rather than
+ * naming one, so what belongs here is data out of the file.
+ *
+ * The column comes from whatever sits on the other side — `pl.col("region")` —
+ * and the frame is found exactly as `pl.col` finds it, by walking out to the
+ * enclosing frame method. Both have to succeed: a column with no file behind it
+ * has no values to offer, and `pl.col("region") == "…"` written outside any
+ * frame method is a bare expression that could belong to anything.
+ */
+function valueSite(
+  stringNode: Node, table: BindingTable, base: Resolution
+): Resolution | null {
+  const column = comparedColumn(stringNode, table);
+  if (!column) return null;
+
+  const owner = enclosingFrameMethod(stringNode, table);
+  const frameExpr = owner?.childForFieldName('function')?.childForFieldName('object');
+  const resolved = frameExpr ? resolveReceiver(frameExpr, table) : null;
+  if (!resolved) return null;
+
+  return { ...base, ...resolved, valueSite: { column } };
+}
+
+/** Which column is this string a value of, if it is a value of one at all? */
+function comparedColumn(stringNode: Node, table: BindingTable): string | null {
+  const parent = stringNode.parent;
+
+  // `pl.col("region") == "EU"`, and the same written the other way round.
+  if (parent?.type === 'comparison_operator') {
+    const operands = parent.namedChildren.filter((n): n is Node => !!n);
+    // A chained comparison — `a == b == c` — has no single other side.
+    if (operands.length !== 2) return null;
+    if (!parent.children.some((n) => n && !n.isNamed && EQUALITY.has(n.text))) return null;
+    const other = operands.find((n) => n.id !== stringNode.id);
+    return other ? singleName(other, table) : null;
+  }
+
+  // The value half of `df.filter(region="EU")`. The name half is a column site;
+  // this is the other one — unless the method spells a column with that keyword,
+  // as `filter(items=…)` does, in which case the value really is a name.
+  if (parent?.type === 'keyword_argument' &&
+      parent.childForFieldName('value')?.id === stringNode.id) {
+    const list = parent.parent;
+    const call = list?.type === 'argument_list' ? list.parent : null;
+    const fn = call?.type === 'call' ? call.childForFieldName('function') : null;
+    if (fn?.type !== 'attribute') return null;
+    const method = fn.childForFieldName('attribute')?.text;
+    const spec = method ? FRAME_METHODS[method] : undefined;
+    if (!spec?.constraintKeywords) return null;
+    const keyword = parent.childForFieldName('name')?.text ?? null;
+    if (!keyword || spec.kwargs?.includes(keyword)) return null;
+    return keyword;
+  }
+
+  // `.is_in(["EU"])` and `.eq("EU")`. The argument walk already knows how to see
+  // through a list, so it does the walking.
+  const site = findArgumentPosition(stringNode);
+  if (!site || site.position.kind !== 'positional') return null;
+  const fn = site.call.childForFieldName('function');
+  if (fn?.type !== 'attribute') return null;
+  const method = fn.childForFieldName('attribute')?.text;
+  if (!method || !VALUE_METHODS.has(method)) return null;
+  const receiver = fn.childForFieldName('object');
+  return receiver ? singleName(receiver, table) : null;
+}
+
+/** The one column an expression names, or null when it names none or several. */
+function singleName(node: Node, table: BindingTable): string | null {
+  const names = exprNames(node, table);
+  return names.kind === 'names' && names.names.length === 1 ? names.names[0] : null;
 }
 
 /**

@@ -72,6 +72,11 @@ export class ColumnHoverProvider implements vscode.HoverProvider {
       return new vscode.Hover(md, range);
     }
 
+    // `pl.col("region") == "EU"` — "EU" is a value, and this hover describes
+    // columns. Looking it up would find nothing anyway; saying so outright is
+    // what keeps it from finding a column that happens to share the spelling.
+    if (resolution.valueSite) return undefined;
+
     // Inside a fragment — a SQL statement, a selector prefix — the range covers
     // the one identifier under the cursor rather than the whole string, so this
     // is the same lookup as anywhere else.
