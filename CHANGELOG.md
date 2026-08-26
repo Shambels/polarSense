@@ -27,6 +27,35 @@
   Every colour is a VS Code theme variable, so this follows the editor's theme
   rather than picking greys that are wrong in half of them.
 
+- **The grid says what kind of column each one is, in colour.** A dtype is
+  reduced to the family that matters — text, whole numbers, fractions, flags,
+  points in time, things with a shape inside them — and that family colours the
+  dtype under the column name and washes the column itself at about 6% opacity.
+  Reading across forty columns is mostly asking "what kind of thing is this",
+  and a colour answers faster than the name does. A null cell takes no wash, so
+  an empty cell is the one thing on the row that is not tinted. The colours are
+  the theme's own chart colours, which is what keeps them legible in themes
+  nobody here has seen; a dtype not recognised gets no colour rather than a
+  guessed one. The details panel colours its Type column from the same rule —
+  computed in the host and sent, so the page holds no copy of it.
+
+- **Pagination reads as position rather than as a sentence.** The pager says
+  `↑ 100–199 ↓` and `‹ 1–8 ›`: the range you are looking at, and nothing else.
+  How many rows and columns the file holds is a fact about the file and the
+  header already said it, twice over. Rows page with up and down, which is the
+  direction they actually move.
+
+- **The next page is also at the edge you ran out of data at.** When the grid
+  is scrolled to its bottom and there are more rows, an arrow appears there;
+  the same at the top, and at either side for columns. They show only when both
+  things are true — you are at that edge *and* there is more that way — so an
+  arrow is an offer rather than furniture floating over the data.
+
+- **The path is a different colour from the numbers under it.** It answers a
+  different question (where the data is, not what is in it) and now looks like
+  it. The column headers and the row index have a background of their own,
+  which is what stops a wide table reading as one undifferentiated sheet.
+
 ## 1.6.0
 
 ### Added

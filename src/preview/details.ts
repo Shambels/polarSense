@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'node:path';
 import type { Column } from '../core/types.js';
 import type { PolarSenseApi, ResolvedFrame } from '../api.js';
-import { escape, fmt, frameFacts, frameNotes, PANEL_CSS } from './facts.js';
+import { dtypeClass, escape, fmt, frameFacts, frameNotes, PANEL_CSS } from './facts.js';
 import { cursorTarget, NO_PYTHON, type FrameTarget } from './target.js';
 
 /**
@@ -106,7 +106,9 @@ ${frame.columns.map((column) => row(column, hasDtype, hasStats)).join('\n')}
 function row(column: Column, hasDtype: boolean, hasStats: boolean): string {
   const [nulls, min, max] = statOf(column);
   const cells = [`<td class="name">${escape(column.name)}</td>`];
-  if (hasDtype) cells.push(`<td class="dtype">${escape(column.dtype)}</td>`);
+  if (hasDtype) {
+    cells.push(`<td class="dtype ${dtypeClass(column.dtype)}">${escape(column.dtype)}</td>`);
+  }
   if (hasStats) {
     cells.push(`<td class="num">${cell(nulls)}</td>`);
     cells.push(`<td class="value">${cell(min)}</td>`);
