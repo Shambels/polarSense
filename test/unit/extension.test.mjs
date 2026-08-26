@@ -2,7 +2,8 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import * as path from 'node:path';
 import { createRequire } from 'node:module';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import {
   makeVscode, installVscodeStub, makeDocument, noCancel, setSetting, unregisterSetting
@@ -902,4 +903,99 @@ test('the API says nothing where there is no frame', async () => {
     await resolveFrame('import polars as pl\nd|f = pl.scan_parquet("missing.parquet")\n'),
     undefined
   );
+});
+
+/**
+ * The details panel, driven the way the palette drives it: a cursor in an open
+ * editor, and whatever the command put in the webview afterwards.
+ */
+async function details(marked, fileDir = DATA) {
+  const { document, position } = makeDocument(marked, path.join(fileDir, 'script.py'));
+  vscode.workspace.textDocuments.push(document);
+  vscode.window.activeTextEditor = { document, selection: { active: position } };
+  vscode._registered.info = undefined;
+  try {
+    await vscode._registered.commands.get('polarsense.showDetails')();
+    const panel = vscode._registered.webviews.at(-1);
+    return { html: panel?.webview.html ?? '', panel, message: vscode._registered.info };
+  } finally {
+    vscode.workspace.textDocuments.length = 0;
+    vscode.window.activeTextEditor = undefined;
+  }
+}
+
+test('the details panel lists every column with the statistics the footer held', async () => {
+  const { html, panel } = await details(
+    'import polars as pl\nd|f = pl.scan_parquet("sales.parquet")\n'
+  );
+  assert.equal(panel.title, 'sales.parquet');
+  // Beside, and without taking focus: it is read while typing continues.
+  assert.deepEqual(panel.revealed, { column: vscode.ViewColumn.Beside, preserveFocus: true });
+  assert.match(html, /<td class="name">region<\/td>/);
+  assert.match(html, /<td class="dtype">f64<\/td>/);
+  // Nothing on this page runs: a column name comes out of a data file.
+  assert.equal(panel.options.enableScripts, false);
+  assert.doesNotMatch(html, /<script/);
+});
+
+test('the panel names the file and what the footer says about it', async () => {
+  const { html } = await details(
+    'import polars as pl\nd|f = pl.scan_parquet("sales.parquet")\n'
+  );
+  assert.match(html, /sales\.parquet/);
+  assert.match(html, /<li>\d+ rows<\/li>/);
+  assert.match(html, /<li>9 columns<\/li>/);
+  assert.match(html, /<li>1 row group<\/li>/);
+  assert.match(html, /<li>zstd<\/li>/);
+  assert.match(html, /<li>[\d.]+ (B|KB|MB)<\/li>/);
+});
+
+test('a statistic the writer did not record is blank, not zero', async () => {
+  // A CSV has no footer at all, so the panel is a list of names and says so by
+  // having no columns to say it in — the one thing it must not do is print 0.
+  const { html } = await details('import polars as pl\nd|f = pl.read_csv("sales.csv")\n');
+  assert.match(html, /<td class="name">is_active<\/td>/);
+  assert.doesNotMatch(html, /<th>Nulls<\/th>/);
+  assert.doesNotMatch(html, /<td class="num">0<\/td>/);
+});
+
+test('a transformed frame says the numbers are the file’s, not the frame’s', async () => {
+  const { html } = await details(
+    'import polars as pl\n' +
+    'df = pl.scan_parquet("sales.parquet")\n' +
+    'out = df.select("region", "units").filter(pl.col("units") > 1)\n' +
+    'print(ou|t)\n'
+  );
+  assert.match(html, /<td class="name">region<\/td>/);
+  assert.doesNotMatch(html, /<td class="name">revenue<\/td>/);
+  assert.match(html, /transforms not applied/);
+  assert.match(html, /nothing here applies the transforms/);
+});
+
+test('an unmodelled reshape is shown as approximate', async () => {
+  const { html } = await details(
+    'import polars as pl\n' +
+    'df = pl.read_parquet("sales.parquet")\n' +
+    'wide = df.pivot(on="region", index="units")\n' +
+    'print(wid|e)\n'
+  );
+  assert.match(html, /approximate/);
+});
+
+test('a column name out of a data file cannot carry markup into the panel', async () => {
+  // The names on this page are written by whoever wrote the file. Scripts are
+  // off, but an unescaped `<` would still wreck the table it sits in.
+  const dir = mkdtempSync(path.join(tmpdir(), 'polarsense-'));
+  writeFileSync(path.join(dir, 'evil.csv'), '<script>x</script>,a & b\n1,2\n');
+  const { html } = await details('import polars as pl\nd|f = pl.read_csv("evil.csv")\n', dir);
+  assert.match(html, /&lt;script&gt;x&lt;\/script&gt;/);
+  assert.match(html, /a &amp; b/);
+  assert.doesNotMatch(html, /<script>/);
+});
+
+test('the panel is not opened where there is no frame at the cursor', async () => {
+  const before = vscode._registered.webviews.length;
+  const { message } = await details('import polars as pl\ntot|al = 1 + 2\n');
+  assert.equal(vscode._registered.webviews.length, before, 'a panel was opened anyway');
+  assert.match(message ?? '', /no frame at the cursor/);
 });

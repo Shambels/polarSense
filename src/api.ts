@@ -23,6 +23,14 @@ export interface ResolvedFrame {
   /** Rows in the *file*, when the format records it — see `transformed`. */
   rowCount?: number;
   /**
+   * What the file's own metadata says about the file rather than its columns:
+   * its size, and for parquet the row groups and the codec they are written
+   * with. All of it came out of the read the schema already paid for.
+   */
+  sizeBytes?: number;
+  rowGroups?: number;
+  compression?: string;
+  /**
    * False when a transform on the way here could not be modelled, so `columns`
    * is a best guess. Anything shown from an uncertain answer should say so.
    */
@@ -102,6 +110,9 @@ export function createApi(
         kind: found.source.kind,
         columns: evaluated?.columns ?? primary.schema.columns,
         rowCount: primary.schema.rowCount,
+        sizeBytes: primary.schema.sizeBytes,
+        rowGroups: primary.schema.rowGroups,
+        compression: primary.schema.compression,
         certain: evaluated ? evaluated.certain : true,
         transformed: !!found.frame && found.frame.kind !== 'source',
         symbol: found.source.symbol

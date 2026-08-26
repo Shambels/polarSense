@@ -87,7 +87,7 @@ const noopEvent = () => ({ dispose() {} });
 export function makeVscode(settings = {}, workspaceFolders = []) {
   const registered = {
     providers: [], linkProviders: [], hoverProviders: [], codeActionProviders: [],
-    diagnostics: null, commands: new Map(), configHandlers: [],
+    diagnostics: null, commands: new Map(), configHandlers: [], webviews: [],
     // Keys VS Code's configuration registry does not hold in this window. The
     // manifest declares every setting, so this is empty until a test says
     // otherwise — see unregisterSetting.
@@ -125,6 +125,7 @@ export function makeVscode(settings = {}, workspaceFolders = []) {
     CompletionItemKind: { Field: 4 },
     NotebookCellKind: { Markup: 1, Code: 2 },
     StatusBarAlignment: { Left: 1, Right: 2 },
+    ViewColumn: { Active: -1, Beside: -2, One: 1 },
     Uri: {
       file: (p) => ({ scheme: 'file', fsPath: p, path: p, toString: () => `file://${p}` }),
       parse: (u) => ({ scheme: u.split(':')[0], fsPath: u, path: u, toString: () => u })
@@ -134,7 +135,20 @@ export function makeVscode(settings = {}, workspaceFolders = []) {
       createOutputChannel: () => ({ appendLine() {}, show() {}, dispose() {} }),
       createStatusBarItem: () => ({ show() {}, hide() {}, dispose() {}, text: '', tooltip: '' }),
       showErrorMessage: (m) => { registered.error = m; },
-      showInformationMessage: () => {},
+      showInformationMessage: (m) => { registered.info = m; },
+      // Enough of a webview to see what the extension put in it: the panel is
+      // reused across calls in the real editor too, so the tests reuse one.
+      createWebviewPanel: (viewType, title, showOptions, options) => {
+        const panel = {
+          viewType, title, showOptions, options,
+          webview: { html: '' },
+          reveal: (column, preserveFocus) => { panel.revealed = { column, preserveFocus }; },
+          onDidDispose: () => ({ dispose() {} }),
+          dispose() {}
+        };
+        registered.webviews.push(panel);
+        return panel;
+      },
       onDidChangeActiveTextEditor: noopEvent
     },
     workspace: {

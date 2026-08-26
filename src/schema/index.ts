@@ -130,11 +130,15 @@ export class SchemaService {
 
     let columns: Column[];
     let rowCount: number | undefined;
+    let rowGroups: number | undefined;
+    let compression: string | undefined;
     switch (source.kind) {
       case 'parquet': {
         const result = await readParquetSchema(storage, resolved.uri);
         columns = result.columns;
         rowCount = result.rowCount;
+        rowGroups = result.rowGroups;
+        compression = result.compression;
         break;
       }
       case 'csv':
@@ -172,7 +176,11 @@ export class SchemaService {
       columns = columns.slice(0, this.options.maxColumns);
     }
 
-    const schema: Schema = { columns, rowCount, origin: resolved.uri };
+    // The stat this already did for the cache key is also the file size, so
+    // saying how big the file is costs nothing extra.
+    const schema: Schema = {
+      columns, rowCount, origin: resolved.uri, sizeBytes: info?.size, rowGroups, compression
+    };
     this.touch(cacheKey, { key: cacheKey, schema });
     return { schema, uri: resolved.uri, cacheKey };
   }

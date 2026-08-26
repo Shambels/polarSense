@@ -69,6 +69,10 @@
       {
         "command": "polarsense.showSchema",
         "title": "PolarSense: Show schema"
+      },
+      {
+        "command": "polarsense.showDetails",
+        "title": "PolarSense: Show details"
       }
     ],
     "configuration": {
