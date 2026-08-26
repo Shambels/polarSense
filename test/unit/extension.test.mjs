@@ -4,7 +4,9 @@ import * as path from 'node:path';
 import { createRequire } from 'node:module';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { makeVscode, installVscodeStub, makeDocument, noCancel } from '../vscode-stub.mjs';
+import {
+  makeVscode, installVscodeStub, makeDocument, noCancel, setSetting
+} from '../vscode-stub.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const DATA = path.join(ROOT, 'test', 'fixtures', 'data');
@@ -653,3 +655,108 @@ test('a dict key is never flagged as a bad column', async () => {
   );
   assert.deepEqual(items, []);
 });
+
+// --- values: the one feature that reads data, and only when asked ---
+
+async function withValues(fn) {
+  setSetting(vscode, 'values.enable', true);
+  try {
+    return await fn();
+  } finally {
+    setSetting(vscode, 'values.enable', false);
+  }
+}
+
+const VALUES_PY = 'import polars as pl\ndf = pl.scan_parquet("values.parquet")\n';
+
+test('values are not read until the setting says so', async () => {
+  // And nothing else is offered in their place: a column name is never what
+  // belongs on the right of an `==`.
+  const result = await complete(`${VALUES_PY}df.filter(pl.col("region") == "|")\n`);
+  assert.equal(result, undefined);
+});
+
+test('with the setting on, a comparison offers the column\'s real values', async () => {
+  const result = await withValues(() =>
+    complete(`${VALUES_PY}df.filter(pl.col("region") == "|")\n`)
+  );
+  assert.deepEqual(result.items.map((i) => i.label), ['US', 'EU', 'APAC']);
+  assert.equal(result.items[0].detail, 'value');
+});
+
+test('a constraint keyword takes values on its right-hand side', async () => {
+  const result = await withValues(() =>
+    complete(`${VALUES_PY}df.filter(region="|")\n`)
+  );
+  assert.deepEqual(result.items.map((i) => i.label), ['US', 'EU', 'APAC']);
+});
+
+test('is_in offers values inside the list', async () => {
+  const result = await withValues(() =>
+    complete(`${VALUES_PY}df.filter(pl.col("region").is_in(["EU", "|"]))\n`)
+  );
+  assert.deepEqual(result.items.map((i) => i.label), ['US', 'EU', 'APAC']);
+});
+
+test('a high-cardinality column offers nothing at all', async () => {
+  const result = await withValues(() =>
+    complete(`${VALUES_PY}df.filter(pl.col("order_id") == "|")\n`)
+  );
+  assert.equal(result, undefined);
+});
+
+test('a column whose values are not strings offers nothing', async () => {
+  const result = await withValues(() =>
+    complete(`${VALUES_PY}df.filter(pl.col("revenue") == "|")\n`)
+  );
+  assert.equal(result, undefined);
+});
+
+test('a column renamed on the way here has no values in the file', async () => {
+  // The frame calls it `r`; the file has never heard of it. Offering `region`'s
+  // values under the new name would be inventing the join between them.
+  const result = await withValues(() =>
+    complete(`${VALUES_PY}df.rename({"region": "r"}).filter(pl.col("r") == "|")\n`)
+  );
+  assert.equal(result, undefined);
+});
+
+test('hive partition values come from the directory names, complete', async () => {
+  const result = await withValues(() =>
+    complete('import polars as pl\ndf = pl.scan_parquet("hive")\ndf.filter(pl.col("region") == "|")\n')
+  );
+  assert.deepEqual(result.items.map((i) => i.label), ['EU', 'US']);
+  // Not a sample: the partitioning is the whole list of values.
+  assert.equal(result.items[0].detail, 'value');
+});
+
+test('a sampled list says so, on the item the user is looking at', async () => {
+  // The first ten rows of values.parquet are all APAC. Offering that as if it
+  // were the column would be the feature lying; the detail is where it owns up.
+  setSetting(vscode, 'values.maxRows', 10);
+  try {
+    const result = await withValues(() =>
+      complete(`${VALUES_PY}df.filter(pl.col("region") == "|")\n`)
+    );
+    assert.deepEqual(result.items.map((i) => i.label), ['APAC']);
+    assert.equal(result.items[0].detail, 'value (sampled)');
+    assert.match(result.items[0].documentation.value, /first 10 rows/);
+  } finally {
+    setSetting(vscode, 'values.maxRows', 10000);
+  }
+});
+
+test('a value is never warned about as an unknown column', async () => {
+  const { items } = await withValues(() =>
+    diagnose(`${VALUES_PY}df.filter(pl.col("region") == "nope")\n`)
+  );
+  assert.deepEqual(items, []);
+});
+
+test('hovering a value says nothing about columns', async () => {
+  const result = await withValues(() =>
+    hover(`${VALUES_PY}df.filter(pl.col("region") == "U|S")\n`)
+  );
+  assert.equal(result, undefined);
+});
+

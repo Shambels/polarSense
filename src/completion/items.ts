@@ -46,6 +46,36 @@ function item(
   return entry;
 }
 
+
+/**
+ * Values of one column, most common first. These are marked `Value` rather than
+ * `Field` so the icon says at a glance that this is data out of the file, not a
+ * name out of its schema — and a sampled list says so in the detail, where the
+ * user can see it before picking.
+ */
+export function buildValueItems(
+  values: string[],
+  ctx: { range: vscode.Range; origin: string; column: string; complete: boolean; rows: number }
+): vscode.CompletionItem[] {
+  const origin = path.basename(ctx.origin);
+  return values.map((value, index) => {
+    const entry = new vscode.CompletionItem(value, vscode.CompletionItemKind.Value);
+    entry.detail = ctx.complete ? 'value' : 'value (sampled)';
+    entry.documentation = new vscode.MarkdownString(
+      ctx.complete
+        ? `Value of \`${ctx.column}\` in \`${origin}\`\n\nEvery value the column takes.`
+        : `Value of \`${ctx.column}\` in \`${origin}\`\n\n_Read from the first ${ctx.rows.toLocaleString('en-US')} rows, so the column may hold others._`
+    );
+    entry.range = ctx.range;
+    entry.filterText = value;
+    entry.insertText = value;
+    // Frequency order, and above nothing else: these only appear where a column
+    // name never can, so there is nothing to outrank.
+    entry.sortText = String(index).padStart(6, '0');
+    return entry;
+  });
+}
+
 /**
  * Data files and folders for a reader's path argument. Only the segment after the
  * last slash is replaced, so completing `data/sa` leaves `data/` alone — the same

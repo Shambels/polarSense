@@ -101,6 +101,9 @@ export class ColumnDiagnostics {
       if (!resolution.source || resolution.contentEnd <= resolution.contentStart) continue;
       // `cs.starts_with("reg")` holds a fragment, not a name that must exist.
       if (resolution.partial) continue;
+      // `pl.col("region") == "EU"` — "EU" is data. Checking it against the
+      // column names would warn about every value anyone ever filters on.
+      if (resolution.valueSite) continue;
 
       const name = assembled.source.slice(resolution.contentStart, resolution.contentEnd);
       if (!name) continue;

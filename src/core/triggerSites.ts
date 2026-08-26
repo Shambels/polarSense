@@ -116,6 +116,13 @@ export const FRAME_METHODS: Record<string, ArgSpec> = {
  */
 export const FRAGMENT_METHODS = new Set(['query', 'project', 'order', 'aggregate']);
 
+/**
+ * Expression methods whose argument is a *value* of the column they are called
+ * on rather than a name — `pl.col("region").is_in(["EU"])`. Comparison operators
+ * do the same job and are handled in the resolver, where the syntax lives.
+ */
+export const VALUE_METHODS = new Set(['is_in', 'eq', 'ne', 'eq_missing', 'ne_missing']);
+
 /** Keywords that take a *different* frame's columns than the receiver. */
 export const RIGHT_FRAME_KWARGS = new Set(['right_on', 'by_right']);
 

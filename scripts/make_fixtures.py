@@ -151,6 +151,26 @@ def write_ipc(df: pl.DataFrame) -> None:
     ).write_ipc(DATA / "arrow_types.arrow")
 
 
+def write_values() -> None:
+    """A frame built for value completion, and for its silences.
+
+    `region` has three values in deliberately uneven counts, so the offer being
+    in frequency order is distinguishable from alphabetical and from first-seen.
+    `order_id` has two hundred, which is over any sensible cap. `revenue` is not
+    a string and `empty` is nothing but nulls: both are cases where the answer
+    has to be no answer.
+    """
+    n = 200
+    pl.DataFrame(
+        {
+            "region": ["APAC"] * 40 + ["EU"] * 60 + ["US"] * 100,
+            "order_id": [f"ord-{i:04d}" for i in range(n)],
+            "revenue": [float(i) for i in range(n)],
+            "empty": pl.Series([None] * n, dtype=pl.String),
+        }
+    ).write_parquet(DATA / "values.parquet")
+
+
 def write_delta() -> None:
     """A minimal but protocol-shaped _delta_log."""
     table = DATA / "delta_sales"
@@ -257,6 +277,53 @@ def write_delta_checkpoint() -> None:
     )
 
 
+def write_delta_checkpoint_zstd() -> None:
+    """The same shape, compressed the way polars and modern delta-rs write.
+
+    zstd is polars' default, and reading a page of it is what `fzstd` is in the
+    dependency list for. Kept beside the snappy fixture rather than replacing it:
+    snappy is what Spark writes, and both have to keep working.
+    """
+    log = DATA / "delta_checkpoint_zstd" / "_delta_log"
+    log.mkdir(parents=True, exist_ok=True)
+    schema = {
+        "type": "struct",
+        "fields": [
+            {"name": "region", "type": "string", "nullable": True, "metadata": {}},
+            {"name": "zstd_only", "type": "double", "nullable": True, "metadata": {}},
+        ],
+    }
+    meta = pl.Struct(
+        [
+            pl.Field("id", pl.String),
+            pl.Field("schemaString", pl.String),
+            pl.Field("createdTime", pl.Int64),
+        ]
+    )
+    add = pl.Struct([pl.Field("path", pl.String), pl.Field("size", pl.Int64)])
+    pl.DataFrame(
+        {
+            "metaData": pl.Series(
+                [
+                    None,
+                    {
+                        "id": "z0000000-0000-4000-8000-000000000000",
+                        "schemaString": json.dumps(schema),
+                        "createdTime": 1_767_000_000_000,
+                    },
+                    None,
+                ],
+                dtype=meta,
+            ),
+            "add": pl.Series(
+                [None, None, {"path": "part-0.parquet", "size": 1}], dtype=add
+            ),
+        }
+    ).write_parquet(
+        log / "00000000000000000002.checkpoint.parquet", compression="zstd"
+    )
+
+
 def write_iceberg() -> None:
     table = DATA / "iceberg_sales"
     meta = table / "metadata"
@@ -329,8 +396,10 @@ def main() -> None:
     write_csv(df)
     write_nested()
     write_ipc(df)
+    write_values()
     write_delta()
     write_delta_checkpoint()
+    write_delta_checkpoint_zstd()
     write_iceberg()
     write_perf()
     write_expected(df)

@@ -6,7 +6,8 @@ import * as os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import {
   readParquetSchema, readCsvSchema, readIpcSchema, readDeltaSchema, readIcebergSchema,
-  checkpointFiles, localStorage, resolvePath, hiveColumns, completeDataPaths
+  readParquetValues, SchemaService, checkpointFiles, localStorage, resolvePath, hiveColumns,
+  hiveValues, completeDataPaths
 } from '../harness.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -175,6 +176,127 @@ test('ipc: a truncated file reports nothing rather than throwing', async () => {
   }
 });
 
+// --- values: the one reader that reads data rather than metadata ---
+
+const VALUES = path.join(DATA, 'values.parquet');
+const VALUE_OPTS = { maxRows: 10_000, maxDistinct: 50 };
+
+test('values: a low-cardinality column gives its values, most common first', async () => {
+  // values.parquet is zstd, which is what polars writes unless told otherwise —
+  // so this test is also the one that would fail if the decompressor went away.
+  // 100 US, 60 EU, 40 APAC — an order that is neither alphabetical nor the
+  // order they first appear in, so the sort is doing something.
+  const found = await readParquetValues(localStorage, VALUES, 'region', VALUE_OPTS);
+  assert.deepEqual(found.values, ['US', 'EU', 'APAC']);
+  assert.equal(found.complete, true, '200 rows of 200 read is the whole column');
+});
+
+test('values: past the cap the answer is nothing, not a truncated list', async () => {
+  // order_id has 200 distinct values. Half a list of ids is worse than no list:
+  // it reads as "these are the values" when it is "these are some of them".
+  const found = await readParquetValues(localStorage, VALUES, 'order_id', VALUE_OPTS);
+  assert.equal(found, null);
+});
+
+test('values: the cap is a limit on distinct values, not on rows', async () => {
+  const found = await readParquetValues(
+    localStorage, VALUES, 'region', { ...VALUE_OPTS, maxDistinct: 3 }
+  );
+  assert.equal(found.values.length, 3, 'exactly at the cap is still an answer');
+  assert.equal(
+    await readParquetValues(localStorage, VALUES, 'region', { ...VALUE_OPTS, maxDistinct: 2 }),
+    null
+  );
+});
+
+test('values: a partial read says so', async () => {
+  // The first ten rows are all APAC, which is exactly the point — a head sample
+  // of a sorted column is not the column, and `complete` is how anyone knows.
+  const found = await readParquetValues(localStorage, VALUES, 'region', {
+    ...VALUE_OPTS, maxRows: 10
+  });
+  assert.deepEqual(found.values, ['APAC']);
+  assert.equal(found.complete, false);
+});
+
+test('values: a column that is not strings gives nothing', async () => {
+  // What gets inserted goes inside quotes, so a float would be the wrong literal.
+  assert.equal(await readParquetValues(localStorage, VALUES, 'revenue', VALUE_OPTS), null);
+});
+
+test('values: a column of nulls gives nothing rather than an empty list', async () => {
+  assert.equal(await readParquetValues(localStorage, VALUES, 'empty', VALUE_OPTS), null);
+});
+
+test('values: a column that is not there gives nothing rather than throwing', async () => {
+  assert.equal(await readParquetValues(localStorage, VALUES, 'nope', VALUE_OPTS), null);
+});
+
+test('hive values: the directory names are the whole domain', async () => {
+  // No data is read at all here — the partitioning *is* the list of values, so
+  // unlike a parquet read this can never be a sample.
+  const found = await hiveValues(path.join(DATA, 'hive'), 'region', 50);
+  assert.deepEqual(found, ['EU', 'US']);
+});
+
+test('hive values: a column that partitions nothing gives nothing', async () => {
+  assert.equal(await hiveValues(path.join(DATA, 'hive'), 'revenue', 50), null);
+});
+
+test('hive values: too many partitions is a silence too', async () => {
+  assert.equal(await hiveValues(path.join(DATA, 'hive'), 'region', 1), null);
+});
+
+test('paths: a hive directory remembers the root its partitions came from', async () => {
+  const ctx = { documentDir: DATA, workspaceDirs: [], extraRoots: [] };
+  const resolved = await resolvePath({ kind: 'parquet', path: 'hive', kwargs: {} }, ctx);
+  assert.equal(resolved.hiveRoot, path.join(DATA, 'hive'));
+  const plain = await resolvePath({ kind: 'parquet', path: 'sales.parquet', kwargs: {} }, ctx);
+  assert.equal(plain.hiveRoot, undefined);
+});
+
+
+// --- the service around the value reader: the gate, and reading once ---
+
+function valueService(over = {}) {
+  return new SchemaService({
+    cacheSize: 10, maxColumns: 5000, httpsEnabled: false,
+    csvSniffBytes: 262144, csvInferDtypes: false,
+    valuesEnabled: true, valueMaxRows: 10_000, valueMaxDistinct: 50, ...over
+  });
+}
+
+const VALUE_CTX = { documentDir: DATA, workspaceDirs: [], extraRoots: [] };
+const VALUE_SOURCE = { kind: 'parquet', path: 'values.parquet', kwargs: {} };
+
+test('service: with the setting off, nothing reads the data at all', async () => {
+  const service = valueService({ valuesEnabled: false });
+  assert.equal(await service.values(VALUE_SOURCE, VALUE_CTX, 'region'), null);
+});
+
+test('service: concurrent asks for one column share a single read', async () => {
+  // Typing inside the string re-asks per keystroke. Identical results by
+  // identity is the proof that only one read produced them.
+  const service = valueService();
+  const [a, b, c] = await Promise.all([
+    service.values(VALUE_SOURCE, VALUE_CTX, 'region'),
+    service.values(VALUE_SOURCE, VALUE_CTX, 'region'),
+    service.values(VALUE_SOURCE, VALUE_CTX, 'region')
+  ]);
+  assert.deepEqual(a.values, ['US', 'EU', 'APAC']);
+  assert.equal(a, b);
+  assert.equal(b, c);
+  // And the answer is remembered, so a later ask is the same object again.
+  assert.equal(await service.values(VALUE_SOURCE, VALUE_CTX, 'region'), a);
+});
+
+test('service: "there is no answer" is remembered too', async () => {
+  const service = valueService();
+  assert.equal(await service.values(VALUE_SOURCE, VALUE_CTX, 'order_id'), null);
+  assert.equal(await service.values(VALUE_SOURCE, VALUE_CTX, 'order_id'), null);
+});
+
+
 test('delta: walks the log backwards to the newest metaData', async () => {
   const columns = await readDeltaSchema(localStorage, path.join(DATA, 'delta_sales'));
   assert.deepEqual(
@@ -235,6 +357,14 @@ test('delta: nothing that only looks like a checkpoint is read', () => {
     checkpointFiles(['00000000000000000010.checkpoint.abc-def.json']),
     []
   );
+});
+
+test('delta: a zstd checkpoint reads, which it did not before fzstd', async () => {
+  // Reading a checkpoint is one of the two places a parquet *page* is
+  // decompressed rather than a footer read. polars and modern delta-rs write
+  // zstd by default, and this used to be the case that reported nothing.
+  const columns = await readDeltaSchema(localStorage, path.join(DATA, 'delta_checkpoint_zstd'));
+  assert.deepEqual(columns.map((c) => c.name), ['region', 'zstd_only']);
 });
 
 test('delta: a directory that is not a table reports nothing', async () => {

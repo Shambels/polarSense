@@ -116,6 +116,22 @@
           "default": 200,
           "description": "Number of file schemas held in memory."
         },
+        "polarsense.values.enable": {
+          "type": "boolean",
+          "default": false,
+          "description": "Offer real values from your data where a column is compared against one — pl.col(\"region\") == \"…\". This is the one feature that reads the rows of a file rather than only its metadata: it reads a single column of the first values.maxRows rows of the parquet file behind the frame. Off by default so nothing reads your data unasked.",
+          "scope": "machine"
+        },
+        "polarsense.values.maxRows": {
+          "type": "number",
+          "default": 10000,
+          "description": "How many rows of one column to read when offering values. Parquet is columnar, so this reads that column alone rather than the whole file. Values found in fewer rows than the file holds are marked as a sample."
+        },
+        "polarsense.values.maxDistinct": {
+          "type": "number",
+          "default": 50,
+          "description": "Above this many distinct values, offer none at all. A hundred of four million order ids is not a completion list, and the columns worth completing are the ones with few enough values to show."
+        },
         "polarsense.diagnostics.enable": {
           "type": "boolean",
           "default": true,
@@ -141,6 +157,7 @@
     "package": "npm run build && npx --yes @vscode/vsce package --no-dependencies && node scripts/check-vsix.mjs"
   },
   "dependencies": {
+    "fzstd": "0.1.1",
     "hyparquet": "1.29.1",
     "web-tree-sitter": "0.25.10"
   },

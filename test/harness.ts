@@ -11,8 +11,10 @@ export {
   readDeltaSchema, checkpointFiles, parseDeltaSchemaString
 } from '../src/schema/delta.js';
 export { readIcebergSchema, parseIcebergMetadata } from '../src/schema/iceberg.js';
+export { readParquetValues } from '../src/schema/values.js';
+export { SchemaService } from '../src/schema/index.js';
 export { localStorage } from '../src/storage/local.js';
-export { resolvePath, hiveColumns, completeDataPaths } from '../src/paths.js';
+export { resolvePath, hiveColumns, hiveValues, completeDataPaths } from '../src/paths.js';
 export { EXPR_FUNCS, FRAME_METHODS, FRAGMENT_METHODS } from '../src/core/triggerSites.js';
 export {
   dataPathInSql, sqlSource, sqlTables, sqlColumnPosition, SQL_FUNCS
