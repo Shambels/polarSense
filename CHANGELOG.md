@@ -1,5 +1,39 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **`activate()` returns an API, so another extension can ask which file a frame
+  reads.** `exports.resolveFrameAt(uri, position)` answers with the resolved
+  file, its format, the columns that exist at that position with whatever
+  statistics the file's own metadata gave up, and the file's row count — the
+  same resolution the completions run on, handed out instead of kept. Two flags
+  come with it and are the point of the shape: `certain` is false when a
+  transform could not be modelled, and `transformed` says the frame is the
+  source with a filter or a select applied, so anything reading rows from `uri`
+  is reading the file rather than the frame and has to say so.
+
+  This is step 1 of `docs/roadmap-v2.html`: the data viewer needs exactly this
+  answer, and exporting it now means the viewer can move into its own extension
+  as a packaging change rather than a rewrite. Nothing calls it yet, and the
+  extension behaves identically without a caller.
+
+  It deliberately does not read rows, does not open a document that is not
+  already open unless VS Code can, and returns `undefined` — never a partial
+  answer — where there is no frame, no file, or no readable schema. `activate()`
+  itself returns `undefined` when the parser failed to start, so a caller checks
+  once rather than per call.
+
+### Internal
+
+- **`frameAtOffset` resolves the frame a cursor is *on*.** The existing
+  resolver answers "what column name belongs in this string", which is the wrong
+  question for a viewer: the cursor is on `df`, not inside a column. The new
+  entry point walks out from the cursor to the widest expression that still
+  resolves, which also means `df.filter(...).select(...)` comes back with its
+  transform chain rather than as the bare file it started from.
+
 ## 1.2.1
 
 ### Added

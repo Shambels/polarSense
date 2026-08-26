@@ -15,12 +15,13 @@ const require = createRequire(import.meta.url);
 let provider;
 let restore;
 let vscode;
+let api;
 
 before(async () => {
   vscode = makeVscode({}, [{ uri: { scheme: 'file', fsPath: ROOT } }]);
   restore = installVscodeStub(vscode);
   const extension = require(path.join(ROOT, 'dist', 'extension.js'));
-  await extension.activate({ extensionPath: ROOT, subscriptions: [] });
+  api = await extension.activate({ extensionPath: ROOT, subscriptions: [] });
   assert.equal(vscode._registered.error, undefined, 'activation reported an error');
   provider = vscode._registered.providers[0]?.provider;
   assert.ok(provider, 'no completion provider was registered');
@@ -823,3 +824,82 @@ test('hovering a value says nothing about columns', async () => {
   assert.equal(result, undefined);
 });
 
+
+/**
+ * The exported API, driven the way another extension would drive it: a uri and
+ * a position, with the document open in the window as it always is when someone
+ * is looking at it.
+ */
+async function resolveFrame(marked, fileDir = DATA) {
+  const { document, position } = makeDocument(marked, path.join(fileDir, 'script.py'));
+  vscode.workspace.textDocuments.push(document);
+  try {
+    return await api.resolveFrameAt(document.uri, position);
+  } finally {
+    vscode.workspace.textDocuments.length = 0;
+  }
+}
+
+test('activate() returns the resolver as an API object', () => {
+  assert.equal(api?.version, 1);
+  assert.equal(typeof api.resolveFrameAt, 'function');
+});
+
+test('the API resolves the frame under the cursor to its file and columns', async () => {
+  const frame = await resolveFrame(
+    'import polars as pl\nd|f = pl.scan_parquet("sales.parquet")\n'
+  );
+  assert.equal(frame.uri, path.join(DATA, 'sales.parquet'));
+  assert.equal(frame.kind, 'parquet');
+  assert.equal(frame.symbol, 'df');
+  assert.deepEqual(frame.columns.map((c) => c.name).slice(0, 2), ['region', 'revenue']);
+  assert.equal(frame.certain, true);
+  assert.equal(frame.transformed, false);
+  assert.ok(frame.rowCount > 0);
+});
+
+test('the API answers with the columns at the cursor, and says they were narrowed', async () => {
+  // A viewer showing this frame is showing the file, not the select — which is
+  // the thing it has to admit in its header, so the flag has to reach it.
+  const frame = await resolveFrame(
+    'import polars as pl\n' +
+    'df = pl.scan_parquet("sales.parquet")\n' +
+    'out = df.select("region", "units").filter(pl.col("units") > 1)\n' +
+    'print(ou|t)\n'
+  );
+  assert.deepEqual(frame.columns.map((c) => c.name), ['region', 'units']);
+  assert.equal(frame.transformed, true);
+  assert.equal(frame.certain, true);
+  assert.equal(frame.uri, path.join(DATA, 'sales.parquet'));
+});
+
+test('the API carries the statistics the file already gave up', async () => {
+  const frame = await resolveFrame(
+    'import polars as pl\nd|f = pl.scan_parquet("sales.parquet")\n'
+  );
+  const revenue = frame.columns.find((c) => c.name === 'revenue');
+  assert.equal(revenue.dtype, 'f64');
+  assert.equal(typeof revenue.stats.nullCount, 'number');
+});
+
+test('an unmodelled reshape reaches the API as an uncertain answer', async () => {
+  const frame = await resolveFrame(
+    'import polars as pl\n' +
+    'df = pl.read_parquet("sales.parquet")\n' +
+    'wide = df.pivot(on="region", index="units")\n' +
+    'print(wid|e)\n'
+  );
+  assert.equal(frame.certain, false);
+});
+
+test('the API says nothing where there is no frame', async () => {
+  assert.equal(
+    await resolveFrame('import polars as pl\ntot|al = 1 + 2\n'),
+    undefined
+  );
+  // A frame whose file is not there is a "no", not a schema-less answer.
+  assert.equal(
+    await resolveFrame('import polars as pl\nd|f = pl.scan_parquet("missing.parquet")\n'),
+    undefined
+  );
+});
