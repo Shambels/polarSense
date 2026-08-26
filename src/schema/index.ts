@@ -6,6 +6,8 @@ import { readIpcSchema } from './ipc.js';
 import { readCsvSchema } from './csv.js';
 import { readDeltaSchema } from './delta.js';
 import { readIcebergSchema } from './iceberg.js';
+import { readJsonSchema } from './json.js';
+import { readExcelSchema } from './excel.js';
 import { readParquetValues, type ValueSet } from './values.js';
 
 export interface SchemaServiceOptions {
@@ -149,6 +151,14 @@ export class SchemaService {
         break;
       case 'iceberg':
         columns = await readIcebergSchema(storage, resolved.uri);
+        break;
+      case 'json':
+        // Same prefix read as CSV, and the same setting bounds it — one knob for
+        // "how much of a text file is worth reading to find its shape".
+        columns = await readJsonSchema(resolved.uri, this.options.csvSniffBytes);
+        break;
+      case 'excel':
+        columns = await readExcelSchema(storage, resolved.uri);
         break;
     }
 

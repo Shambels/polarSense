@@ -1,6 +1,6 @@
 /** Bundled entry point for the unit tests: everything that does not touch vscode. */
 export { initParser, parse, repairAtCursor } from '../src/core/parser.js';
-export { buildBindingTable, readImports } from '../src/core/bindings.js';
+export { buildBindingTable, readImports, SOURCE_FUNCS } from '../src/core/bindings.js';
 export { ModuleGraph, moduleCandidates } from '../src/core/modules.js';
 export { resolveAtOffset } from '../src/core/resolve.js';
 export { constEval, collectConstants } from '../src/core/constEval.js';
@@ -11,6 +11,8 @@ export {
   readDeltaSchema, checkpointFiles, parseDeltaSchemaString
 } from '../src/schema/delta.js';
 export { readIcebergSchema, parseIcebergMetadata } from '../src/schema/iceberg.js';
+export { readJsonSchema } from '../src/schema/json.js';
+export { readExcelSchema } from '../src/schema/excel.js';
 export { readParquetValues } from '../src/schema/values.js';
 export { SchemaService } from '../src/schema/index.js';
 export { localStorage } from '../src/storage/local.js';

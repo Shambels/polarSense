@@ -153,15 +153,15 @@
 <div class="wrap">
 
   <header style="display:flex;flex-direction:column;gap:1.1rem">
-    <p class="eyebrow">Roadmap · PolarSense · updated 25 Aug 2026</p>
+    <p class="eyebrow">Roadmap · PolarSense · updated 26 Aug 2026</p>
     <h1>What PolarSense doesn't do yet</h1>
     <p class="lede">Everything the build plan scoped but v1 didn't ship, every limitation that was a deliberate trade, and the features worth adding that weren't in the plan at all — with what has since been built marked <span class="tick">shipped</span>.</p>
 
     <div class="score">
-      <div class="hi"><b>19</b><span>shipped</span></div>
+      <div class="hi"><b>20</b><span>shipped</span></div>
       <div><b>3</b><span>remaining</span></div>
       <div><b>1</b><span>blocked on a decision</span></div>
-      <div><b>508</b><span>tests</span></div>
+      <div><b>523</b><span>tests</span></div>
     </div>
 
     <p class="lede" style="font-size:.95rem;color:var(--muted)">Effort figures are focused working days. <strong>Impact</strong> is my read on how many users would notice, not how interesting the work is.</p>
@@ -300,6 +300,16 @@ def report(df):  # polarsense: data/sales.parquet</code></pre>
 
       <div class="item">
         <div class="body">
+          <h3><code>sheet_name=</code> in read_excel <span class="where">src/schema/excel.ts</span></h3>
+          <p>The Excel reader opens <code>xl/worksheets/sheet1.xml</code> and nothing else, so <code>pl.read_excel("book.xlsx", sheet_name="Q2")</code> answers with the columns of whichever sheet happens to be first. It is the one place in the extension that confidently shows the wrong schema rather than none — everywhere else an unreadable frame goes quiet, and this cannot, because it does not yet know it was asked for something different.</p>
+          <p>Two halves, neither hard. The call site drops the argument before the reader ever sees it: <code>sheet_name</code> and <code>sheet_id</code> are not in <code>KEPT_KWARGS</code>, so they need adding there first. Then <code>xl/workbook.xml</code> lists the sheets in workbook order with their names and relationship ids, and <code>xl/_rels/workbook.xml.rels</code> maps an id to the part it lives in — two more members out of a zip that is already open, and a lookup.</p>
+          <p>Worth doing for the sheet nobody asked about, too. <code>sheet1.xml</code> is the <em>part name</em>, not the position: a workbook whose sheets have been reordered can have its second tab stored there, so today's "first sheet" is right by convention rather than by reading. The same <code>workbook.xml</code> walk that answers <code>sheet_name=</code> is what makes the default correct instead of merely usual.</p>
+        </div>
+        <div class="chips"><span class="chip med">impact med</span><span class="chip">0.5 d</span></div>
+      </div>
+
+      <div class="item">
+        <div class="body">
           <h3>Glob schema union, and hive dtypes</h3>
           <p>Two small honesty gaps. A multi-file glob reads the first match and assumes the rest agree; a heterogeneous set silently shows the wrong columns. And hive partition columns are always reported as <code>str</code>, where polars infers <code>i64</code> for <code>year=2026</code>.</p>
         </div>
@@ -401,12 +411,15 @@ def report(df):  # polarsense: data/sales.parquet</code></pre>
         <div class="chips"><span class="chip">1–2 d</span></div>
       </div>
 
-      <div class="item">
+      <div class="item shipped">
         <div class="body">
-          <h3>NDJSON, JSON and Excel</h3>
-          <p><code>scan_ndjson</code> infers from the first line; <code>read_json</code> from the first object; <code>read_excel</code> needs a zip + XML read of the first sheet row. Each is small on its own.</p>
+          <h3>NDJSON, JSON and Excel <span class="tick">shipped</span> <span class="where">src/schema/json.ts · excel.ts</span></h3>
+          <p>Where the entry was wrong: this is <em>two</em> readers, not three. The shapes polars accepts — an array of row objects, newline-delimited objects, a single object — are all top-level <code>{…}</code> runs in order, so none of them has to be told apart from the others. One brace-depth scanner that ignores braces inside strings reads all three, over the same bounded prefix <code>csv.sniffBytes</code> already governs, and an object the read cut in half is dropped rather than ending the scan.</p>
+          <p>"The first line" and "the first object" were both wrong too, in the same way the glob entry is wrong. polars unions keys across rows, so this samples fifty: a key absent from row one is still a column, and the first row holding a non-null value for a key is what decides its dtype. A key that is null throughout gets a blank, which is the CSV inference default arriving at the same answer by the same reasoning. Nested objects keep their fields, so <code>.struct.field("…")</code> answers for them as it does for parquet.</p>
+          <p>Excel cost no dependency, which the estimate did not expect. <code>.xlsx</code> is a zip of XML and node's <code>inflateRawSync</code> decodes the one method a spreadsheet writer ever uses, so the header row is a central-directory read and two regexes — <em>central</em> directory, not a scan of local headers, because a streamed member writes its size after the data rather than in front of it. The detail worth having is that a skipped cell is named rather than closed up: Excel omits an empty cell entirely, and closing the gap would shift every column after it under its neighbour's name.</p>
+          <p>Still not done: <code>sheet_name=</code>. It reads <code>sheet1.xml</code>, which is what polars, pandas and Excel all write first, and mapping a name to a sheet means <code>workbook.xml</code> plus its relationships — additive, and not worth it until someone asks. <code>.xls</code> is OLE2 wearing a similar extension and reports nothing.</p>
         </div>
-        <div class="chips"><span class="chip">impact low</span><span class="chip">1 d</span></div>
+        <div class="chips"><span class="chip">1 d</span></div>
       </div>
 
       <div class="item shipped">
@@ -454,7 +467,7 @@ def report(df):  # polarsense: data/sales.parquet</code></pre>
   </section>
 
   <footer>
-    <p>PolarSense · 19 of 22 shipped · 508 tests · companion to docs/build-plan.html</p>
+    <p>PolarSense · 20 of 23 shipped · 523 tests · companion to docs/build-plan.html and docs/roadmap-v2.html</p>
   </footer>
 
 </div>

@@ -6,8 +6,9 @@ import * as os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import {
   readParquetSchema, readCsvSchema, readIpcSchema, readDeltaSchema, readIcebergSchema,
+  readJsonSchema, readExcelSchema,
   readParquetValues, SchemaService, checkpointFiles, localStorage, resolvePath, hiveColumns,
-  hiveValues, completeDataPaths
+  hiveValues, completeDataPaths, SOURCE_FUNCS
 } from '../harness.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -497,4 +498,134 @@ test('parquet: int64 statistics survive the BigInt round trip', async () => {
 test('csv columns carry no statistics — the format has none to give', async () => {
   const columns = await readCsvSchema(path.join(DATA, 'sales.csv'), {}, CSV_OPTS);
   assert.ok(columns.every((c) => c.stats === undefined));
+});
+
+
+// ---- NDJSON, JSON and Excel ----------------------------------------------
+
+const SNIFF = 262144;
+
+test('ndjson: dtypes come from the values, not from a string match', async () => {
+  const columns = await readJsonSchema(path.join(DATA, 'sales.ndjson'), SNIFF);
+  const byName = Object.fromEntries(columns.map((c) => [c.name, c.dtype]));
+  assert.equal(byName.region, 'str');
+  assert.equal(byName.revenue, 'f64');
+  assert.equal(byName.units, 'i64');
+  assert.equal(byName.is_active, 'bool');
+  assert.equal(byName.tags, 'list[str]');
+});
+
+test('ndjson: a key that is null in every row gets a blank dtype, not a guess', async () => {
+  const columns = await readJsonSchema(path.join(DATA, 'sales.ndjson'), SNIFF);
+  assert.equal(columns.find((c) => c.name === 'notes').dtype, '');
+});
+
+test('ndjson: a key absent from the first row is still a column', async () => {
+  const columns = await readJsonSchema(path.join(DATA, 'sales.ndjson'), SNIFF);
+  assert.ok(columns.some((c) => c.name === 'late_key'));
+  // ...and the keys that were there keep their original order.
+  assert.equal(columns[0].name, 'region');
+});
+
+test('ndjson: an int column widens to f64 when a later row is fractional', async () => {
+  const columns = await readJsonSchema(path.join(DATA, 'sales.ndjson'), SNIFF);
+  assert.equal(columns.find((c) => c.name === 'mixed').dtype, 'f64');
+});
+
+test('json: an array of objects reads the same as newline-delimited', async () => {
+  const array = await readJsonSchema(path.join(DATA, 'sales.json'), SNIFF);
+  const lines = await readJsonSchema(path.join(DATA, 'sales.ndjson'), SNIFF);
+  assert.deepEqual(array.map((c) => c.name), lines.map((c) => c.name));
+});
+
+test('json: a nested object keeps its own fields', async () => {
+  const columns = await readJsonSchema(path.join(DATA, 'nested.ndjson'), SNIFF);
+  const address = columns.find((c) => c.name === 'address');
+  assert.equal(address.dtype, 'struct[2]');
+  assert.deepEqual(address.fields.map((f) => f.name), ['city', 'geo']);
+  assert.deepEqual(
+    address.fields.find((f) => f.name === 'geo').fields.map((f) => f.name),
+    ['lat', 'lon']
+  );
+  assert.equal(columns.find((c) => c.name === 'scores').dtype, 'list[i64]');
+});
+
+test('json: a brace inside a string does not end the object', async () => {
+  const file = path.join(os.tmpdir(), `polarsense-brace-${process.pid}.ndjson`);
+  writeFileSync(file, '{"note": "a } and a { in here", "n": 1}\n');
+  try {
+    const columns = await readJsonSchema(file, SNIFF);
+    assert.deepEqual(columns.map((c) => c.name), ['note', 'n']);
+  } finally {
+    rmSync(file, { force: true });
+  }
+});
+
+test('json: an object the prefix read cut in half is dropped, not fatal', async () => {
+  const file = path.join(os.tmpdir(), `polarsense-cut-${process.pid}.ndjson`);
+  writeFileSync(file, '{"a": 1, "b": 2}\n{"a": 3, "c": ');
+  try {
+    const columns = await readJsonSchema(file, SNIFF);
+    assert.deepEqual(columns.map((c) => c.name), ['a', 'b']);
+  } finally {
+    rmSync(file, { force: true });
+  }
+});
+
+test('json: a file with no objects in it reports nothing', async () => {
+  const file = path.join(os.tmpdir(), `polarsense-scalars-${process.pid}.json`);
+  writeFileSync(file, '[1, 2, 3]');
+  try {
+    assert.deepEqual(await readJsonSchema(file, SNIFF), []);
+  } finally {
+    rmSync(file, { force: true });
+  }
+});
+
+test('excel: the header row is the schema, through the shared string table', async () => {
+  const columns = await readExcelSchema(localStorage, path.join(DATA, 'sales.xlsx'));
+  assert.equal(columns[0].name, 'region');
+  assert.equal(columns[1].name, 'revenue');
+});
+
+test('excel: a skipped cell is named rather than closed up', async () => {
+  const columns = await readExcelSchema(localStorage, path.join(DATA, 'sales.xlsx'));
+  // A1, B1, then D1 — so C is a hole, and "Q1 & Q2" must stay in fourth place.
+  assert.equal(columns.length, 4);
+  assert.equal(columns[2].name, 'column_3');
+  assert.equal(columns[3].name, 'Q1 & Q2');
+});
+
+test('excel: a file that is not a zip reports nothing rather than throwing', async () => {
+  const file = path.join(os.tmpdir(), `polarsense-notzip-${process.pid}.xlsx`);
+  writeFileSync(file, 'this is not a spreadsheet');
+  try {
+    assert.deepEqual(await readExcelSchema(localStorage, file), []);
+  } finally {
+    rmSync(file, { force: true });
+  }
+});
+
+test('service: the new kinds are wired all the way through', async () => {
+  // The readers above are called directly; this is the proof that the switch in
+  // SchemaService, and the extension table that produces the kind, agree.
+  const service = valueService();
+  const ctx = { documentDir: DATA, workspaceDirs: [], extraRoots: [] };
+
+  const json = await service.get({ kind: 'json', path: 'sales.ndjson', kwargs: {} }, ctx);
+  assert.equal(json.error, undefined);
+  assert.equal(json.schema.columns[0].name, 'region');
+
+  const excel = await service.get({ kind: 'excel', path: 'sales.xlsx', kwargs: {} }, ctx);
+  assert.equal(excel.error, undefined);
+  assert.equal(excel.schema.columns[0].name, 'region');
+});
+
+test('service: read_json and read_excel resolve to the right kind', async () => {
+  // SOURCE_FUNCS is what turns the call at the cursor into a kind, so a name
+  // missing from it means the reader above is never reached.
+  assert.equal(SOURCE_FUNCS.read_json, 'json');
+  assert.equal(SOURCE_FUNCS.scan_ndjson, 'json');
+  assert.equal(SOURCE_FUNCS.read_ndjson, 'json');
+  assert.equal(SOURCE_FUNCS.read_excel, 'excel');
 });

@@ -1,5 +1,39 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **NDJSON, JSON and Excel are read now.** `scan_ndjson`, `read_ndjson`,
+  `read_json` and `read_excel` join the reader table, so a frame built from one
+  of them completes its column names like any other.
+
+  The JSON side turned out to be one reader rather than three. The shapes polars
+  accepts — an array of row objects, newline-delimited objects, a single object —
+  are all just top-level `{…}` runs in order, so nothing has to be sniffed or
+  told apart: a brace-depth scanner that ignores braces inside strings walks the
+  same bounded prefix `csv.sniffBytes` already governs, and an object the read
+  cut in half is dropped rather than ending the scan. Fifty objects are sampled,
+  not one, because polars unions keys across rows and so must this — a key absent
+  from the first row is still a column, and the first row with a non-null value
+  for a key is what decides its dtype. Nested objects keep their own fields, so
+  `.struct.field("…")` answers for them the way it does for parquet.
+
+  Excel needed no dependency, which was the surprise. `.xlsx` is a zip of XML and
+  node's own `inflateRawSync` decodes the one method a spreadsheet writer ever
+  uses, so the header row is a central-directory read and two regexes. Shared
+  strings are resolved, rich-text runs are joined, and a skipped cell is *named*
+  rather than closed up — Excel omits an empty cell entirely, and closing the gap
+  would quietly shift every column after it under its neighbour's name.
+
+  What they deliberately do not do: Excel reads `sheet1.xml` and nothing else, so
+  `sheet_name=` is not honoured yet, and `.xls` — OLE2, a different format
+  wearing a similar extension — reports nothing rather than guessing at its
+  bytes. A JSON number reads as `i64` unless a sampled row is fractional, since
+  `1.0` and `1` are the same value once parsed. Excel columns carry no dtype at
+  all, on the same grounds CSV inference is off by default: a blank is better
+  than a guess shown as fact. Values stay parquet-only.
+
 ## 1.1.0
 
 ### Added

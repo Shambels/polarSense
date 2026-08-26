@@ -168,6 +168,8 @@ function extensionFor(kind: SourceRef['kind']): string[] {
     case 'parquet': return ['.parquet', '.pq'];
     case 'csv': return ['.csv', '.tsv', '.txt'];
     case 'ipc': return ['.arrow', '.ipc', '.feather'];
+    case 'json': return ['.json', '.ndjson', '.jsonl'];
+    case 'excel': return ['.xlsx', '.xlsm'];
     default: return [];
   }
 }

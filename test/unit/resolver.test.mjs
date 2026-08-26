@@ -324,3 +324,23 @@ test('whole-name selector sites are not partial', async () => {
     assert.equal(res.partial, undefined, `${method} names a column outright`);
   }
 });
+
+/**
+ * The reader table is what turns a call into a kind, so a name missing from it
+ * means the format's reader is never reached however well it works on its own.
+ */
+test('the JSON and Excel readers name their format', async () => {
+  for (const [call, file, kind] of [
+    ['scan_ndjson', 'a.ndjson', 'json'],
+    ['read_ndjson', 'a.ndjson', 'json'],
+    ['read_json', 'a.json', 'json'],
+    ['read_excel', 'a.xlsx', 'excel']
+  ]) {
+    const res = await resolveMarked(
+      `import polars as pl\ndf = pl.${call}("${file}")\ndf.select(pl.col("|"))`,
+      ROOT
+    );
+    assert.equal(res.source?.kind, kind, call);
+    assert.equal(res.source?.path, file, call);
+  }
+});
