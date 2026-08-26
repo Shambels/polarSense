@@ -344,3 +344,22 @@ test('the JSON and Excel readers name their format', async () => {
     assert.equal(res.source?.path, file, call);
   }
 });
+
+/**
+ * `KEPT_KWARGS` is what carries a call-site argument through to the reader.
+ * Without an entry there the argument is silently dropped and every reader test
+ * still passes, which is exactly the kind of gap this corpus is for.
+ */
+test('read_excel carries sheet_name= and sheet_id= to the reader', async () => {
+  const named = await resolveMarked(
+    'import polars as pl\ndf = pl.read_excel("b.xlsx", sheet_name="Q2")\ndf.select(pl.col("|"))',
+    ROOT
+  );
+  assert.equal(named.source?.kwargs.sheet_name, 'Q2');
+
+  const numbered = await resolveMarked(
+    'import polars as pl\ndf = pl.read_excel("b.xlsx", sheet_id=2)\ndf.select(pl.col("|"))',
+    ROOT
+  );
+  assert.equal(numbered.source?.kwargs.sheet_id, 2);
+});

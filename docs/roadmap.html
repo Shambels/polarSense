@@ -158,10 +158,10 @@
     <p class="lede">Everything the build plan scoped but v1 didn't ship, every limitation that was a deliberate trade, and the features worth adding that weren't in the plan at all — with what has since been built marked <span class="tick">shipped</span>.</p>
 
     <div class="score">
-      <div class="hi"><b>20</b><span>shipped</span></div>
-      <div><b>3</b><span>remaining</span></div>
+      <div class="hi"><b>21</b><span>shipped</span></div>
+      <div><b>2</b><span>remaining</span></div>
       <div><b>1</b><span>blocked on a decision</span></div>
-      <div><b>523</b><span>tests</span></div>
+      <div><b>529</b><span>tests</span></div>
     </div>
 
     <p class="lede" style="font-size:.95rem;color:var(--muted)">Effort figures are focused working days. <strong>Impact</strong> is my read on how many users would notice, not how interesting the work is.</p>
@@ -298,14 +298,15 @@ def report(df):  # polarsense: data/sales.parquet</code></pre>
         <div class="chips"><span class="chip">1 d</span></div>
       </div>
 
-      <div class="item">
+      <div class="item shipped">
         <div class="body">
-          <h3><code>sheet_name=</code> in read_excel <span class="where">src/schema/excel.ts</span></h3>
-          <p>The Excel reader opens <code>xl/worksheets/sheet1.xml</code> and nothing else, so <code>pl.read_excel("book.xlsx", sheet_name="Q2")</code> answers with the columns of whichever sheet happens to be first. It is the one place in the extension that confidently shows the wrong schema rather than none — everywhere else an unreadable frame goes quiet, and this cannot, because it does not yet know it was asked for something different.</p>
-          <p>Two halves, neither hard. The call site drops the argument before the reader ever sees it: <code>sheet_name</code> and <code>sheet_id</code> are not in <code>KEPT_KWARGS</code>, so they need adding there first. Then <code>xl/workbook.xml</code> lists the sheets in workbook order with their names and relationship ids, and <code>xl/_rels/workbook.xml.rels</code> maps an id to the part it lives in — two more members out of a zip that is already open, and a lookup.</p>
-          <p>Worth doing for the sheet nobody asked about, too. <code>sheet1.xml</code> is the <em>part name</em>, not the position: a workbook whose sheets have been reordered can have its second tab stored there, so today's "first sheet" is right by convention rather than by reading. The same <code>workbook.xml</code> walk that answers <code>sheet_name=</code> is what makes the default correct instead of merely usual.</p>
+          <h3><code>sheet_name=</code> in read_excel <span class="tick">shipped</span> <span class="where">src/schema/excel.ts · core/bindings.ts</span></h3>
+          <p>Both halves, as scoped. <code>sheet_name</code> and <code>sheet_id</code> joined <code>KEPT_KWARGS</code> so the argument survives the call site at all — without that entry the reader is never told, and every reader test passes anyway, which is why the corpus case for it lives in <code>resolver.test.mjs</code> rather than beside the reader. Then <code>xl/workbook.xml</code> gives the tabs in tab order with a relationship id each, and <code>xl/_rels/workbook.xml.rels</code> says which part an id lives in.</p>
+          <p>The dialect split was the one thing the entry did not mention. polars spells the position <code>sheet_id</code> and counts from one; pandas overloads <code>sheet_name</code>, where a number is a position counted from zero. Both reach the same reader, so both are understood — three lines, and without them <code>pd.read_excel(…, sheet_name=1)</code> would have looked for a tab named "1".</p>
+          <p>What made it worth more than the convenience: the default moved too. Asking for nothing now means the first <em>tab</em> rather than the part called <code>sheet1.xml</code>, and the fixture pins the difference — a workbook whose first tab is stored in <code>sheet3.xml</code>, which the old reader would have answered wrongly and silently.</p>
+          <p>The fallback went the other way from the plan. There is no longer a "if the workbook cannot be read, use sheet1.xml" branch: a sheet asked for by name and not found, or a workbook with no readable parts list, now reports nothing. Guessing a part name was the one place this reader could be confidently wrong rather than quiet, which is not the trade the rest of the extension makes.</p>
         </div>
-        <div class="chips"><span class="chip med">impact med</span><span class="chip">0.5 d</span></div>
+        <div class="chips"><span class="chip">0.5 d</span></div>
       </div>
 
       <div class="item">
@@ -467,7 +468,7 @@ def report(df):  # polarsense: data/sales.parquet</code></pre>
   </section>
 
   <footer>
-    <p>PolarSense · 20 of 23 shipped · 523 tests · companion to docs/build-plan.html and docs/roadmap-v2.html</p>
+    <p>PolarSense · 21 of 23 shipped · 529 tests · companion to docs/build-plan.html and docs/roadmap-v2.html</p>
   </footer>
 
 </div>

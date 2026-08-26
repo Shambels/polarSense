@@ -1,5 +1,5 @@
 import { inflateRawSync } from 'node:zlib';
-import type { Column } from '../core/types.js';
+import type { Column, SourceRef } from '../core/types.js';
 import type { Storage } from '../storage/index.js';
 
 /**
@@ -17,7 +17,18 @@ interface ZipEntry {
   localOffset: number;
 }
 
-export async function readExcelSchema(storage: Storage, uri: string): Promise<Column[]> {
+/** One entry of `xl/workbook.xml`: a tab, in tab order. */
+interface SheetRef {
+  name: string;
+  /** Relationship id, which is the only thing that says which part holds it. */
+  rid: string;
+}
+
+export async function readExcelSchema(
+  storage: Storage,
+  uri: string,
+  kwargs: SourceRef['kwargs']
+): Promise<Column[]> {
   // ponytail: reads the whole workbook. The central directory lives at the end
   // and the sheet is somewhere in the middle, so a ranged read would be two
   // round trips for a file that is already compressed — revisit if a large
@@ -25,10 +36,9 @@ export async function readExcelSchema(storage: Storage, uri: string): Promise<Co
   const bytes = await storage.readAll(uri);
   const zip = readZip(bytes);
 
-  // ponytail: first sheet only, and sheet1.xml rather than whatever workbook.xml
-  // orders first. Right for everything polars, pandas and Excel write; add the
-  // workbook.xml lookup the day `sheet_name=` needs to be honoured.
-  const sheet = zip.get('xl/worksheets/sheet1.xml');
+  const part = sheetPart(bytes, zip, kwargs);
+  if (!part) return [];
+  const sheet = zip.get(part);
   if (!sheet) return [];
 
   const row = firstRow(readEntry(bytes, sheet));
@@ -37,6 +47,66 @@ export async function readExcelSchema(storage: Storage, uri: string): Promise<Co
   const table = zip.get('xl/sharedStrings.xml');
   const strings = table ? sharedStrings(readEntry(bytes, table)) : [];
   return headerColumns(row, strings);
+}
+
+/**
+ * Which worksheet part to open.
+ *
+ * Never `sheet1.xml` by assumption: that is a *part name*, not a position, and a
+ * workbook whose tabs have been reordered can keep its first tab in sheet3.xml.
+ * The workbook lists its sheets in tab order carrying a relationship id each,
+ * and the rels file says which part an id lives in — so the same two reads that
+ * make `sheet_name=` answerable are what make the default correct rather than
+ * merely usual.
+ *
+ * A workbook that names no sheets, or a name that is not in it, returns null:
+ * showing sheet one's columns for a sheet that was asked for by name is the one
+ * way this reader could be confidently wrong.
+ */
+function sheetPart(
+  bytes: Uint8Array,
+  zip: Map<string, ZipEntry>,
+  kwargs: SourceRef['kwargs']
+): string | null {
+  const book = zip.get('xl/workbook.xml');
+  const rels = zip.get('xl/_rels/workbook.xml.rels');
+  if (!book || !rels) return null;
+
+  const sheets: SheetRef[] = [...readEntry(bytes, book).matchAll(/<sheet\b([^>]*)>/g)]
+    .map((match) => ({
+      name: unescapeXml(/\bname="([^"]*)"/.exec(match[1])?.[1] ?? ''),
+      // The relationship prefix is `r` by convention but is only bound in the
+      // root element, so any prefix is matched — and the value pins it down.
+      rid: /\s(?:[\w]+:)?id="(rId\d+)"/i.exec(match[1])?.[1] ?? ''
+    }));
+
+  const wanted = pickSheet(sheets, kwargs);
+  if (!wanted?.rid) return null;
+
+  const targets = new Map(
+    [...readEntry(bytes, rels).matchAll(/<Relationship\b([^>]*)>/g)].map((match): [string, string] => [
+      /\bId="([^"]*)"/.exec(match[1])?.[1] ?? '',
+      /\bTarget="([^"]*)"/.exec(match[1])?.[1] ?? ''
+    ])
+  );
+  const target = targets.get(wanted.rid);
+  if (!target) return null;
+
+  // A target is relative to the part that declared it — `xl/` — unless it is
+  // written from the package root, which some writers do.
+  return target.startsWith('/') ? target.slice(1) : `xl/${target}`;
+}
+
+function pickSheet(sheets: SheetRef[], kwargs: SourceRef['kwargs']): SheetRef | null {
+  const name = kwargs.sheet_name;
+  const id = kwargs.sheet_id;
+
+  if (typeof name === 'string') return sheets.find((sheet) => sheet.name === name) ?? null;
+  // pandas overloads `sheet_name`: a number there is a position, counted from
+  // zero. polars spells the position `sheet_id` and counts it from one.
+  if (typeof name === 'number') return sheets[name] ?? null;
+  if (typeof id === 'number') return sheets[id - 1] ?? null;
+  return sheets[0] ?? null;
 }
 
 /** Entries by name, read from the central directory rather than by scanning. */
