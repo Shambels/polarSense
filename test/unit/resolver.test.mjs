@@ -253,6 +253,13 @@ const VALUE_SITES = [
   ['is_in list', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.filter(pl.col("region").is_in(["|"]))`, 'region'],
   ['is_in, second element', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.filter(pl.col("region").is_in(["EU", "|"]))`, 'region'],
   ['eq method', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.filter(pl.col("region").eq("|"))`, 'region'],
+  ['str.contains', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.filter(pl.col("region").str.contains("|"))`, 'region'],
+  ['str.contains, half typed', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.filter(pl.col("region").str.contains("sou|"))`, 'region'],
+  ['str.starts_with', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.filter(pl.col("region").str.starts_with("|"))`, 'region'],
+  ['str.ends_with', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.filter(pl.col("region").str.ends_with("|"))`, 'region'],
+  ['str.contains_any list', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.filter(pl.col("region").str.contains_any(["EU", "|"]))`, 'region'],
+  ['list.contains', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.filter(pl.col("region").list.contains("|"))`, 'region'],
+  ['contains inside with_columns', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.with_columns(pl.col("region").str.contains("|").alias("hit"))`, 'region'],
   ['constraint keyword value', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.filter(region="|")`, 'region'],
   ['remove takes constraints too', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.remove(region="|")`, 'region'],
   ['half-typed value', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.filter(pl.col("region") == "E|")`, 'region'],
@@ -275,7 +282,13 @@ const NOT_VALUE_SITES = [
   ['a computed column name has no single column', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.filter(pl.col(name) == "|")`],
   ['two columns compared', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.filter(pl.col("region") == pl.col("|"))`],
   ['a path argument is not a value', `${HEAD}pl.read_parquet("|")`],
-  ['a rename target is neither', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.rename({"region": "|"})`]
+  ['a rename target is neither', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.rename({"region": "|"})`],
+  // `cs.contains` shares its name with `str.contains` and means the opposite:
+  // a fragment of a column *name*. The receiver decides, and `cs` names no column.
+  ['cs.contains is a name fragment', `${CS}df = pl.scan_parquet("a.parquet")\ndf.select(cs.contains("|"))`],
+  ['cs.starts_with is a name fragment', `${CS}df = pl.scan_parquet("a.parquet")\ndf.select(cs.starts_with("|"))`],
+  ['contains on a frame we cannot name a column of', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.filter(pl.col(name).str.contains("|"))`],
+  ['contains outside any frame method', `${HEAD}e = pl.col("region").str.contains("|")`]
 ];
 
 for (const [name, snippet] of NOT_VALUE_SITES) {

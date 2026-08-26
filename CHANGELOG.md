@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **The string-matching methods take values now, not just `==`.** Value
+  completion answered on `== "…"`, `!=`, `.is_in([…])`, `.eq`/`.ne` and a
+  constraint keyword; `df.filter(pl.col("region").str.contains("␣"))` — the way
+  most people actually reach for a value — was silent. It now offers the
+  column's values, as do `.str.starts_with`, `.str.ends_with`,
+  `.str.contains_any`, `.str.find` and `.list.contains`. The change is one
+  longer set in `triggerSites.ts`: the value table is keyed by method name like
+  every other trigger row, and `.str`/`.list` were already namespaces the name
+  walk passes through, so the receiver still has to resolve to a single column
+  of a file we can read.
+
+  That receiver is also what keeps `cs.contains("reg")` working as before —
+  the same method name means the opposite thing there, a fragment of a column
+  *name*, and `cs` names no column, so that site is untouched.
+
+  What it deliberately does not do: escape anything. `contains`, `contains_any`
+  and `find` match a regex unless `literal=True` is passed, so a value holding
+  `.` or `(` is offered as a pattern that will mean something else once
+  inserted — a starting point to trim rather than a finished argument. The list
+  is not filtered to values that would still match what you have typed either,
+  and, as everywhere else in value completion, nothing checks the result: a
+  value site is never typo-checked and never hovered.
+
 ## 1.0.3
 
 ### Fixed
