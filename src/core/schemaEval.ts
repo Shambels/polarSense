@@ -146,6 +146,34 @@ function applyTransform(
         certain: input.certain
       };
 
+    case 'transpose':
+      // `column_names` names every column of the result, so the answer is exact
+      // even when the input was not: the input's columns have become rows, and
+      // what they were called no longer bears on what comes out.
+      return { columns: op.names.map((name) => ({ name, dtype: '' })), certain: true };
+
+    case 'unnest': {
+      const wanted = new Set(op.names);
+      const columns: Column[] = [];
+      let certain = input.certain;
+      for (const column of input.columns) {
+        if (!wanted.delete(column.name)) { columns.push(column); continue; }
+        // A struct whose fields were never read: keep the column itself and
+        // admit the guess, rather than drop it and hide what it stood for.
+        if (!column.fields?.length) { certain = false; columns.push(column); continue; }
+        columns.push(...column.fields);
+      }
+      // A name that is not in the frame at all means we read the call wrongly.
+      if (wanted.size) certain = false;
+      return { columns, certain };
+    }
+
+    case 'unpivot': {
+      const columns = op.index.map(keep);
+      columns.push({ name: op.variableName, dtype: 'str' }, { name: op.valueName, dtype: '' });
+      return { columns, certain: input.certain };
+    }
+
     case 'group_by':
       // The frame handed to `.agg(…)` still has every column of its input; the
       // narrowing happens in agg, not here.

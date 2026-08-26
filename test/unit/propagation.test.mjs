@@ -17,6 +17,13 @@ const TYPED_COLUMNS = [
   { name: 'units', dtype: 'i64' },
   { name: 'order_date', dtype: 'date' }
 ];
+/** A source with a struct column, for the unnest cases. */
+const STRUCT_COLUMNS = [
+  { name: 'id', dtype: 'i64' },
+  { name: 'addr', dtype: 'struct', fields: [
+    { name: 'city', dtype: 'str' }, { name: 'zip', dtype: 'str' }
+  ] }
+];
 
 /** Evaluate the frame at the cursor against a fixed three-column source. */
 async function columnsAt(marked, columns = SOURCE_COLUMNS) {
@@ -51,7 +58,15 @@ const CASES = [
   ['cs.by_name with a list', `${CS}n = df.select(cs.by_name(["b"]))\nn.select("|")`, ['b'], true],
   ['cs.exclude', `${CS}n = df.select(cs.exclude("b"))\nn.select("|")`, ['a', 'c'], true],
   ['cs.all', `${CS}n = df.select(cs.all())\nn.select("|")`, ['a', 'b', 'c'], true],
-  ['a bare selector import', `import polars as pl\nfrom polars.selectors import by_name\ndf = pl.scan_parquet("a.parquet")\nn = df.select(by_name("a"))\nn.select("|")`, ['a'], true]
+  ['a bare selector import', `import polars as pl\nfrom polars.selectors import by_name\ndf = pl.scan_parquet("a.parquet")\nn = df.select(by_name("a"))\nn.select("|")`, ['a'], true],
+  ['transpose names its own columns', `${HEAD}n = df.transpose(column_names=["x", "y"])\nn.select("|")`, ['x', 'y'], true],
+  ['transpose with a header column', `${HEAD}n = df.transpose(include_header=True, column_names=["x"])\nn.select("|")`, ['column', 'x'], true],
+  ['transpose with a named header column', `${HEAD}n = df.transpose(include_header=True, header_name="k", column_names=["x"])\nn.select("|")`, ['k', 'x'], true],
+  ['explode keeps the column name', `${HEAD}n = df.explode("a")\nn.select("|")`, ['a', 'b', 'c'], true],
+  ['null_count keeps every column', `${HEAD}n = df.null_count()\nn.select("|")`, ['a', 'b', 'c'], true],
+  ['unpivot keeps the index columns', `${HEAD}n = df.unpivot(index=["a"])\nn.select("|")`, ['a', 'variable', 'value'], true],
+  ['unpivot without an index', `${HEAD}n = df.unpivot(on=["a", "b"])\nn.select("|")`, ['variable', 'value'], true],
+  ['unpivot with its names given', `${HEAD}n = df.unpivot(index=["a"], variable_name="k", value_name="v")\nn.select("|")`, ['a', 'k', 'v'], true]
 ];
 
 for (const [name, snippet, expected, certain] of CASES) {
@@ -72,7 +87,8 @@ const PANDAS_CASES = [
   ['drop columns=', `${PANDAS}n = df.drop(columns=["b"])\nn.groupby("|")`, ['a', 'c'], true],
   ['assign', `${PANDAS}n = df.assign(total=1)\nn.groupby("|")`, ['a', 'b', 'c', 'total'], true],
   ['identity methods', `${PANDAS}n = df.dropna().sort_values("a").head(3)\nn.groupby("|")`, ['a', 'b', 'c'], true],
-  ['a single column stays the frame', `${PANDAS}n = df[["a"]]\nn.groupby("|")`, ['a'], true]
+  ['a single column stays the frame', `${PANDAS}n = df[["a"]]\nn.groupby("|")`, ['a'], true],
+  ['melt with id_vars', `${PANDAS}n = df.melt(id_vars=["a"], var_name="k")\nn.groupby("|")`, ['a', 'k', 'value'], true]
 ];
 
 for (const [name, snippet, expected, certain] of PANDAS_CASES) {
@@ -139,7 +155,12 @@ test('a dtype selector stays quiet when the dtypes are unknown', async () => {
 
 /** When a step cannot be modelled, keep the columns but stop claiming certainty. */
 const UNCERTAIN = [
-  ['a reshape we do not model', `${HEAD}n = df.unpivot()\nn.select("|")`],
+  ['a pivot, whose columns are in the data rather than the code', `${HEAD}n = df.pivot(on="a", index="b")\nn.select("|")`],
+  ['a transpose that did not name its columns', `${HEAD}n = df.transpose(include_header=True)\nn.select("|")`],
+  ['a transpose whose names are computed', `${HEAD}n = df.transpose(column_names=names)\nn.select("|")`],
+  ['a transpose whose include_header is a variable', `${HEAD}n = df.transpose(include_header=flag, column_names=["x"])\nn.select("|")`],
+  ['an unpivot given positionally, which polars and pandas order differently', `${HEAD}n = df.unpivot(["a"])\nn.select("|")`],
+  ['an unpivot whose index is computed', `${HEAD}n = df.unpivot(index=cols)\nn.select("|")`],
   ['a selector on a module we never saw imported', `${HEAD}n = df.select(cs.numeric())\nn.select("|")`],
   ['a selector taking arguments we do not model', `${CS}n = df.select(cs.by_dtype(pl.Int64))\nn.select("|")`],
   ['a method on top of a selector', `${CS}n = df.select(cs.numeric().meta.output_name())\nn.select("|")`],
@@ -158,6 +179,27 @@ for (const [name, snippet] of UNCERTAIN) {
     assert.ok(got.names.length >= 3, 'should keep offering what it had');
   });
 }
+
+test('unnest replaces a struct with its fields, in place', async () => {
+  const got = await columnsAt(`${HEAD}n = df.unnest("addr")\nn.select("|")`, STRUCT_COLUMNS);
+  assert.deepEqual(got.names, ['id', 'city', 'zip']);
+  assert.equal(got.certain, true);
+});
+
+test('unnest of a column the frame does not have keeps what it had', async () => {
+  // Either the name is a typo or we read the call wrongly; both are reasons to
+  // keep offering the columns we know and stop calling the answer certain.
+  const got = await columnsAt(`${HEAD}n = df.unnest("nope")\nn.select("|")`, STRUCT_COLUMNS);
+  assert.deepEqual(got.names, ['id', 'addr']);
+  assert.equal(got.certain, false);
+});
+
+test('unnest of a struct whose fields were never read keeps the struct', async () => {
+  const flat = [{ name: 'id', dtype: 'i64' }, { name: 'addr', dtype: 'struct' }];
+  const got = await columnsAt(`${HEAD}n = df.unnest("addr")\nn.select("|")`, flat);
+  assert.deepEqual(got.names, ['id', 'addr']);
+  assert.equal(got.certain, false);
+});
 
 test('narrowing never loses a column that survived', async () => {
   // A select of a column the source does not have still offers it: polars would

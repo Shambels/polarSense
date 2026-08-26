@@ -33,9 +33,15 @@ export type Transform =
   | { op: 'group_by'; exprs: Node[]; named: [string, Node][] }
   | { op: 'agg'; exprs: Node[]; named: [string, Node][] }
   | { op: 'with_row_index'; name: string }
+  /** `transpose(column_names=[…])` — the call states the whole output schema. */
+  | { op: 'transpose'; names: string[] }
+  /** `unnest("a")` — each named struct column is replaced by its own fields. */
+  | { op: 'unnest'; names: string[] }
+  /** `unpivot`/`melt` — the index columns survive; the rest fold into two. */
+  | { op: 'unpivot'; index: string[]; variableName: string; valueName: string }
   /** Row-changing but schema-preserving: filter, sort, head, unique, … */
   | { op: 'identity' }
-  /** Reshapes the frame in a way we do not model — pivot, unpivot, transpose. */
+  /** Reshapes the frame in a way we do not model — pivot, to_dummies, … */
   | { op: 'opaque'; method: string };
 
 /**
@@ -48,6 +54,10 @@ const IDENTITY_METHODS = new Set([
   'reverse', 'sample', 'shift', 'top_k', 'bottom_k', 'lazy', 'collect', 'clone', 'cache',
   'fill_null', 'fill_nan', 'interpolate', 'set_sorted', 'rechunk', 'clear', 'first', 'last',
   'sort_by', 'gather', 'take', 'extend', 'vstack', 'remove',
+  // `explode` turns each list element into its own row; the column keeps its name.
+  'explode',
+  // Whole-frame reducers: one row comes back, but every column keeps its name.
+  'null_count', 'sum', 'mean', 'median', 'min', 'max', 'std', 'var', 'product', 'quantile',
   // pandas
   'sort_values', 'sort_index', 'dropna', 'drop_duplicates', 'query', 'nlargest',
   'nsmallest', 'astype', 'fillna', 'ffill', 'bfill', 'copy', 'where', 'mask', 'round',
@@ -59,7 +69,7 @@ const IDENTITY_METHODS = new Set([
 
 /** Methods that reshape the frame in ways this model does not attempt. */
 const OPAQUE_METHODS = new Set([
-  'pivot', 'unpivot', 'melt', 'transpose', 'explode', 'unnest', 'unstack',
+  'pivot', 'unstack',
   'group_by_dynamic', 'rolling', 'upsample', 'join_asof', 'partition_by', 'to_dummies',
   // pandas moves columns in and out of the index; duckdb's project and aggregate
   // take SQL this does not parse.
@@ -264,6 +274,37 @@ function classify(method: string, call: Node): Transform | null {
       }
       return { op: 'rename', pairs, unknown };
     }
+    case 'transpose': {
+      const names = transposedNames(keywords);
+      return names ? { op: 'transpose', names } : { op: 'opaque', method };
+    }
+    case 'unnest': {
+      const args = positional.length ? positional : listOf(keywords.get('columns'));
+      const names: string[] = [];
+      for (const arg of args) {
+        const list = stringList(arg);
+        if (!list) return { op: 'opaque', method };
+        names.push(...list);
+      }
+      // `separator=` prefixes every field with the struct it came from; not modelled.
+      if (!names.length || keywords.has('separator')) return { op: 'opaque', method };
+      return { op: 'unnest', names };
+    }
+    case 'unpivot':
+    case 'melt': {
+      // Read by keyword only: polars puts `on` in the first position and pandas'
+      // `melt` puts `id_vars` there, and reading one as the other would not fail
+      // — it would quietly produce a column list belonging to the other library.
+      if (positional.length) return { op: 'opaque', method };
+      const indexArg = keywords.get('index') ?? keywords.get('id_vars');
+      const index = indexArg ? stringList(indexArg) : [];
+      const variableName = keywordString(keywords, ['variable_name', 'var_name'], 'variable');
+      const valueName = keywordString(keywords, ['value_name'], 'value');
+      if (!index || variableName === null || valueName === null) {
+        return { op: 'opaque', method };
+      }
+      return { op: 'unpivot', index, variableName, valueName };
+    }
     case 'with_row_index':
     case 'with_row_count': {
       const arg = positional[0] ?? keywords.get('name');
@@ -276,6 +317,37 @@ function classify(method: string, call: Node): Transform | null {
       // An unknown method is most likely a user helper returning the same frame.
       return { op: 'opaque', method };
   }
+}
+
+/**
+ * The output columns of `df.transpose(…)`. Only the call that passes
+ * `column_names` can be modelled: without it polars names the columns
+ * `column_0…`, and how many there are is the input's *row* count — a number no
+ * amount of reading the code will produce.
+ */
+function transposedNames(keywords: Map<string, Node>): string[] | null {
+  const given = keywords.get('column_names');
+  const names = given ? stringList(given) : null;
+  if (!names) return null;
+  const include = keywords.get('include_header');
+  if (!include || include.text === 'False') return names; // the default is False
+  // A variable here means we cannot say whether the header column is there.
+  if (include.text !== 'True') return null;
+  const header = keywords.has('header_name')
+    ? literalString(keywords.get('header_name'))
+    : 'column';
+  return header === null ? null : [header, ...names];
+}
+
+/** A keyword's literal string under any of its spellings, or `fallback` when absent. */
+function keywordString(
+  keywords: Map<string, Node>, names: string[], fallback: string
+): string | null {
+  for (const name of names) {
+    const node = keywords.get(name);
+    if (node) return stringValue(node);
+  }
+  return fallback;
 }
 
 /** The right-hand half of pandas' `suffixes=("_x", "_y")`. */

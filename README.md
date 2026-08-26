@@ -124,6 +124,14 @@ df.group_by("region").agg(pl.col("revenue").sum()).select("␣")   # region, rev
 
 df.select(cs.numeric()).select("␣")          # revenue, units — the numeric ones
 df.select(cs.starts_with("re")).select("␣")  # region, revenue
+
+df.unnest("address").select("␣")             # the struct's fields, in its place
+df.unpivot(index=["region"]).select("␣")     # region, variable, value
+
+nulls = df.null_count().transpose(
+    include_header=True, header_name="column", column_names=["null_count"]
+)
+nulls.select("␣")            # column, null_count — the names the call itself gave
 ```
 
 Selectors narrow rather than stopping the analysis: `cs.numeric()`, `cs.string()`,
@@ -278,11 +286,17 @@ default that turns them on for Python, but a setting of your own takes precedenc
 These are deliberate, not oversights — the analysis is single-file, and some
 reshapes are beyond what static reading can predict.
 
-- **Some reshapes are not modelled.** `pivot`, `unpivot`, `explode`, `transpose`
-  and friends change the columns in ways this does not attempt to predict. The
-  extension keeps offering the columns it had and marks them as a guess — they
-  sort below certain answers and say so in the tooltip — and the unknown-column
-  warning goes quiet entirely.
+- **Some reshapes are still not modelled.** `pivot`, `pivot_table`, `to_dummies`
+  and friends take their column names from the *values* in the file rather than
+  from anything written in the code, so they cannot be answered without reading
+  the rows. A `transpose` with no `column_names` is the same problem wearing a
+  different hat: its width is the input's row count. So is an `unpivot` whose
+  arguments are passed positionally, because polars puts `on` first and pandas'
+  `melt` puts `id_vars` there, and guessing which library you meant would produce
+  a confident wrong answer rather than no answer. In all of these the extension
+  keeps offering the columns it had and marks them as a guess — they sort below
+  certain answers and say so in the tooltip — and the unknown-column warning goes
+  quiet entirely.
 - **A warning means the file on disk disagrees with the code**, which is usually
   a typo but occasionally means the data is older than the script that writes it.
   That is why it is a warning rather than an error: polars has the last word.
