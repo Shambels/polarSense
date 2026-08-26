@@ -40,6 +40,11 @@ export interface Schema {
   rowCount?: number;
   /** Human-readable origin, shown in the completion detail. */
   origin: string;
+  /** Bytes of the file we read — absent for a table that is a directory of them. */
+  sizeBytes?: number;
+  /** Parquet: row groups in the file, and the codec its pages are written with. */
+  rowGroups?: number;
+  compression?: string;
 }
 
 /** Why a completion request produced nothing — surfaced in the status bar. */

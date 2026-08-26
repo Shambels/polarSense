@@ -12,6 +12,7 @@ import { ColumnDiagnostics, ColumnQuickFix } from './diagnostics.js';
 import { readSettings } from './config.js';
 import { initLog, setTrace, showLog, trace, warn } from './log.js';
 import { createApi, type PolarSenseApi } from './api.js';
+import { showDetails } from './preview/details.js';
 
 const PYTHON: vscode.DocumentSelector = [
   { language: 'python', scheme: 'file' },
@@ -157,7 +158,13 @@ export async function activate(
     })
   );
 
+  // The panel is a caller of the API, not a second copy of the resolver: what
+  // ships in this VSIX today and what may ship in its own tomorrow ask the same
+  // question the same way.
+  const api = createApi(analyzer, schemas, modules);
+
   context.subscriptions.push(
+    vscode.commands.registerCommand('polarsense.showDetails', () => showDetails(api)),
     vscode.commands.registerCommand('polarsense.clearCache', () => {
       schemas.clear();
       modules.clear();
@@ -179,7 +186,7 @@ export async function activate(
   // object and makes the viewer's eventual move to its own extension a change of
   // packaging rather than of code — undefined when the parser never started, so
   // a caller checks once instead of catching per call.
-  return createApi(analyzer, schemas, modules);
+  return api;
 }
 
 /**

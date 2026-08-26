@@ -166,6 +166,25 @@ as the schema:
 >
 > _data/sales.parquet · 3 rows_
 
+**PolarSense: Show details** puts the same facts in a panel beside your code, with
+a row per column instead of a tooltip for one:
+
+```
+sales.parquet · df
+1,048,576 rows · 9 columns · 24.1 MB · 8 row groups · zstd
+
+Column       Type   Nulls   Min         Max
+region       str    0       APAC        US
+revenue      f64    3       12.5        9930.0
+order_date   date   0       2026-01-02  2026-06-30
+```
+
+It reads nothing the completions have not already read — every number there comes
+out of the parquet footer — so it opens on a four-million-row file as fast as on a
+small one, and it never opens by itself. What the footer cannot give is left out
+rather than estimated: no distinct counts, no mean, no quantiles. A CSV, which has
+no footer, gets the list of names and no statistics columns at all.
+
 Column names that do not exist are flagged as you type, with a one-click fix:
 
 ```python
@@ -326,6 +345,13 @@ reshapes are beyond what static reading can predict.
 - **Frames from function parameters or config objects need to be told.** A type
   annotation carries no path, so `def load(source): return pl.scan_parquet(source)`
   finds the frame but not the file — that is what the pragma comment is for.
+- **The details panel describes the source file, not the filtered frame.** The
+  columns it lists are the frame's, narrowed by any `select` or `rename` on the
+  way to your cursor — but the row count, the file size and the codec belong to
+  the file behind it, and a `filter` changes none of them. The panel says
+  `transforms not applied` when that is the case rather than quietly showing you
+  four million rows and calling it the frame. Closing that gap means running your
+  code, which this extension does not do.
 - **Multi-file globs assume one schema.** First match wins.
 - **`.xls` is not read.** It is OLE2, a different binary format wearing a
   similar extension, and it reports nothing rather than guessing at its bytes.

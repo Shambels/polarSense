@@ -189,7 +189,7 @@
       <div class="hi"><b>3</b><span>features asked for</span></div>
       <div><b>2</b><span>possible data sources</span></div>
       <div><b>0</b><span>new deps in phase 1</span></div>
-      <div><b>~4.5</b><span>days left to phase 1</span></div>
+      <div><b>~4</b><span>days left to phase 1</span></div>
     </div>
 
     <p class="lede" style="font-size:.95rem;color:var(--muted)">Effort figures are focused working days, on the same basis as the v1 roadmap. Every API named here was checked against its current documentation, not remembered.</p>
@@ -254,11 +254,12 @@
 
     <div class="items">
 
-      <div class="item">
+      <div class="item shipped">
         <div class="body">
-          <h3>Show details <span class="where">new · reuses src/hover.ts</span></h3>
-          <p>The cheapest of the three by a wide margin, because the data is <em>already read</em>. Dtype, null count, min and max per column all come out of the parquet footer, and <code>src/hover.ts</code> renders exactly this today in a tooltip. The feature is that content in a panel with a row per column instead of a hover with one — plus row count, row-group count, file size and compression codec, all of which are in the same footer.</p>
-          <p>Distinct-count and a real <code>describe()</code> are the two things the footer cannot give you. Distinct is a column read, which is what <code>values.ts</code> already does and already caps at <code>values.maxDistinct</code>; mean and quantiles need every value and belong in path B. Showing four exact statistics beats showing eight where half are guesses — the same call the CSV dtype inference default makes.</p>
+          <h3>Show details <span class="tick">shipped</span> <span class="where">src/preview/details.ts · polarsense.showDetails</span></h3>
+          <p>It was the cheapest of the three, and for the reason predicted: the data was <em>already read</em>. Dtype, null count, min and max per column come out of the parquet footer the completions had already paid for, and the panel is that content with a row per column instead of a tooltip for one. Row count, row-group count, file size and codec came out of the same footer — the row groups and the codec fold into the statistics walk that was already there, and the file size is the <code>stat</code> the cache key needed anyway.</p>
+          <p>Distinct-count and a real <code>describe()</code> stayed out, as planned. What the plan did not spell out is what a footer-only panel does with a CSV: rather than a grid of blanks, the statistics columns are dropped entirely when nothing in the file recorded any, and a statistic the writer left out prints an em dash rather than a zero — "no nulls" and "the writer did not say" are different answers.</p>
+          <p>The panel calls <code>resolveFrameAt</code> rather than the resolver, so step 1 has its first consumer and the eventual split stays a packaging change. Nothing runs inside the webview: <code>enableScripts</code> is off and every name is escaped, because a column name is written by whoever wrote the data file.</p>
         </div>
         <div class="chips"><span class="chip hi">impact high</span><span class="chip">0.5 d</span></div>
       </div>
@@ -367,7 +368,7 @@
 
     <ol class="next">
       <li class="shipped"><span class="n">1</span><span class="what"><b>Export the resolver <span class="tick">shipped</span><span class="where">src/api.ts · src/core/resolve.ts</span></b><span><code>activate()</code> now returns <code>{ version, resolveFrameAt(uri, position) }</code>: the resolved file, its kind, the columns at that position with the statistics the footer already gave up, the file’s row count, and two flags a viewer has to show rather than swallow — <code>certain</code>, and <code>transformed</code> for a frame whose source no longer matches what is on screen. One thing the plan did not foresee: <code>resolveAtOffset</code> only answers inside a column string, and a cursor asking to <em>see</em> the data sits on <code>df</code>, so <code>frameAtOffset</code> was added beside it — it walks out from the cursor to the widest expression that still resolves, which is also what makes the transform chain visible rather than just the file.</span></span><span class="est">0.5 d</span></li>
-      <li><span class="n">2</span><span class="what"><b>Show details</b><span>The hover, in a panel, per column. Footer data only, so no new I/O and no new reader. The cheapest real proof that a viewer is worth having.</span></span><span class="est">0.5 d</span></li>
+      <li class="shipped"><span class="n">2</span><span class="what"><b>Show details <span class="tick">shipped</span><span class="where">src/preview/details.ts · src/schema/parquet.ts</span></b><span>The hover, in a panel, per column, on <code>PolarSense: Show details</code>. Footer data only: no new reader and not one row read, so it opens on a four-million-row file as fast as on a small one and needs no setting guarding it the way <code>values.enable</code> is guarded. It opens beside the code without taking focus, and its header names the file, the row count, the size, the row groups and the codec — and says <em>transforms not applied</em> when the frame at the cursor is a filter or a select away from the file it is describing.</span></span><span class="est">0.5 d</span></li>
       <li><span class="n">3</span><span class="what"><b>The paginated table</b><span>Webview, virtualised rows <em>and</em> columns, <code>rowStart</code>/<code>rowEnd</code> against parquet. CSV and the table formats follow once the shell exists.</span></span><span class="est">2 d</span></li>
       <li><span class="n">4</span><span class="what"><b>The notebook renderer</b><span>Three buttons under the cell output, opening the panels above. No kernel involved. This is the point at which it looks like the tool in the brief.</span></span><span class="est">1.5 d</span></li>
       <li><span class="n">5</span><span class="what"><b>Show graph</b><span>Dtype-driven default, user-overridable, hand-written SVG. Aggregate in the host, never in the webview.</span></span><span class="est">2 d</span></li>
@@ -388,7 +389,7 @@
   </section>
 
   <footer>
-    <p>PolarSense v2.0 · 3 features · 1 of 6 steps shipped · phase 1 ≈ 4.5 days left, no new dependencies · companion to docs/roadmap.html and docs/build-plan.html</p>
+    <p>PolarSense v2.0 · 3 features · 2 of 6 steps shipped · phase 1 ≈ 4 days left, no new dependencies · companion to docs/roadmap.html and docs/build-plan.html</p>
   </footer>
 
 </div>

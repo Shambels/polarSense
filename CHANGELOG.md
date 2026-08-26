@@ -1,5 +1,45 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **A details panel: the hover, per column, in a panel beside your code.**
+  `PolarSense: Show details` resolves the frame at the cursor and lists every
+  column it has with its dtype, null count, min and max — the same facts the
+  hover shows one at a time — under a header naming the file, its row count,
+  its size, its row groups and the codec its pages are written with.
+
+  It reads nothing the completions have not already read. Every number on it
+  comes out of the parquet footer that was read for the schema, which is why it
+  opens on a four-million-row file as fast as on a small one, and why it needs
+  no setting guarding it the way `values.enable` guards value completion. It
+  never opens by itself, and it opens beside your code without taking focus.
+
+  What the footer cannot give is left off rather than estimated: no distinct
+  counts, no mean, no quantiles. A file that recorded no statistics at all — a
+  CSV — gets a list of names rather than a grid of blanks, and a statistic the
+  writer left out prints an em dash rather than a zero, because "no nulls" and
+  "the writer did not say" are different answers.
+
+  When the frame at the cursor is a filter, a select or a join away from the
+  file, the panel says `transforms not applied` and spells out which numbers are
+  the frame's and which are the file's. It is showing you the source, and the
+  one way it could be quietly wrong is by not admitting that.
+
+- **The API carries what the footer says about the *file*.** `resolveFrameAt`
+  now also answers with `sizeBytes`, and for parquet `rowGroups` and
+  `compression`. The row groups and the codec fold into the statistics walk the
+  reader already made, and the size is the `stat` the cache key already needed,
+  so this costs no extra read.
+
+### Internal
+
+- **The details panel is a consumer of the exported API, not a second copy of
+  the resolver.** It calls `resolveFrameAt` in-process exactly as another
+  extension would call it across the boundary, which is what keeps moving the
+  viewer into its own extension a packaging change rather than a rewrite.
+
 ## 1.3.0
 
 ### Added

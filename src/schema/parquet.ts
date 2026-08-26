@@ -6,6 +6,10 @@ import { parquetDtype, type ParquetNode } from './dtypes.js';
 export interface ParquetSchemaResult {
   columns: Column[];
   rowCount: number;
+  /** Row groups in the file — the unit a paged read will eventually work in. */
+  rowGroups: number;
+  /** The codec its pages are written with, or all of them where they differ. */
+  compression?: string;
 }
 
 /**
@@ -24,10 +28,17 @@ export async function readParquetSchema(
 
   // Index the row-group statistics once. Looking them up per column instead
   // would be quadratic, which a 5000-column file notices.
-  const raw = indexStatistics(metadata);
+  const { stats: raw, codecs } = indexStatistics(metadata);
   const columns = schema.children.map((child) => toColumn(child, raw, ''));
 
-  return { columns, rowCount: Number(metadata.num_rows ?? 0) };
+  return {
+    columns,
+    rowCount: Number(metadata.num_rows ?? 0),
+    rowGroups: metadata.row_groups?.length ?? 0,
+    // A file written column by column can hold more than one codec. Naming both
+    // is the honest answer where picking the first would be a guess.
+    compression: [...codecs].sort().join(', ') || undefined
+  };
 }
 
 /**
@@ -69,14 +80,23 @@ interface RawStats {
   max?: unknown;
 }
 
-/** One pass over every row group, folding each column's statistics together. */
-function indexStatistics(metadata: { row_groups?: unknown[] }): Map<string, RawStats> {
+/**
+ * One pass over every row group, folding each column's statistics together —
+ * and collecting the codecs on the way, since this is already the only walk of
+ * the row groups and the details panel wants to name them.
+ */
+function indexStatistics(
+  metadata: { row_groups?: unknown[] }
+): { stats: Map<string, RawStats>; codecs: Set<string> } {
   const out = new Map<string, RawStats>();
+  const codecs = new Set<string>();
 
   for (const group of metadata.row_groups ?? []) {
     const columns = (group as { columns?: unknown[] }).columns ?? [];
     for (const column of columns) {
       const meta = (column as { meta_data?: Record<string, unknown> }).meta_data;
+      const codec = meta?.['codec'];
+      if (typeof codec === 'string') codecs.add(codec.toLowerCase());
       const pathInSchema = meta?.['path_in_schema'];
       if (!Array.isArray(pathInSchema) || !pathInSchema.length) continue;
       const stats = meta?.['statistics'] as Record<string, unknown> | undefined;
@@ -103,7 +123,7 @@ function indexStatistics(metadata: { row_groups?: unknown[] }): Map<string, RawS
       out.set(name, acc);
     }
   }
-  return out;
+  return { stats: out, codecs };
 }
 
 function finish(raw: RawStats | undefined, dtype: string): ColumnStats | undefined {
