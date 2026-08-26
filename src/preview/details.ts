@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'node:path';
 import type { Column } from '../core/types.js';
 import type { PolarSenseApi, ResolvedFrame } from '../api.js';
-import { escape, fmt, frameFacts, frameNotes } from './facts.js';
+import { escape, fmt, frameFacts, frameNotes, PANEL_CSS } from './facts.js';
 import { cursorTarget, NO_PYTHON, type FrameTarget } from './target.js';
 
 /**
@@ -71,57 +71,28 @@ export function renderDetails(frame: ResolvedFrame): string {
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';">
 <title>${escape(path.basename(frame.uri))}</title>
-<style>
-  body{
-    font-family:var(--vscode-font-family);font-size:var(--vscode-font-size);
-    color:var(--vscode-foreground);background:var(--vscode-editor-background);
-    padding:1rem 1.2rem;margin:0;
+<style>${PANEL_CSS}
+  td.name{
+    font-family:var(--vscode-editor-font-family);
+    white-space:normal;word-break:break-word;min-width:8rem;
   }
-  h1{font-size:1.05rem;font-weight:600;margin:0 0 .15rem}
-  .symbol{color:var(--vscode-descriptionForeground);font-weight:400}
-  .origin{
-    font-family:var(--vscode-editor-font-family);font-size:.82rem;
-    color:var(--vscode-descriptionForeground);word-break:break-all;margin:0 0 .5rem;
-  }
-  .facts{
-    display:flex;flex-wrap:wrap;gap:.35rem .55rem;list-style:none;padding:0;margin:0 0 .9rem;
-    font-family:var(--vscode-editor-font-family);font-size:.78rem;
-    color:var(--vscode-descriptionForeground);
-  }
-  .facts li{border:1px solid var(--vscode-panel-border);border-radius:3px;padding:.05rem .4rem}
-  .note{
-    border-left:3px solid var(--vscode-textLink-foreground);
-    background:var(--vscode-textBlockQuote-background);
-    padding:.5rem .7rem;margin:0 0 .8rem;font-size:.85rem;
-  }
-  .scroller{overflow-x:auto}
-  table{border-collapse:collapse;width:100%;font-size:.85rem}
-  th,td{
-    text-align:left;padding:.28rem .6rem .28rem 0;
-    border-bottom:1px solid var(--vscode-panel-border);white-space:nowrap;
-  }
-  th{
-    font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;
-    color:var(--vscode-descriptionForeground);
-  }
-  td.name{font-family:var(--vscode-editor-font-family);white-space:normal;word-break:break-word}
-  td.dtype{font-family:var(--vscode-editor-font-family);color:var(--vscode-symbolIcon-typeParameterForeground)}
-  td.num{font-family:var(--vscode-editor-font-family);text-align:right;padding-right:1.1rem}
-  td.value{font-family:var(--vscode-editor-font-family);max-width:22rem;overflow:hidden;text-overflow:ellipsis}
-  .none{color:var(--vscode-descriptionForeground)}
+  td.value{max-width:22rem;overflow:hidden;text-overflow:ellipsis}
+  th.right{text-align:right}
 </style>
 </head>
 <body>
+<div class="head">
 <h1>${escape(path.basename(frame.uri))}${
-    frame.symbol ? ` <span class="symbol">· ${escape(frame.symbol)}</span>` : ''
+    frame.symbol ? `<span class="symbol">${escape(frame.symbol)}</span>` : ''
   }</h1>
-<p class="origin">${escape(frame.uri)}</p>
+<p class="origin" title="${escape(frame.uri)}">${escape(frame.uri)}</p>
 <ul class="facts">${facts.map((fact) => `<li>${escape(fact)}</li>`).join('')}</ul>
 ${notes.map((note) => `<p class="note">${note}</p>`).join('\n')}
+</div>
 <div class="scroller">
 <table>
 <thead><tr><th>Column</th>${hasDtype ? '<th>Type</th>' : ''}${
-    hasStats ? '<th>Nulls</th><th>Min</th><th>Max</th>' : ''
+    hasStats ? '<th class="right">Nulls</th><th>Min</th><th>Max</th>' : ''
   }</tr></thead>
 <tbody>
 ${frame.columns.map((column) => row(column, hasDtype, hasStats)).join('\n')}

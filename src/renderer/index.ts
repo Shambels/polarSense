@@ -182,20 +182,31 @@ function ensureStyle(): void {
   const style = document.createElement('style');
   style.textContent = `
 .polarsense-bar{
-  display:flex;align-items:center;gap:.3rem;margin:.25rem 0 .4rem;
+  display:inline-flex;align-items:stretch;margin:.4rem 0 .5rem;
   font-family:var(--vscode-font-family);
+  border:1px solid var(--vscode-widget-border,var(--vscode-panel-border));
+  border-radius:5px;overflow:hidden;
+  background:var(--vscode-editorWidget-background);
+  opacity:.72;transition:opacity .1s ease;
 }
+.polarsense-bar:hover,.polarsense-bar:focus-within{opacity:1}
 .polarsense-label{
-  font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;
-  color:var(--vscode-descriptionForeground);margin-right:.2rem;
+  display:flex;align-items:center;padding:0 .55rem;
+  font-size:.66rem;text-transform:uppercase;letter-spacing:.09em;
+  color:var(--vscode-descriptionForeground);
+  border-right:1px solid var(--vscode-widget-border,var(--vscode-panel-border));
 }
 .polarsense-bar button{
-  font-family:inherit;font-size:.78rem;
-  color:var(--vscode-button-secondaryForeground);
-  background:var(--vscode-button-secondaryBackground);
-  border:none;border-radius:2px;padding:.12rem .5rem;cursor:pointer;
+  font-family:inherit;font-size:.78rem;line-height:1;
+  color:var(--vscode-foreground);background:transparent;
+  border:none;padding:.32rem .6rem;cursor:pointer;
 }
-.polarsense-bar button:hover{background:var(--vscode-button-secondaryHoverBackground)}
+.polarsense-bar button+button{
+  border-left:1px solid var(--vscode-widget-border,var(--vscode-panel-border));
+}
+.polarsense-bar button:hover{background:var(--vscode-toolbar-hoverBackground)}
+.polarsense-bar button:active{background:var(--vscode-toolbar-activeBackground)}
+.polarsense-bar button:focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:-1px}
 .polarsense-bar[hidden]{display:none}
 `;
   document.head.appendChild(style);

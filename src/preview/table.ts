@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'node:path';
 import type { PolarSenseApi, ResolvedFrame, RowsFailure } from '../api.js';
-import { fmt, frameFacts, frameNotes } from './facts.js';
+import { fmt, frameFacts, frameNotes, PANEL_CSS } from './facts.js';
 import { cursorTarget, NO_PYTHON, type FrameTarget } from './target.js';
 
 /**
@@ -258,85 +258,72 @@ function shell(webview: vscode.Webview): string {
     webview.cspSource
   } 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <title>PolarSense</title>
-<style>
-  body{
-    font-family:var(--vscode-font-family);font-size:var(--vscode-font-size);
-    color:var(--vscode-foreground);background:var(--vscode-editor-background);
-    padding:.8rem 1rem;margin:0;
+<style>${PANEL_CSS}
+  .head{padding:.85rem 1.05rem .6rem}
+  .bar{display:flex;flex-wrap:wrap;gap:.45rem;align-items:center;margin:.7rem 0 .1rem}
+  .group{
+    display:inline-flex;align-items:center;
+    border:1px solid var(--vscode-widget-border,var(--vscode-panel-border));
+    border-radius:5px;overflow:hidden;background:var(--vscode-editorWidget-background);
   }
-  h1{font-size:1.05rem;font-weight:600;margin:0 0 .15rem}
-  .symbol{color:var(--vscode-descriptionForeground);font-weight:400}
-  .origin{
-    font-family:var(--vscode-editor-font-family);font-size:.8rem;
-    color:var(--vscode-descriptionForeground);word-break:break-all;margin:0 0 .5rem;
-  }
-  .facts{
-    display:flex;flex-wrap:wrap;gap:.35rem .55rem;list-style:none;padding:0;margin:0 0 .7rem;
-    font-family:var(--vscode-editor-font-family);font-size:.78rem;
-    color:var(--vscode-descriptionForeground);
-  }
-  .facts li{border:1px solid var(--vscode-panel-border);border-radius:3px;padding:.05rem .4rem}
-  .note{
-    border-left:3px solid var(--vscode-textLink-foreground);
-    background:var(--vscode-textBlockQuote-background);
-    padding:.45rem .7rem;margin:0 0 .6rem;font-size:.85rem;
-  }
-  .bar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 .6rem}
-  .bar .where{
-    font-family:var(--vscode-editor-font-family);font-size:.78rem;
-    color:var(--vscode-descriptionForeground);
+  .group .where{
+    padding:0 .55rem;font-size:.74rem;font-variant-numeric:tabular-nums;
+    color:var(--vscode-descriptionForeground);white-space:nowrap;
   }
   button{
-    font-family:inherit;font-size:.8rem;color:var(--vscode-button-secondaryForeground);
-    background:var(--vscode-button-secondaryBackground);border:none;border-radius:2px;
-    padding:.2rem .55rem;cursor:pointer;
+    font-family:inherit;font-size:.82rem;line-height:1;
+    color:var(--vscode-foreground);background:transparent;border:none;
+    padding:.3rem .5rem;cursor:pointer;
   }
-  button:hover:enabled{background:var(--vscode-button-secondaryHoverBackground)}
-  button:disabled{opacity:.4;cursor:default}
+  button:hover:enabled{background:var(--vscode-toolbar-hoverBackground)}
+  button:active:enabled{background:var(--vscode-toolbar-activeBackground)}
+  button:disabled{opacity:.35;cursor:default}
+  button:focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:-1px}
   input{
-    font-family:inherit;font-size:.8rem;color:var(--vscode-input-foreground);
-    background:var(--vscode-input-background);border:1px solid var(--vscode-input-border,transparent);
-    border-radius:2px;padding:.2rem .4rem;min-width:9rem;
+    font-family:inherit;font-size:.78rem;color:var(--vscode-input-foreground);
+    background:var(--vscode-input-background);
+    border:1px solid var(--vscode-widget-border,transparent);
+    border-radius:5px;padding:.28rem .55rem;min-width:9.5rem;
   }
-  .scroller{overflow:auto;max-height:calc(100vh - 13rem);border:1px solid var(--vscode-panel-border)}
-  table{border-collapse:separate;border-spacing:0;font-size:.82rem}
-  th,td{
-    text-align:left;padding:.22rem .6rem;white-space:nowrap;
-    border-bottom:1px solid var(--vscode-panel-border);
-  }
-  thead th{
-    position:sticky;top:0;z-index:2;background:var(--vscode-editor-background);
-    font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;
-    color:var(--vscode-descriptionForeground);
-  }
+  input:focus{outline:1px solid var(--vscode-focusBorder);outline-offset:-1px}
+  input::placeholder{color:var(--vscode-input-placeholderForeground)}
   thead th .dtype{
-    display:block;font-family:var(--vscode-editor-font-family);
-    text-transform:none;letter-spacing:0;font-weight:400;opacity:.75;
+    display:block;margin-top:.15rem;font-family:var(--vscode-editor-font-family);
+    text-transform:none;letter-spacing:0;font-weight:400;opacity:.7;
   }
-  td{font-family:var(--vscode-editor-font-family)}
+  thead th.num{text-align:right}
+  tbody td{font-family:var(--vscode-editor-font-family)}
   .index{
     position:sticky;left:0;z-index:1;background:var(--vscode-editor-background);
     color:var(--vscode-descriptionForeground);text-align:right;
-    border-right:1px solid var(--vscode-panel-border);
+    font-variant-numeric:tabular-nums;
+    box-shadow:inset -1px 0 var(--vscode-panel-border);
   }
+  tbody tr:hover .index{background:var(--vscode-list-hoverBackground)}
   thead .index{z-index:3}
-  .null{opacity:.5;font-style:italic}
-  .empty{padding:1rem 0;color:var(--vscode-descriptionForeground)}
+  .null{opacity:.4;font-style:italic}
+  .empty{padding:1.5rem 1.05rem;color:var(--vscode-descriptionForeground)}
 </style>
 </head>
 <body>
-<h1 id="file"></h1>
-<p class="origin" id="origin"></p>
-<ul class="facts" id="facts"></ul>
-<div id="notes"></div>
-<div class="bar">
-  <button id="prev">‹ rows</button>
-  <button id="next">rows ›</button>
-  <span class="where" id="where"></span>
-  <button id="cprev">‹ columns</button>
-  <button id="cnext">columns ›</button>
-  <input id="filter" type="text" placeholder="filter columns" autocomplete="off">
-  <span class="where" id="cwhere"></span>
+<div class="head">
+  <h1 id="file"></h1>
+  <p class="origin" id="origin"></p>
+  <ul class="facts" id="facts"></ul>
+  <div id="notes"></div>
+  <div class="bar">
+    <span class="group">
+      <button id="prev" title="Previous hundred rows">&lsaquo;</button>
+      <span class="where" id="where"></span>
+      <button id="next" title="Next hundred rows">&rsaquo;</button>
+    </span>
+    <span class="group">
+      <button id="cprev" title="Previous columns">&lsaquo;</button>
+      <span class="where" id="cwhere"></span>
+      <button id="cnext" title="Next columns">&rsaquo;</button>
+    </span>
+    <input id="filter" type="text" placeholder="filter columns" autocomplete="off">
+  </div>
 </div>
 <div class="scroller" id="scroller"><table><thead id="head"></thead><tbody id="body"></tbody></table></div>
 <div class="empty" id="empty" hidden></div>
@@ -360,7 +347,7 @@ function text(tag, value, className) {
 function draw() {
   if (!state) return;
   $('file').textContent = state.file;
-  if (state.symbol) $('file').appendChild(text('span', ' · ' + state.symbol, 'symbol'));
+  if (state.symbol) $('file').appendChild(text('span', state.symbol, 'symbol'));
   $('origin').textContent = state.uri;
 
   const facts = $('facts');
@@ -386,10 +373,14 @@ function draw() {
   $('cnext').disabled = state.columnStart + shown >= state.columnCount;
   if ($('filter').value !== state.filter) $('filter').value = state.filter;
 
+  // Numbers line up under each other or they are not numbers, they are text
+  // that happens to be digits. The dtype the reader already sent says which.
+  const numeric = state.columns.map((_, i) => /^(i|u|f)\d|^decimal/i.test(state.dtypes[i] || ''));
+
   const header = document.createElement('tr');
   header.appendChild(text('th', '#', 'index'));
   state.columns.forEach((name, i) => {
-    const cell = text('th', name);
+    const cell = text('th', name, numeric[i] ? 'num' : undefined);
     if (state.dtypes[i]) cell.appendChild(text('span', state.dtypes[i], 'dtype'));
     header.appendChild(cell);
   });
@@ -399,8 +390,10 @@ function draw() {
   state.rows.forEach((row, i) => {
     const tr = document.createElement('tr');
     tr.appendChild(text('td', String(state.rowStart + i), 'index'));
-    row.forEach((value) => {
-      tr.appendChild(value === null ? text('td', 'null', 'null') : text('td', value));
+    row.forEach((value, c) => {
+      tr.appendChild(value === null
+        ? text('td', 'null', numeric[c] ? 'null num' : 'null')
+        : text('td', value, numeric[c] ? 'num' : undefined));
     });
     body.appendChild(tr);
   });
