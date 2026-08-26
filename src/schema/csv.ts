@@ -18,14 +18,61 @@ export async function readCsvSchema(
   kwargs: SourceRef['kwargs'],
   options: CsvOptions
 ): Promise<Column[]> {
+  const { text } = await readCsvPrefix(uri, options.sniffBytes);
+  // Dtypes are guessed from the first rows or not at all, so nothing but the
+  // header is split when the guess is switched off.
+  const { names, records } = csvTable(text, kwargs, { start: 0, limit: options.inferDtypes ? 50 : 0 });
+  if (!options.inferDtypes) return names.map((name) => ({ name, dtype: '' }));
+  return names.map((name, i) => ({ name, dtype: inferDtype(records.map((r) => r[i])) }));
+}
+
+/**
+ * The bounded prefix both the header read and the row preview work from, and
+ * whether it stopped short of the end of the file — which is the difference
+ * between "this is the file" and "this is as much of it as we read".
+ */
+export async function readCsvPrefix(
+  uri: string,
+  sniffBytes: number
+): Promise<{ text: string; truncated: boolean }> {
   const scheme = schemeOf(uri);
   const bytes = scheme === 'file'
-    ? await readHead(uri, options.sniffBytes)
-    : await readHeadHttps(uri, options.sniffBytes);
+    ? await readHead(uri, sniffBytes)
+    : await readHeadHttps(uri, sniffBytes);
+  const text = new TextDecoder('utf-8').decode(bytes);
+  return {
+    text: text.charCodeAt(0) === 0xfeff ? text.slice(1) : text,
+    truncated: bytes.length >= sniffBytes
+  };
+}
 
-  let text = new TextDecoder('utf-8').decode(bytes);
-  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+export interface CsvWindow {
+  /** First data record to return, counting from the first row after the header. */
+  start: number;
+  limit: number;
+}
 
+export interface CsvTable {
+  names: string[];
+  records: string[][];
+  /** A record was found past the window — there is a next page inside this text. */
+  more: boolean;
+}
+
+/**
+ * The header and a window of data records, read the way the call site asked for
+ * them: `separator=`, `quote_char=`, `comment_prefix=`, `skip_rows=`,
+ * `has_header=` and `new_columns=` all change what the same bytes mean.
+ *
+ * The window is what keeps this honest about cost. The caller has a bounded
+ * prefix of the file and wants one page out of it; splitting the rest of the
+ * text into fields is work nobody asked for.
+ */
+export function csvTable(
+  text: string,
+  kwargs: SourceRef['kwargs'],
+  window: CsvWindow
+): CsvTable {
   const separator = typeof kwargs.separator === 'string' && kwargs.separator.length
     ? kwargs.separator
     : ',';
@@ -43,29 +90,32 @@ export async function readCsvSchema(
   }
   while (index < rows.length && rows[index].trim() === '') index++;
   const headerRow = rows[index];
-  if (headerRow === undefined) return [];
+  if (headerRow === undefined) return { names: [], records: [], more: false };
 
   const fields = splitFields(headerRow, separator, quoteChar);
+  const names = Array.isArray(kwargs.new_columns) && kwargs.new_columns.length
+    // `new_columns=` overrides whatever is in the file.
+    ? kwargs.new_columns.map(String)
+    : hasHeader
+      ? fields.map((f, i) => (f.trim() === '' ? `column_${i + 1}` : f.trim()))
+      : fields.map((_, i) => `column_${i + 1}`);
 
-  // `new_columns=` overrides whatever is in the file.
-  if (Array.isArray(kwargs.new_columns) && kwargs.new_columns.length) {
-    return kwargs.new_columns.map((name) => ({ name, dtype: '' }));
+  const records: string[][] = [];
+  let seen = 0;
+  let more = false;
+  for (let row = index + (hasHeader ? 1 : 0); row < rows.length; row++) {
+    if (rows[row].trim() === '') continue;
+    if (commentPrefix && rows[row].startsWith(commentPrefix)) continue;
+    if (seen++ < window.start) continue;
+    if (records.length >= window.limit) { more = true; break; }
+    records.push(splitFields(rows[row], separator, quoteChar));
   }
 
-  const names = hasHeader
-    ? fields.map((f, i) => (f.trim() === '' ? `column_${i + 1}` : f.trim()))
-    : fields.map((_, i) => `column_${i + 1}`);
-
-  if (!options.inferDtypes) return names.map((name) => ({ name, dtype: '' }));
-
-  const sample = rows.slice(index + (hasHeader ? 1 : 0), index + 51)
-    .filter((r) => r.trim() !== '')
-    .map((r) => splitFields(r, separator, quoteChar));
-  return names.map((name, i) => ({ name, dtype: inferDtype(sample.map((r) => r[i])) }));
+  return { names, records, more };
 }
 
 /** Split on newlines that are not inside a quoted field. */
-function splitRows(text: string, quote: string): string[] {
+export function splitRows(text: string, quote: string): string[] {
   const rows: string[] = [];
   let current = '';
   let inQuotes = false;
@@ -89,7 +139,7 @@ function splitRows(text: string, quote: string): string[] {
   return rows;
 }
 
-function splitFields(row: string, separator: string, quote: string): string[] {
+export function splitFields(row: string, separator: string, quote: string): string[] {
   const fields: string[] = [];
   let current = '';
   let inQuotes = false;

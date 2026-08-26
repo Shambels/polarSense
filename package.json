@@ -73,6 +73,10 @@
       {
         "command": "polarsense.showDetails",
         "title": "PolarSense: Show details"
+      },
+      {
+        "command": "polarsense.showData",
+        "title": "PolarSense: Show data (reads rows)"
       }
     ],
     "configuration": {

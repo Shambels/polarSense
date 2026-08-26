@@ -185,6 +185,31 @@ small one, and it never opens by itself. What the footer cannot give is left out
 rather than estimated: no distinct counts, no mean, no quantiles. A CSV, which has
 no footer, gets the list of names and no statistics columns at all.
 
+**PolarSense: Show data (reads rows)** opens the file itself, a hundred rows at a
+time, with the row index and the header row pinned in place:
+
+```
+values.parquet · df
+200 rows · 4 columns · 1.7 KB · 1 row group · zstd
+
+‹ rows  rows ›   rows 0–99 of 200    ‹ columns  columns ›   [filter columns]
+
+ #   region  order_id   revenue  empty
+ 0   APAC    ord-0000   0        null
+ 1   APAC    ord-0001   1        null
+```
+
+The page on screen is the read. Only the rows of that page and only the columns
+being drawn are fetched — parquet keeps columns apart, so forty of five thousand
+costs forty — and nothing is cached afterwards. A wide frame is navigated rather
+than rendered: forty columns at a time, stepped with `columns ›` and narrowed
+with the filter box.
+
+Rows come from parquet and CSV. A CSV has no footer to say where row 5,000 begins,
+so its rows are read out of the same bounded prefix the header comes from and the
+panel says that is what you are looking at. Arrow IPC, Delta and Iceberg show their
+schema and say plainly that their rows are not read yet.
+
 Column names that do not exist are flagged as you type, with a one-click fix:
 
 ```python
@@ -345,13 +370,23 @@ reshapes are beyond what static reading can predict.
 - **Frames from function parameters or config objects need to be told.** A type
   annotation carries no path, so `def load(source): return pl.scan_parquet(source)`
   finds the frame but not the file — that is what the pragma comment is for.
-- **The details panel describes the source file, not the filtered frame.** The
-  columns it lists are the frame's, narrowed by any `select` or `rename` on the
-  way to your cursor — but the row count, the file size and the codec belong to
-  the file behind it, and a `filter` changes none of them. The panel says
-  `transforms not applied` when that is the case rather than quietly showing you
-  four million rows and calling it the frame. Closing that gap means running your
-  code, which this extension does not do.
+- **The preview panels describe the source file, not the filtered frame.** The
+  columns they list are the frame's, narrowed by any `select` or `rename` on the
+  way to your cursor — but the rows, the row count, the file size and the codec
+  belong to the file behind it, and a `filter` changes none of them. Both panels
+  say `transforms not applied` when that is the case rather than quietly showing
+  you four million rows and calling it the frame. Closing that gap means running
+  your code, which this extension does not do.
+- **Rows are read from parquet and CSV only.** Arrow IPC would mean decoding its
+  record batches, and Delta and Iceberg mean paging across the list of files
+  behind one table; both are pages by another name and neither is written yet.
+  Their schemas still work everywhere else, and the panel says which half is
+  missing rather than showing an empty grid.
+- **A CSV preview is a prefix of the file.** Without a footer there is no row
+  count and no offset to seek to, so the rows shown are the ones inside the first
+  `csv.sniffBytes` bytes, and the last record of a truncated prefix is dropped
+  because the read stopped mid-line. Reaching row 5,000,000 of a CSV means
+  walking the 4,999,999 before it.
 - **Multi-file globs assume one schema.** First match wins.
 - **`.xls` is not read.** It is OLE2, a different binary format wearing a
   similar extension, and it reports nothing rather than guessing at its bytes.

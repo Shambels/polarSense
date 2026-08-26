@@ -1,5 +1,63 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **A paginated table: the file behind your frame, a page at a time.**
+  `PolarSense: Show data (reads rows)` opens a panel beside your code holding a
+  hundred rows of the file the frame at your cursor reads, with the row index
+  stuck to the left edge and the header row stuck to the top. `rows ›` fetches
+  the next hundred; for parquet the footer's row count says how many there are
+  before a single row is decoded, so the pager knows where the end is.
+
+  A wide frame is navigated rather than rendered. Forty columns are drawn at a
+  time, `columns ›` steps the window along, and the filter box narrows the list
+  it steps over — a 5,000-column file is as usable as a five-column one, which
+  is the half of this that is easy to forget. Column navigation matters as much
+  as row navigation on the frames that need a viewer at all.
+
+  **Nothing crosses into the panel that is not being drawn.** The page that is
+  on screen is the read: this row range, these columns, and parquet stores
+  columns independently, so forty of five thousand costs forty. Rows are not
+  cached, either — a page is a bounded read of a file the OS still has warm, and
+  holding someone's data in memory after the panel closed would be the wrong
+  trade. Nothing reads a file end to end, and nothing opens by itself.
+
+- **CSV pages, and says that a prefix is a prefix.** A CSV has no footer, so
+  there is no row count to claim and no offset to seek to. The rows come out of
+  the same bounded prefix the header read already takes — `csv.sniffBytes` — and
+  the panel says so in a sentence rather than implying the file is that short.
+  The last record in a truncated prefix is dropped: the read stopped mid-line,
+  and half a row shown as data is worse than a row not shown.
+
+- **`readRows` on the exported API.** `api.readRows(frame, { rowStart, limit,
+  columns })` returns a page of the file behind a resolved frame, along with
+  every column name the file has so a caller can offer the ones it is not
+  drawing. `ResolvedFrame` also carries `kwargs` now — `separator=`, `quote_char=`
+  — because what the bytes of a CSV mean depends on them as much for a page as
+  for a header.
+
+### Changed
+
+- **A frame's transforms are named on both panels, in the same words.** The
+  details panel and the table share one header: the file, its shape, and
+  `transforms not applied` when the frame at the cursor is a filter, a select or
+  a join away from the file being shown. The table adds what the file cannot
+  answer — a column the frame computed or renamed is not offered, because the
+  file has never heard of it.
+
+### Internal
+
+- **Value formatting is one function.** The parquet footer's statistics and the
+  cells of a page are the same problem — hyparquet hands back whatever the file
+  holds and only the dtype says what it means — so `schema/format.ts` now does
+  both, with lists and structs rendered as JSON rather than as `[object Object]`.
+- **The CSV reader's header walk is reusable.** `csvTable` takes a window of
+  records, so the schema read asks for the header and fifty rows to guess dtypes
+  from, and the preview asks for a page — one parser, one set of `separator=` and
+  `quote_char=` rules, one place to be wrong.
+
 ## 1.4.0
 
 ### Added

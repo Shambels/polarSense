@@ -999,3 +999,120 @@ test('the panel is not opened where there is no frame at the cursor', async () =
   assert.equal(vscode._registered.webviews.length, before, 'a panel was opened anyway');
   assert.match(message ?? '', /no frame at the cursor/);
 });
+
+/**
+ * The data panel, driven the way the webview drives it: the command opens it,
+ * the page says it is ready, and every click after that is a message. What the
+ * host sent to be drawn is the payload — the shell itself holds no data.
+ */
+async function openData(marked, fileDir = DATA) {
+  const { document, position } = makeDocument(marked, path.join(fileDir, 'script.py'));
+  vscode.workspace.textDocuments.push(document);
+  vscode.window.activeTextEditor = { document, selection: { active: position } };
+  vscode._registered.info = undefined;
+  try {
+    await vscode._registered.commands.get('polarsense.showData')();
+    const panel = vscode._registered.webviews.find((p) => p.viewType === 'polarsense.data');
+    if (!panel) return { panel: undefined, message: vscode._registered.info };
+    panel.messages.length = 0;
+    await panel.receive({ type: 'ready' });
+    return {
+      panel,
+      payload: panel.messages.at(-1),
+      // A click, a filter, a column step: the same door in.
+      nav: async (patch) => {
+        await panel.receive(patch);
+        return panel.messages.at(-1);
+      }
+    };
+  } finally {
+    vscode.workspace.textDocuments.length = 0;
+    vscode.window.activeTextEditor = undefined;
+  }
+}
+
+const VALUES_PARQUET =
+  'import polars as pl\nd|f = pl.scan_parquet("values.parquet")\n';
+
+test('the data panel sends one page, and only the cells it draws', async () => {
+  const { payload, panel } = await openData(VALUES_PARQUET);
+  assert.equal(payload.rowStart, 0);
+  assert.equal(payload.rowCount, 200);
+  assert.equal(payload.rows.length, payload.pageSize, 'a page is a page, not the file');
+  assert.equal(payload.more, true);
+  for (const row of payload.rows) assert.equal(row.length, payload.columns.length);
+  // The shell is a shell: the rows arrive as data, never as markup.
+  assert.doesNotMatch(panel.webview.html, /ord-0000/);
+  assert.match(panel.webview.html, /acquireVsCodeApi/);
+});
+
+test('paging moves a page at a time and stops at the end of the file', async () => {
+  const { payload, nav } = await openData(VALUES_PARQUET);
+  assert.equal(payload.rows[0][payload.columns.indexOf('region')], 'APAC');
+
+  const second = await nav({ rowStart: 100 });
+  assert.equal(second.rowStart, 100);
+  assert.equal(second.rows.length, 100);
+  assert.equal(second.more, false, 'there is nothing after row 199');
+  // 40 APAC, 60 EU, 100 US: row 100 is the first US row.
+  assert.equal(second.rows[0][second.columns.indexOf('region')], 'US');
+  assert.equal(second.rows[0][second.columns.indexOf('order_id')], 'ord-0100');
+});
+
+test('a null cell crosses as a null, not as the word null', async () => {
+  const { payload } = await openData(VALUES_PARQUET);
+  const empty = payload.columns.indexOf('empty');
+  assert.equal(payload.rows[0][empty], null);
+});
+
+test('a wide frame is navigated by column, and the filter narrows it', async () => {
+  const { payload, nav } = await openData(
+    'import polars as pl\nd|f = pl.scan_parquet("wide.parquet")\n'
+  );
+  assert.equal(payload.columnCount, 5000);
+  assert.equal(payload.columns.length, payload.columnWindow, 'the whole file was drawn');
+  assert.equal(payload.columns[0], 'col_0000');
+
+  const stepped = await nav({ columnStart: payload.columnWindow });
+  assert.equal(stepped.columns[0], 'col_0040');
+  assert.equal(stepped.rows[0].length, stepped.columns.length);
+
+  const narrowed = await nav({ filter: 'col_012' });
+  assert.deepEqual(narrowed.columns, Array.from({ length: 10 }, (_, i) => `col_012${i}`));
+  assert.equal(narrowed.columnStart, 0, 'a narrower list makes the old window meaningless');
+});
+
+test('a CSV page says it is a prefix of the file rather than the file', async () => {
+  setSetting(vscode, 'csv.sniffBytes', 160);
+  try {
+    const { payload } = await openData('import polars as pl\nd|f = pl.read_csv("sales.csv")\n');
+    assert.equal(payload.rowCount, undefined, 'a CSV has no row count to claim');
+    assert.ok(payload.rows.length >= 1);
+    assert.ok(
+      payload.notes.some((note) => /prefix, not the file/.test(note)),
+      `the prefix was not admitted to: ${JSON.stringify(payload.notes)}`
+    );
+  } finally {
+    setSetting(vscode, 'csv.sniffBytes', 262144);
+  }
+});
+
+test('a format whose rows are not read yet says so instead of showing an empty grid', async () => {
+  const { payload } = await openData('import polars as pl\nd|f = pl.scan_ipc("sales.arrow")\n');
+  assert.match(payload.error ?? '', /ipc/);
+  assert.deepEqual(payload.rows, []);
+  // The schema is still known — that is the point of saying which half is missing.
+  assert.ok(payload.facts.some((fact) => /columns/.test(fact)));
+});
+
+test('a transformed frame still says the rows are the file’s', async () => {
+  const { payload } = await openData(
+    'import polars as pl\n' +
+    'df = pl.scan_parquet("values.parquet")\n' +
+    'out = df.filter(pl.col("region") == "EU")\n' +
+    'print(ou|t)\n'
+  );
+  assert.equal(payload.rows.length, 100);
+  assert.ok(payload.facts.includes('transforms not applied'));
+  assert.ok(payload.notes.some((note) => /nothing here applies the transforms/.test(note)));
+});
