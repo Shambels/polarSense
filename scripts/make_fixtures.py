@@ -6,6 +6,7 @@ Run with:  npm run fixtures
 Only polars is required; the Delta and Iceberg fixtures are written by hand so the
 test suite does not depend on deltalake/pyiceberg being installed.
 """
+
 from __future__ import annotations
 
 import datetime as dt
@@ -28,7 +29,11 @@ def build_frame() -> pl.DataFrame:
             "returns_qty": pl.Series([1, 2, 3], dtype=pl.Int32),
             "units": pl.Series([10, 20, 30], dtype=pl.Int64),
             "is_active": [True, False, True],
-            "order_date": [dt.date(2026, 1, 1), dt.date(2026, 2, 1), dt.date(2026, 3, 1)],
+            "order_date": [
+                dt.date(2026, 1, 1),
+                dt.date(2026, 2, 1),
+                dt.date(2026, 3, 1),
+            ],
             "created_at": [
                 dt.datetime(2026, 1, 1, 12, 0),
                 dt.datetime(2026, 2, 1, 12, 0),
@@ -55,7 +60,9 @@ def write_csv(df: pl.DataFrame) -> None:
     headerless = DATA / "headerless.csv"
     headerless.write_text("EU,1.5,10\nUS,2.25,20\n", encoding="utf-8")
     commented = DATA / "commented.csv"
-    commented.write_text("# generated\n# by hand\nregion,revenue\nEU,1.5\n", encoding="utf-8")
+    commented.write_text(
+        "# generated\n# by hand\nregion,revenue\nEU,1.5\n", encoding="utf-8"
+    )
     quoted = DATA / "quoted.csv"
     quoted.write_text('"region, long name",revenue\n"EU, west",1.5\n', encoding="utf-8")
 
@@ -70,8 +77,16 @@ def write_nested() -> None:
         {
             "id": [1, 2],
             "address": [
-                {"city": "Ghent", "postcode": "9000", "geo": {"lat": 51.05, "lon": 3.72}},
-                {"city": "Lisbon", "postcode": "1100", "geo": {"lat": 38.72, "lon": -9.14}},
+                {
+                    "city": "Ghent",
+                    "postcode": "9000",
+                    "geo": {"lat": 51.05, "lon": 3.72},
+                },
+                {
+                    "city": "Lisbon",
+                    "postcode": "1100",
+                    "geo": {"lat": 38.72, "lon": -9.14},
+                },
             ],
             "tags": [["a", "b"], ["c"]],
         },
@@ -83,7 +98,9 @@ def write_nested() -> None:
                     pl.Field("postcode", pl.String),
                     pl.Field(
                         "geo",
-                        pl.Struct([pl.Field("lat", pl.Float64), pl.Field("lon", pl.Float64)]),
+                        pl.Struct(
+                            [pl.Field("lat", pl.Float64), pl.Field("lon", pl.Float64)]
+                        ),
                     ),
                 ]
             ),
@@ -109,8 +126,16 @@ def write_ipc(df: pl.DataFrame) -> None:
         {
             "id": [1, 2],
             "address": [
-                {"city": "Ghent", "postcode": "9000", "geo": {"lat": 51.05, "lon": 3.72}},
-                {"city": "Lisbon", "postcode": "1100", "geo": {"lat": 38.72, "lon": -9.14}},
+                {
+                    "city": "Ghent",
+                    "postcode": "9000",
+                    "geo": {"lat": 51.05, "lon": 3.72},
+                },
+                {
+                    "city": "Lisbon",
+                    "postcode": "1100",
+                    "geo": {"lat": 38.72, "lon": -9.14},
+                },
             ],
             "tags": [["a", "b"], ["c"]],
             "grade": ["gold", "silver"],
@@ -133,7 +158,9 @@ def write_ipc(df: pl.DataFrame) -> None:
                     pl.Field("postcode", pl.String),
                     pl.Field(
                         "geo",
-                        pl.Struct([pl.Field("lat", pl.Float64), pl.Field("lon", pl.Float64)]),
+                        pl.Struct(
+                            [pl.Field("lat", pl.Float64), pl.Field("lon", pl.Float64)]
+                        ),
                     ),
                 ]
             ),
@@ -182,11 +209,25 @@ def write_delta() -> None:
             {"name": "region", "type": "string", "nullable": True, "metadata": {}},
             {"name": "revenue", "type": "double", "nullable": True, "metadata": {}},
             {"name": "units", "type": "long", "nullable": True, "metadata": {}},
-            {"name": "opened_at", "type": "timestamp", "nullable": True, "metadata": {}},
-            {"name": "price", "type": "decimal(18,2)", "nullable": True, "metadata": {}},
+            {
+                "name": "opened_at",
+                "type": "timestamp",
+                "nullable": True,
+                "metadata": {},
+            },
+            {
+                "name": "price",
+                "type": "decimal(18,2)",
+                "nullable": True,
+                "metadata": {},
+            },
             {
                 "name": "tags",
-                "type": {"type": "array", "elementType": "string", "containsNull": True},
+                "type": {
+                    "type": "array",
+                    "elementType": "string",
+                    "containsNull": True,
+                },
                 "nullable": True,
                 "metadata": {},
             },
@@ -206,7 +247,9 @@ def write_delta() -> None:
         },
     ]
     # A later commit with no metaData, so the reader must walk backwards past it.
-    commit1 = [{"add": {"path": "region=EU/part-0.parquet", "size": 1, "dataChange": True}}]
+    commit1 = [
+        {"add": {"path": "region=EU/part-0.parquet", "size": 1, "dataChange": True}}
+    ]
     (log / "00000000000000000000.json").write_text(
         "\n".join(json.dumps(a) for a in commit0) + "\n", encoding="utf-8"
     )
@@ -229,7 +272,12 @@ def write_delta_checkpoint() -> None:
         "fields": [
             {"name": "region", "type": "string", "nullable": True, "metadata": {}},
             {"name": "revenue", "type": "double", "nullable": True, "metadata": {}},
-            {"name": "checkpointed_at", "type": "timestamp", "nullable": True, "metadata": {}},
+            {
+                "name": "checkpointed_at",
+                "type": "timestamp",
+                "nullable": True,
+                "metadata": {},
+            },
         ],
     }
     meta = pl.Struct(
@@ -272,7 +320,8 @@ def write_delta_checkpoint() -> None:
     # A commit above the checkpoint carrying no metaData, so the JSON walk runs
     # and comes up empty before the fallback fires.
     (log / "00000000000000000003.json").write_text(
-        json.dumps({"add": {"path": "part-2.parquet", "size": 3, "dataChange": True}}) + "\n",
+        json.dumps({"add": {"path": "part-2.parquet", "size": 3, "dataChange": True}})
+        + "\n",
         encoding="utf-8",
     )
 
@@ -319,9 +368,7 @@ def write_delta_checkpoint_zstd() -> None:
                 [None, None, {"path": "part-0.parquet", "size": 1}], dtype=add
             ),
         }
-    ).write_parquet(
-        log / "00000000000000000002.checkpoint.parquet", compression="zstd"
-    )
+    ).write_parquet(log / "00000000000000000002.checkpoint.parquet", compression="zstd")
 
 
 def write_iceberg() -> None:
@@ -364,7 +411,9 @@ def write_iceberg() -> None:
         "current-snapshot-id": -1,
         "snapshots": [],
     }
-    (meta / "v1.metadata.json").write_text(json.dumps({**metadata, "current-schema-id": 0}), encoding="utf-8")
+    (meta / "v1.metadata.json").write_text(
+        json.dumps({**metadata, "current-schema-id": 0}), encoding="utf-8"
+    )
     (meta / "v2.metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
     (meta / "version-hint.text").write_text("2\n", encoding="utf-8")
 
