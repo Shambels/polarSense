@@ -746,6 +746,20 @@ test('a sampled list says so, on the item the user is looking at', async () => {
   }
 });
 
+test('the palette commands turn value completion on and off', async () => {
+  const run = (id) => vscode._registered.commands.get(id)();
+  try {
+    await run('polarsense.enableValues');
+    const on = await complete(`${VALUES_PY}df.filter(pl.col("region") == "|")\n`);
+    assert.deepEqual(on.items.map((i) => i.label), ['US', 'EU', 'APAC']);
+
+    await run('polarsense.disableValues');
+    assert.equal(await complete(`${VALUES_PY}df.filter(pl.col("region") == "|")\n`), undefined);
+  } finally {
+    setSetting(vscode, 'values.enable', false);
+  }
+});
+
 test('a value is never warned about as an unknown column', async () => {
   const { items } = await withValues(() =>
     diagnose(`${VALUES_PY}df.filter(pl.col("region") == "nope")\n`)

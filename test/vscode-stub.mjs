@@ -111,6 +111,7 @@ export function makeVscode(settings = {}, workspaceFolders = []) {
     CompletionList,
     CodeAction,
     CodeActionKind: { QuickFix: 'quickfix' },
+    ConfigurationTarget: { Global: 1, Workspace: 2, WorkspaceFolder: 3 },
     Diagnostic,
     DiagnosticSeverity: { Error: 0, Warning: 1, Information: 2, Hint: 3 },
     DocumentLink,
@@ -135,7 +136,15 @@ export function makeVscode(settings = {}, workspaceFolders = []) {
     workspace: {
       workspaceFolders,
       notebookDocuments: [],
-      getConfiguration: () => ({ get: (key, fallback) => defaults[key] ?? fallback }),
+      getConfiguration: () => ({
+        get: (key, fallback) => defaults[key] ?? fallback,
+        update: (key, value) => {
+          defaults[key] = value;
+          for (const handler of registered.configHandlers) {
+            handler({ affectsConfiguration: () => true });
+          }
+        }
+      }),
       createFileSystemWatcher: () => ({
         onDidChange: noopEvent, onDidCreate: noopEvent, onDidDelete: noopEvent, dispose() {}
       }),

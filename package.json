@@ -55,6 +55,14 @@
         "title": "PolarSense: Clear schema cache"
       },
       {
+        "command": "polarsense.enableValues",
+        "title": "PolarSense: Turn on value completion (reads your data)"
+      },
+      {
+        "command": "polarsense.disableValues",
+        "title": "PolarSense: Turn off value completion"
+      },
+      {
         "command": "polarsense.showOutput",
         "title": "PolarSense: Show log"
       },
