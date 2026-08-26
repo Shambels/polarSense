@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'node:path';
 import type { PolarSenseApi, ResolvedFrame, RowsFailure } from '../api.js';
 import { fmt, frameFacts, frameNotes } from './facts.js';
+import { cursorTarget, NO_PYTHON, type FrameTarget } from './target.js';
 
 /**
  * The file behind the frame, a page at a time.
@@ -39,19 +40,16 @@ let panel: vscode.WebviewPanel | undefined;
 let view: View | undefined;
 let last: unknown;
 
-export async function showData(api: PolarSenseApi): Promise<void> {
-  const editor = vscode.window.activeTextEditor;
-  if (!editor || editor.document.languageId !== 'python') {
-    vscode.window.showInformationMessage('PolarSense: open a Python file to see a frame.');
+export async function showData(api: PolarSenseApi, at?: FrameTarget): Promise<void> {
+  const target = at ?? cursorTarget();
+  if (!target) {
+    vscode.window.showInformationMessage(NO_PYTHON);
     return;
   }
 
-  const frame = await api.resolveFrameAt(editor.document.uri, editor.selection.active);
+  const frame = await api.resolveFrameAt(target.uri, target.position);
   if (!frame) {
-    vscode.window.showInformationMessage(
-      'PolarSense: no frame at the cursor. Put it on a DataFrame — the variable, ' +
-      'or anywhere in the chain hanging off it.'
-    );
+    vscode.window.showInformationMessage(target.missing);
     return;
   }
 

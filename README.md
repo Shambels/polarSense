@@ -210,6 +210,32 @@ so its rows are read out of the same bounded prefix the header comes from and th
 panel says that is what you are looking at. Arrow IPC, Delta and Iceberg show their
 schema and say plainly that their rows are not read yet.
 
+In a notebook, both panels are a click away from the output itself. A cell ending
+in a frame gets a small bar under what it printed:
+
+```
+   shape: (200, 4)
+   ┌────────┬──────────┬─────────┐
+   │ region ┆ order_id ┆ revenue │
+   └────────┴──────────┴─────────┘
+
+   POLARSENSE  [ Details ]  [ Data ]
+```
+
+No kernel is involved and none is needed. The button says which output was
+clicked; the cell's own source says which frame that is, and PolarSense already
+knows which file is behind it — so the buttons work on a notebook you have opened
+but never run, on a frame defined eight cells earlier. A cell whose frame is built
+in memory rather than read from a file says so instead of opening a panel.
+
+Carrying a button under an output means registering a renderer for `text/html`,
+and VS Code has no supported way to *add* to the built-in HTML renderer — so
+PolarSense stands in its place for every HTML output in the notebook, not only
+for frames. It draws them the way the built-in renderer does, scripts and all. If
+anything renders differently with PolarSense installed, that is a bug worth
+reporting. `polarsense.notebook.buttons` turns the bar off and leaves the
+rendering as it is.
+
 Column names that do not exist are flagged as you type, with a one-click fix:
 
 ```python
@@ -317,6 +343,7 @@ so a frame defined in cell 1 completes in cell 8.
 | `polarsense.values.maxRows` | `10000` | Rows of one column to read when offering values |
 | `polarsense.values.maxDistinct` | `50` | Above this many distinct values, offer none |
 | `polarsense.diagnostics.enable` | `true` | Warn about column names that don't exist |
+| `polarsense.notebook.buttons` | `true` | Show the Details / Data buttons under a frame printed in a notebook |
 | `polarsense.trace` | `false` | Log every resolution to the PolarSense output channel |
 
 The status bar shows what the frame at your cursor resolved to, or why it didn't.
@@ -387,6 +414,13 @@ reshapes are beyond what static reading can predict.
   `csv.sniffBytes` bytes, and the last record of a truncated prefix is dropped
   because the read stopped mid-line. Reaching row 5,000,000 of a CSV means
   walking the 4,999,999 before it.
+- **The notebook buttons find the frame the cell printed, not the one you
+  meant.** They read the cell's last statement, which is what a notebook shows
+  the value of; a cell that prints a frame from somewhere in the middle gets the
+  last one instead. Which cell an output belongs to is matched exactly where
+  VS Code's own data allows it and falls back to the focused cell where it does
+  not — and when neither answers, the panel says so rather than opening on
+  whichever frame was nearest.
 - **Multi-file globs assume one schema.** First match wins.
 - **`.xls` is not read.** It is OLE2, a different binary format wearing a
   similar extension, and it reports nothing rather than guessing at its bytes.

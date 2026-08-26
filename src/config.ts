@@ -11,6 +11,7 @@ export interface Settings {
   followImports: boolean;
   cacheSize: number;
   diagnosticsEnabled: boolean;
+  notebookButtons: boolean;
   valuesEnabled: boolean;
   valueMaxRows: number;
   valueMaxDistinct: number;
@@ -30,6 +31,7 @@ export function readSettings(): Settings {
     followImports: config.get('followImports', true),
     cacheSize: config.get('cacheSize', 200),
     diagnosticsEnabled: config.get('diagnostics.enable', true),
+    notebookButtons: config.get('notebook.buttons', true),
     valuesEnabled: config.get('values.enable', false),
     valueMaxRows: config.get('values.maxRows', 10_000),
     valueMaxDistinct: config.get('values.maxDistinct', 50),

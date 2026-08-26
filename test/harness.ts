@@ -29,6 +29,7 @@ export { resolveFrame, framesSources } from '../src/core/frame.js';
 export { evaluateFrame, structFields } from '../src/core/schemaEval.js';
 export { exprNames } from '../src/core/exprNames.js';
 export { nearest } from '../src/core/nearest.js';
+export { looksLikeFrame, lastStatementOffset } from '../src/preview/cells.js';
 
 import { initParser } from '../src/core/parser.js';
 import { parse, repairAtCursor } from '../src/core/parser.js';
