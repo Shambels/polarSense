@@ -698,6 +698,36 @@ test('is_in offers values inside the list', async () => {
   assert.deepEqual(result.items.map((i) => i.label), ['US', 'EU', 'APAC']);
 });
 
+test('str.contains offers the column\'s values', async () => {
+  // A regex position, and the values are still what you are reaching for: the
+  // list is a starting point to trim, not a finished pattern.
+  const result = await withValues(() =>
+    complete(`${VALUES_PY}df.filter(pl.col("region").str.contains("|"))\n`)
+  );
+  assert.deepEqual(result.items.map((i) => i.label), ['US', 'EU', 'APAC']);
+  assert.equal(result.items[0].detail, 'value');
+});
+
+test('starts_with and ends_with take values too', async () => {
+  for (const method of ['starts_with', 'ends_with']) {
+    const result = await withValues(() =>
+      complete(`${VALUES_PY}df.filter(pl.col("region").str.${method}("|"))\n`)
+    );
+    assert.deepEqual(result.items.map((i) => i.label), ['US', 'EU', 'APAC'], method);
+  }
+});
+
+test('a selector of the same name still offers column names', async () => {
+  // `cs.contains("…")` is a fragment of a *name*. Values here would be the
+  // feature answering a question nobody asked.
+  const result = await complete(
+    'import polars as pl\nimport polars.selectors as cs\n' +
+    'df = pl.scan_parquet("values.parquet")\ndf.select(cs.contains("|"))\n'
+  );
+  assert.ok(result.items.some((i) => i.label === 'region'));
+  assert.ok(!result.items.some((i) => i.label === 'EU'));
+});
+
 test('a high-cardinality column offers nothing at all', async () => {
   const result = await withValues(() =>
     complete(`${VALUES_PY}df.filter(pl.col("order_id") == "|")\n`)

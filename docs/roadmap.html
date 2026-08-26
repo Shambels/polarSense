@@ -161,7 +161,7 @@
       <div class="hi"><b>19</b><span>shipped</span></div>
       <div><b>3</b><span>remaining</span></div>
       <div><b>1</b><span>blocked on a decision</span></div>
-      <div><b>494</b><span>tests</span></div>
+      <div><b>508</b><span>tests</span></div>
     </div>
 
     <p class="lede" style="font-size:.95rem;color:var(--muted)">Effort figures are focused working days. <strong>Impact</strong> is my read on how many users would notice, not how interesting the work is.</p>
@@ -344,8 +344,10 @@ def report(df):  # polarsense: data/sales.parquet</code></pre>
 
       <div class="item shipped">
         <div class="body">
-          <h3>Value completion <span class="tick">shipped</span> <span class="where">src/schema/values.ts · core/resolve.ts</span></h3>
+          <h3>Value completion <span class="tick">shipped</span> <span class="where">src/schema/values.ts · core/resolve.ts · core/triggerSites.ts</span></h3>
           <p>The showpiece, and off until <code>polarsense.values.enable</code> says otherwise. <code>== "…"</code>, <code>!=</code>, <code>.is_in([…])</code>, <code>.eq</code>/<code>.ne</code>, and the right-hand side of a constraint keyword — which is the same position whose left-hand side has always completed column names.</p>
+          <p>The string namespace joined them afterwards: <code>.str.contains</code>, <code>.starts_with</code>, <code>.ends_with</code>, <code>.contains_any</code>, <code>.str.find</code> and <code>.list.contains</code>. Cheaper than it looks — the value table is keyed by method name like every other trigger row, and <code>.str</code> was already a namespace the name walk passes through, so the whole feature is one longer set. The receiver doing the deciding is also what keeps <code>cs.contains("reg")</code> intact: same method name, opposite meaning, and <code>cs</code> names no column, so that site still completes column <em>names</em> as a fragment.</p>
+          <p>Where it is knowingly generous rather than certain: <code>contains</code> matches a regex unless <code>literal=True</code>, so a value holding <code>.</code> or <code>(</code> is offered as a pattern that means something else once inserted. Nothing escapes it and nothing checks it — a value site is never typo-checked — and the alternative was silence in the position people reach for most.</p>
           <p>Not dictionary pages. hyparquet does not expose them, and it turned out not to matter: reading the first <code>values.maxRows</code> rows of one column is one column chunk either way, and on a dictionary-encoded column that is the dictionary page plus a run of indices into it. What the entry called low-cardinality became a rule instead of a hope — past <code>values.maxDistinct</code> the answer is <em>nothing</em>, not a truncated list, and a column whose values are not strings gets the same silence, because a value site is always inside quotes.</p>
           <p>The thing the estimate missed: polars writes parquet with zstd, and hyparquet decodes snappy. Without a decompressor the showpiece would have done nothing on a file polars had just written — so <code>fzstd</code> is a third runtime dependency now, and the Delta checkpoint reader, the only other place a page rather than a footer is decompressed, stopped being zstd-blind as a side effect.</p>
           <p>Free and exact in one case: hive partition columns. The directory names <em>are</em> the domain, so no data is read and the list can never be a sample — everywhere else, a read that did not cover every row says <code>value (sampled)</code> on the item itself.</p>
@@ -452,7 +454,7 @@ def report(df):  # polarsense: data/sales.parquet</code></pre>
   </section>
 
   <footer>
-    <p>PolarSense · 19 of 22 shipped · 494 tests · companion to docs/build-plan.html</p>
+    <p>PolarSense · 19 of 22 shipped · 508 tests · companion to docs/build-plan.html</p>
   </footer>
 
 </div>

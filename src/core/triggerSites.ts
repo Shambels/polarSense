@@ -120,8 +120,24 @@ export const FRAGMENT_METHODS = new Set(['query', 'project', 'order', 'aggregate
  * Expression methods whose argument is a *value* of the column they are called
  * on rather than a name — `pl.col("region").is_in(["EU"])`. Comparison operators
  * do the same job and are handled in the resolver, where the syntax lives.
+ *
+ * The string namespace belongs here too: `.str.contains("south")` asks about the
+ * contents of `region`, not about the frame's column names. Keyed by method name
+ * alone like every other row, so the `.str`/`.list` hop costs nothing — the
+ * receiver still has to resolve to a single column of a file we can read.
+ *
+ * `contains`, `contains_any` and `find` match a *regex* unless `literal=True`,
+ * so what is offered there is a starting point rather than the finished
+ * argument: a value containing `.` or `(` is a pattern that means something else
+ * once inserted. Offering it anyway is the generous half of the usual trade —
+ * the alternative is silence in the position people reach for most — and nothing
+ * downstream treats a value site as checkable, so no diagnostic can be wrong
+ * about it.
  */
-export const VALUE_METHODS = new Set(['is_in', 'eq', 'ne', 'eq_missing', 'ne_missing']);
+export const VALUE_METHODS = new Set([
+  'is_in', 'eq', 'ne', 'eq_missing', 'ne_missing',
+  'contains', 'contains_any', 'starts_with', 'ends_with', 'find'
+]);
 
 /** Keywords that take a *different* frame's columns than the receiver. */
 export const RIGHT_FRAME_KWARGS = new Set(['right_on', 'by_right']);

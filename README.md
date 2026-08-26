@@ -46,15 +46,16 @@ Column names inside string literals, wherever polars expects one:
 
 ### Values, if you ask for them
 
-Everything above reads *metadata*. Turn on `polarsense.values.enable` and one more
-position starts answering — the other side of a comparison, where what belongs is
-data:
+Everything above reads *metadata*. Turn on `polarsense.values.enable` and a
+second family of positions starts answering — the ones holding a value of a
+column rather than the name of one, where what belongs is data:
 
 ```python
 df = pl.scan_parquet("data/sales.parquet")
 df.filter(pl.col("region") == "␣")     # US, EU, APAC — read out of the file
 df.filter(region="␣")                  # the same, on a constraint keyword
 df.filter(pl.col("region").is_in(["␣"]))
+df.filter(pl.col("region").str.contains("␣"))   # and starts_with, ends_with
 ```
 
 This is the only feature here that reads the rows of your data file, which is why
@@ -74,6 +75,10 @@ It stays quiet more often than it speaks, on purpose:
   how many rows it saw.
 - Hive partition columns are exact and free: `region=EU/`, `region=US/` *are* the
   values, read from the directory names with no data touched at all.
+- `contains`, `contains_any` and `find` match a **regex** unless you pass
+  `literal=True`. Nothing is escaped on the way in, so a value holding `.` or `(`
+  arrives as a pattern that means something else — take those as a starting point
+  to trim, not a finished argument.
 
 Values are never typo-checked and never hovered. They're data; the file has no
 opinion about which of them you meant to type.
