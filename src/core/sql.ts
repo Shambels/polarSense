@@ -23,18 +23,23 @@ const READER_KINDS: Record<string, SourceKind> = {
   parquet_scan: 'parquet',
   read_csv: 'csv',
   read_csv_auto: 'csv',
+  read_json: 'json',
+  read_json_auto: 'json',
+  read_ndjson: 'json',
   delta_scan: 'delta',
   iceberg_scan: 'iceberg'
 };
 
 const READER_CALL =
-  /\b(read_parquet|parquet_scan|read_csv_auto|read_csv|delta_scan|iceberg_scan)\s*\(\s*(['"])([^'"]+)\2/i;
+  /\b(read_parquet|parquet_scan|read_csv_auto|read_csv|read_json_auto|read_ndjson|read_json|delta_scan|iceberg_scan)\s*\(\s*(['"])([^'"]+)\2/i;
 const QUOTED = /(['"])([^'"]+)\1/g;
 
 const EXTENSIONS: [RegExp, SourceKind][] = [
   [/\.(parquet|pq)$/i, 'parquet'],
   [/\.(csv|tsv|txt)$/i, 'csv'],
-  [/\.(arrow|ipc|feather)$/i, 'ipc']
+  [/\.(arrow|ipc|feather)$/i, 'ipc'],
+  [/\.(json|ndjson|jsonl)$/i, 'json'],
+  [/\.(xlsx|xlsm)$/i, 'excel']
 ];
 
 /**

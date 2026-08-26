@@ -16,11 +16,16 @@ export const SOURCE_FUNCS: Record<string, SourceKind> = {
   scan_ipc: 'ipc',
   read_ipc_stream: 'ipc',
   read_feather: 'ipc',
+  read_json: 'json',
+  read_ndjson: 'json',
+  scan_ndjson: 'json',
+  read_excel: 'excel',
   read_delta: 'delta',
   scan_delta: 'delta',
   scan_iceberg: 'iceberg',
   // duckdb spells two of them differently; pandas and pyarrow share the rest.
   read_csv_auto: 'csv',
+  read_json_auto: 'json',
   parquet_scan: 'parquet'
 };
 

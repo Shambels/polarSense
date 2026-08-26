@@ -1,6 +1,6 @@
 /** Shared vocabulary for the analysis + schema layers. Nothing here imports vscode. */
 
-export type SourceKind = 'parquet' | 'csv' | 'ipc' | 'delta' | 'iceberg';
+export type SourceKind = 'parquet' | 'csv' | 'ipc' | 'delta' | 'iceberg' | 'json' | 'excel';
 
 /** Where a frame's columns come from, as read off the call site. */
 export interface SourceRef {

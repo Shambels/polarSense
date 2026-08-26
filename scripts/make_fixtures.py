@@ -418,6 +418,71 @@ def write_iceberg() -> None:
     (meta / "version-hint.text").write_text("2\n", encoding="utf-8")
 
 
+def write_json() -> None:
+    """NDJSON, a JSON array and a nested document — stdlib only, like Delta and
+    Iceberg, so the suite needs no extra writer installed."""
+    rows = [
+        {"region": "EU", "revenue": 1.5, "units": 10, "is_active": True,
+         "notes": None, "tags": ["a", "b"], "mixed": 1},
+        {"region": "US", "revenue": 2.25, "units": 20, "is_active": False,
+         "notes": None, "tags": [], "mixed": 1.5, "late_key": 7},
+        {"region": "APAC", "revenue": 3.0, "units": 30, "is_active": True,
+         "notes": None, "tags": ["c"], "mixed": 2},
+    ]
+    (DATA / "sales.ndjson").write_text(
+        "\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8"
+    )
+    (DATA / "sales.json").write_text(json.dumps(rows), encoding="utf-8")
+    (DATA / "nested.ndjson").write_text(
+        json.dumps({
+            "id": 1,
+            "address": {"city": "Paris", "geo": {"lat": 48.8, "lon": 2.3}},
+            "scores": [1, 2],
+        }) + "\n",
+        encoding="utf-8",
+    )
+
+
+def write_excel() -> None:
+    """A minimal .xlsx, written with zipfile so no spreadsheet library is needed.
+
+    Deliberately awkward: the header uses shared strings, skips column C so the
+    gap has to be named rather than closed up, and escapes an ampersand.
+    """
+    import zipfile
+
+    shared = ["region", "revenue", "Q1 & Q2"]
+    sst = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+        f'count="{len(shared)}" uniqueCount="{len(shared)}">'
+        + "".join(f"<si><t>{v.replace('&', '&amp;')}</t></si>" for v in shared)
+        + "</sst>"
+    )
+    sheet = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        "<sheetData>"
+        '<row r="1">'
+        '<c r="A1" t="s"><v>0</v></c>'
+        '<c r="B1" t="s"><v>1</v></c>'
+        '<c r="D1" t="s"><v>2</v></c>'
+        "</row>"
+        '<row r="2"><c r="A1" t="inlineStr"><is><t>EU</t></is></c></row>'
+        "</sheetData></worksheet>"
+    )
+    content_types = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<Default Extension="xml" ContentType="application/xml"/>'
+        "</Types>"
+    )
+    with zipfile.ZipFile(DATA / "sales.xlsx", "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("[Content_Types].xml", content_types)
+        zf.writestr("xl/sharedStrings.xml", sst)
+        zf.writestr("xl/worksheets/sheet1.xml", sheet)
+
+
 def write_perf() -> None:
     """The pathological case the perf guard runs against."""
     wide = pl.DataFrame({f"col_{i:04d}": [float(i)] for i in range(5000)})
@@ -450,6 +515,8 @@ def main() -> None:
     write_delta_checkpoint()
     write_delta_checkpoint_zstd()
     write_iceberg()
+    write_json()
+    write_excel()
     write_perf()
     write_expected(df)
     print(f"fixtures written to {DATA}")

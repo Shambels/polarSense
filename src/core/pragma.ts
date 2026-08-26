@@ -18,7 +18,7 @@ import type { SourceKind, SourceRef } from './types.js';
  */
 
 const PRAGMA = /^#\s*polarsense:\s*(.+?)\s*$/;
-const KINDS: SourceKind[] = ['parquet', 'csv', 'ipc', 'delta', 'iceberg'];
+const KINDS: SourceKind[] = ['parquet', 'csv', 'ipc', 'delta', 'iceberg', 'json', 'excel'];
 
 /** Delta and Iceberg tables are directories, so their kind has to be said aloud. */
 const KIND_PREFIX = new RegExp(`^(${KINDS.join('|')})\\s+(.+)$`, 'i');
@@ -26,7 +26,9 @@ const KIND_PREFIX = new RegExp(`^(${KINDS.join('|')})\\s+(.+)$`, 'i');
 const EXTENSIONS: [RegExp, SourceKind][] = [
   [/\.(parquet|pq)$/i, 'parquet'],
   [/\.(csv|tsv|txt)$/i, 'csv'],
-  [/\.(arrow|ipc|feather)$/i, 'ipc']
+  [/\.(arrow|ipc|feather)$/i, 'ipc'],
+  [/\.(json|ndjson|jsonl)$/i, 'json'],
+  [/\.(xlsx|xlsm)$/i, 'excel']
 ];
 
 export interface Pragma {
