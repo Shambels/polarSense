@@ -9,7 +9,7 @@ import {
   makeVscode, installVscodeStub, makeDocument, makeNotebook, noCancel, setSetting,
   unregisterSetting
 } from '../vscode-stub.mjs';
-import { looksLikeFrame, lastStatementOffset } from '../harness.mjs';
+import { looksLikeFrame, lastStatementOffset, dtypeClass } from '../harness.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const DATA = path.join(ROOT, 'test', 'fixtures', 'data');
@@ -934,7 +934,7 @@ test('the details panel lists every column with the statistics the footer held',
   // Beside, and without taking focus: it is read while typing continues.
   assert.deepEqual(panel.revealed, { column: vscode.ViewColumn.Beside, preserveFocus: true });
   assert.match(html, /<td class="name">region<\/td>/);
-  assert.match(html, /<td class="dtype">f64<\/td>/);
+  assert.match(html, /<td class="dtype t-float">f64<\/td>/);
   // Nothing on this page runs: a column name comes out of a data file.
   assert.equal(panel.options.enableScripts, false);
   assert.doesNotMatch(html, /<script/);
@@ -1246,4 +1246,19 @@ test('a page that has just loaded is told whether the buttons are on', async () 
   } finally {
     setSetting(vscode, 'notebook.buttons', true);
   }
+});
+
+test('a dtype is coloured by family, and an unknown one is not coloured at all', () => {
+  assert.equal(dtypeClass('str'), 't-str');
+  assert.equal(dtypeClass('i64'), 't-int');
+  assert.equal(dtypeClass('u8'), 't-int');
+  assert.equal(dtypeClass('f64'), 't-float');
+  assert.equal(dtypeClass('decimal[38,2]'), 't-float');
+  assert.equal(dtypeClass('bool'), 't-bool');
+  assert.equal(dtypeClass('datetime[μs]'), 't-temporal');
+  assert.equal(dtypeClass('list[str]'), 't-nested');
+  // A CSV with dtype inference off has no dtype at all, and a dtype nobody here
+  // has seen is not worth a guessed colour.
+  assert.equal(dtypeClass(undefined), 't-other');
+  assert.equal(dtypeClass('polygon'), 't-other');
 });

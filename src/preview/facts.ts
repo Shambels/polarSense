@@ -46,6 +46,29 @@ export function frameNotes(frame: ResolvedFrame): string[] {
 }
 
 /**
+ * A dtype reduced to the handful of families worth colouring differently.
+ *
+ * Reading a wide table is mostly asking "what kind of thing is this column",
+ * and a colour answers that faster than the name does. The families are the
+ * ones that behave differently — text, whole numbers, fractions, flags, points
+ * in time, things with a shape inside them — not every dtype polars has.
+ *
+ * The host computes it and sends it: the grid draws what it is given, so there
+ * is one copy of this rule rather than one here and one in the webview.
+ */
+export function dtypeClass(dtype: string | undefined): string {
+  const d = (dtype ?? '').toLowerCase();
+  if (!d) return 't-other';
+  if (/^(bool|boolean)/.test(d)) return 't-bool';
+  if (/^(i|u)\d/.test(d) || /^(int|uint|long|short)/.test(d)) return 't-int';
+  if (/^f\d/.test(d) || /^(float|double|decimal)/.test(d)) return 't-float';
+  if (/^(date|time|duration|timestamp)/.test(d)) return 't-temporal';
+  if (/^(list|array|struct|object|binary|map)/.test(d)) return 't-nested';
+  if (/^(str|utf8|string|cat|enum|char)/.test(d)) return 't-str';
+  return 't-other';
+}
+
+/**
  * The chrome both panels wear: page, header, facts line, notes, and the grid
  * they each fill differently. It lives here because they sit side by side and
  * two copies of it drift — the details panel is the data panel with a different
@@ -70,9 +93,12 @@ export const PANEL_CSS = `
     font-family:var(--vscode-editor-font-family);font-size:.82rem;font-weight:400;
     color:var(--vscode-descriptionForeground);
   }
+  /* The path is a different kind of fact from the numbers under it — where the
+     data is, not what is in it — so it is a different colour from them. */
   .origin{
     font-family:var(--vscode-editor-font-family);font-size:.74rem;
-    color:var(--vscode-descriptionForeground);margin:.3rem 0 0;
+    color:var(--vscode-textPreformat-foreground,var(--vscode-textLink-foreground));
+    opacity:.85;margin:.3rem 0 0;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   }
   .facts{
@@ -97,10 +123,13 @@ export const PANEL_CSS = `
   th,td{text-align:left;padding:.3rem .7rem;white-space:nowrap;vertical-align:top}
   th:last-child,td:last-child{width:100%}
   tbody td{border-bottom:1px solid var(--vscode-panel-border)}
+  /* The header and the row index are chrome, not data: a background of their
+     own is what stops a wide table reading as one undifferentiated sheet. */
   thead th{
-    position:sticky;top:0;z-index:2;background:var(--vscode-editor-background);
+    position:sticky;top:0;z-index:2;
+    background:var(--vscode-editorWidget-background,var(--vscode-editor-background));
     font-weight:600;font-size:.7rem;text-transform:uppercase;letter-spacing:.07em;
-    color:var(--vscode-descriptionForeground);
+    color:var(--vscode-foreground);
     padding-top:.5rem;padding-bottom:.4rem;
     box-shadow:inset 0 -1px var(--vscode-panel-border);
   }
@@ -109,6 +138,14 @@ export const PANEL_CSS = `
   td.num{text-align:right;font-variant-numeric:tabular-nums}
   td.dtype{color:var(--vscode-symbolIcon-typeParameterForeground)}
   .none{opacity:.5}
+  /* The chart colours are the theme's own, so they stay legible in themes
+     nobody here has seen. A dtype we do not recognise keeps the plain one. */
+  .dtype.t-str{color:var(--vscode-charts-blue)}
+  .dtype.t-int{color:var(--vscode-charts-green)}
+  .dtype.t-float{color:var(--vscode-charts-purple)}
+  .dtype.t-bool{color:var(--vscode-charts-orange)}
+  .dtype.t-temporal{color:var(--vscode-charts-yellow)}
+  .dtype.t-nested{color:var(--vscode-charts-red)}
 `;
 
 export function fmt(n: number): string {
