@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
-  makeVscode, installVscodeStub, makeDocument, noCancel, setSetting
+  makeVscode, installVscodeStub, makeDocument, noCancel, setSetting, unregisterSetting
 } from '../vscode-stub.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -757,6 +757,25 @@ test('the palette commands turn value completion on and off', async () => {
     assert.equal(await complete(`${VALUES_PY}df.filter(pl.col("region") == "|")\n`), undefined);
   } finally {
     setSetting(vscode, 'values.enable', false);
+  }
+});
+
+test('the toggle says what is wrong when the setting is not registered', async () => {
+  // A window that resolved one copy of the extension and registered another's
+  // manifest has the command but not the key. VS Code answers `update` with
+  // "polarsense.values.enable is not a registered configuration", which reads
+  // as a broken command; the toggle should name the actual fault instead, and
+  // must not leave value completion half on.
+  unregisterSetting(vscode, 'values.enable');
+  vscode._registered.error = undefined;
+  try {
+    await vscode._registered.commands.get('polarsense.enableValues')();
+    assert.match(vscode._registered.error ?? '', /not registered/);
+    assert.equal(vscode._settings['values.enable'], false, 'the setting was written anyway');
+    assert.equal(await complete(`${VALUES_PY}df.filter(pl.col("region") == "|")\n`), undefined);
+  } finally {
+    vscode._registered.unregistered.delete('values.enable');
+    vscode._registered.error = undefined;
   }
 });
 

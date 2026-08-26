@@ -177,10 +177,48 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
  * The setting is the state; the commands just write it. Everything that reads
  * values already re-reads the configuration, and the change event already
  * rewires the schema service — so there is nothing else to keep in step.
+ *
+ * The write can fail before it starts. VS Code refuses to write a key its
+ * configuration registry does not hold, and the registry is filled from the
+ * manifest of the extension copy the window resolved — which is not always the
+ * copy whose code is running. A second PolarSense in the same window (a
+ * Marketplace install alongside an Extension Development Host, or a folder an
+ * interrupted update left in `.vscode/extensions`) makes the two diverge: the
+ * duplicate manifest's properties are rejected as already registered, and if
+ * the copy that did register is then dropped, the key is gone while the command
+ * still runs. `update` answers that with "polarsense.values.enable is not a
+ * registered configuration", which reads as a bug in the command rather than as
+ * what it is — so ask first, and say the actionable thing instead.
  */
 async function setValues(on: boolean): Promise<void> {
-  await vscode.workspace.getConfiguration('polarsense')
-    .update('values.enable', on, vscode.ConfigurationTarget.Global);
+  const config = vscode.workspace.getConfiguration('polarsense');
+
+  // inspect() reads the same registry update() validates against, so a default
+  // that is missing here is exactly the write that would have thrown. The
+  // declared default is `false`, never undefined, so this cannot misfire.
+  if (config.inspect<boolean>('values.enable')?.defaultValue === undefined) {
+    warn('values.enable is not in this window\'s configuration registry; the toggle cannot write it');
+    const reload = 'Reload Window';
+    const choice = await vscode.window.showErrorMessage(
+      'PolarSense cannot change its settings in this window: polarsense.values.enable is not ' +
+      'registered. Reload the window; if it persists, look for a second copy of PolarSense in ' +
+      'the Extensions view and remove it.',
+      reload
+    );
+    if (choice === reload) await vscode.commands.executeCommand('workbench.action.reloadWindow');
+    return;
+  }
+
+  try {
+    await config.update('values.enable', on, vscode.ConfigurationTarget.Global);
+  } catch (err) {
+    // Settings written by policy, a read-only settings.json — the write is the
+    // whole command, so there is nothing to report but the failure.
+    warn(`could not write values.enable: ${String(err)}`);
+    vscode.window.showErrorMessage(`PolarSense could not change the setting: ${String(err)}`);
+    return;
+  }
+
   vscode.window.showInformationMessage(
     on
       ? 'PolarSense: value completion on. It reads rows of the parquet file behind your frame.'

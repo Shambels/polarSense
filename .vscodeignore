@@ -14,6 +14,7 @@ node_modules/**
 tsconfig.json
 esbuild*.mjs
 **/*.map
+assets/demo.gif
 
 # --- editor and CI config ---
 .vscode/**
