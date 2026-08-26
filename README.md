@@ -56,7 +56,8 @@ df.filter(pl.col("region").is_in(["␣"]))
 ```
 
 This is the only feature here that reads the rows of your data file, which is why
-it is off until you turn it on. It reads one column of the first
+it is off until you turn it on — from settings, or with *PolarSense: Turn on value
+completion* in the command palette. It reads one column of the first
 `values.maxRows` rows — parquet is columnar, so that is one column chunk rather
 than a scan — and caches the answer against the file's mtime like a schema.
 

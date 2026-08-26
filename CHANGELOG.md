@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Two command palette entries for value completion**: *PolarSense: Turn on
+  value completion (reads your data)* and *PolarSense: Turn off value
+  completion*. They write `polarsense.values.enable` and say what changed — the
+  setting is still the only state, so nothing goes out of step with it.
+
 ## 1.0.0
 
 ### Added

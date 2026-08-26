@@ -162,6 +162,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       warmer.schedule(vscode.window.activeTextEditor?.document);
       vscode.window.showInformationMessage('PolarSense: schema cache cleared.');
     }),
+    vscode.commands.registerCommand('polarsense.enableValues', () => setValues(true)),
+    vscode.commands.registerCommand('polarsense.disableValues', () => setValues(false)),
     vscode.commands.registerCommand('polarsense.showOutput', () => showLog()),
     vscode.commands.registerCommand(
       'polarsense.showSchema', () => showSchema(analyzer, schemas, modules)
@@ -169,6 +171,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
 
   trace('PolarSense activated');
+}
+
+/**
+ * The setting is the state; the commands just write it. Everything that reads
+ * values already re-reads the configuration, and the change event already
+ * rewires the schema service — so there is nothing else to keep in step.
+ */
+async function setValues(on: boolean): Promise<void> {
+  await vscode.workspace.getConfiguration('polarsense')
+    .update('values.enable', on, vscode.ConfigurationTarget.Global);
+  vscode.window.showInformationMessage(
+    on
+      ? 'PolarSense: value completion on. It reads rows of the parquet file behind your frame.'
+      : 'PolarSense: value completion off. Only file metadata is read now.'
+  );
 }
 
 export function deactivate(): void {
