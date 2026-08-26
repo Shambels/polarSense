@@ -87,7 +87,11 @@ const noopEvent = () => ({ dispose() {} });
 export function makeVscode(settings = {}, workspaceFolders = []) {
   const registered = {
     providers: [], linkProviders: [], hoverProviders: [], codeActionProviders: [],
-    diagnostics: null, commands: new Map(), configHandlers: []
+    diagnostics: null, commands: new Map(), configHandlers: [],
+    // Keys VS Code's configuration registry does not hold in this window. The
+    // manifest declares every setting, so this is empty until a test says
+    // otherwise — see unregisterSetting.
+    unregistered: new Set(), executed: []
   };
   const defaults = {
     enable: true,
@@ -138,7 +142,17 @@ export function makeVscode(settings = {}, workspaceFolders = []) {
       notebookDocuments: [],
       getConfiguration: () => ({
         get: (key, fallback) => defaults[key] ?? fallback,
+        // A key the registry does not hold has no default; that is the shape
+        // VS Code reports, and what update() would refuse to write.
+        inspect: (key) => (registered.unregistered.has(key)
+          ? { key, defaultValue: undefined }
+          : { key, defaultValue: defaults[key] }),
         update: (key, value) => {
+          if (registered.unregistered.has(key)) {
+            throw new Error(
+              `Unable to write to User Settings because polarsense.${key} is not a registered configuration.`
+            );
+          }
           defaults[key] = value;
           for (const handler of registered.configHandlers) {
             handler({ affectsConfiguration: () => true });
@@ -193,6 +207,10 @@ export function makeVscode(settings = {}, workspaceFolders = []) {
       registerCommand: (name, fn) => {
         registered.commands.set(name, fn);
         return { dispose() {} };
+      },
+      executeCommand: (name, ...args) => {
+        registered.executed.push([name, ...args]);
+        return Promise.resolve();
       }
     }
   };
@@ -254,4 +272,12 @@ export function setSetting(vscode, key, value) {
   for (const handler of vscode._registered.configHandlers) {
     handler({ affectsConfiguration: () => true });
   }
+}
+
+/**
+ * Take a key out of the configuration registry, leaving the command that writes
+ * it running: what a window holding two copies of the extension looks like.
+ */
+export function unregisterSetting(vscode, key) {
+  vscode._registered.unregistered.add(key);
 }

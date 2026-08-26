@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **The value-completion toggles no longer dead-end on "polarsense.values.enable
+  is not a registered configuration."** VS Code refuses to write a settings key
+  its configuration registry does not hold, and the registry is filled from the
+  manifest of the extension copy the window resolved — not necessarily the copy
+  whose code is running. Two PolarSense copies in one window (a Marketplace
+  install alongside an Extension Development Host, or a folder an interrupted
+  update left behind in `.vscode/extensions`) make those diverge: the duplicate
+  manifest's properties are rejected as already registered, and the command can
+  end up running with no key to write. *PolarSense: Turn on value completion*
+  now asks the registry before it writes and says what is actually wrong, with
+  a **Reload Window** button, rather than surfacing VS Code's message about a
+  setting the extension plainly does declare. A write that fails for any other
+  reason — a settings file managed by policy, or one that is read-only — is
+  reported rather than thrown into the void, and goes to the PolarSense log.
+
+  This does not make the toggle work in a window whose registry is missing the
+  key; nothing in an extension can. It replaces an error that reads as a broken
+  command with one that names the thing to fix.
+
 ## 1.0.2
 
 ### Added
