@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **The panels and the notebook buttons were given one look instead of two.**
+  Both panels drew their own copy of the same stylesheet, and the copies had
+  already drifted; there is now a single `PANEL_CSS` they share, so the details
+  panel is the data panel with a different table in it and looks like it. The
+  header is tighter — the file, its symbol, the path, then the facts as one
+  muted line rather than a row of bordered chips — and the table fills the panel
+  height instead of a hard-coded `100vh - 13rem`.
+
+  In the grid: columns are as wide as what is in them rather than stretched
+  evenly across the panel, numeric columns are right-aligned with tabular
+  figures so digits line up under each other, rows highlight under the pointer,
+  and the row index keeps a hairline against the data instead of blending into
+  it. Row and column paging are two segmented groups reading `‹ rows 0–99 of
+  200 ›`, which is the same information in half the width.
+
+  The notebook bar is a single bordered pill — a quiet `PolarSense` label and
+  two flat buttons — sitting at 72% opacity until the pointer is on it, because
+  it appears under every frame in the notebook and should not compete with the
+  data above it. Focus outlines are on all of it.
+
+  Every colour is a VS Code theme variable, so this follows the editor's theme
+  rather than picking greys that are wrong in half of them.
+
 ## 1.6.0
 
 ### Added
