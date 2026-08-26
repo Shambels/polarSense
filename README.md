@@ -1,5 +1,7 @@
 # PolarSense
 
+![Demo GIF](assets/demo.gif)
+
 Column-name autocompletion for [polars](https://pola.rs), pandas and duckdb, read
 from the file your DataFrame actually comes from.
 
