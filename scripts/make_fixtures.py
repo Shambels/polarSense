@@ -444,43 +444,98 @@ def write_json() -> None:
 
 
 def write_excel() -> None:
-    """A minimal .xlsx, written with zipfile so no spreadsheet library is needed.
+    """Minimal .xlsx workbooks, written with zipfile so no spreadsheet library
+    is needed.
 
-    Deliberately awkward: the header uses shared strings, skips column C so the
+    Deliberately awkward. `sales.xlsx` uses shared strings, skips column C so the
     gap has to be named rather than closed up, and escapes an ampersand.
+    `sheets.xlsx` puts its tabs in parts that do *not* match tab order, so a
+    reader that assumes sheet1.xml is the first sheet gets it wrong.
     """
     import zipfile
 
-    shared = ["region", "revenue", "Q1 & Q2"]
-    sst = (
-        '<?xml version="1.0" encoding="UTF-8"?>'
-        '<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
-        f'count="{len(shared)}" uniqueCount="{len(shared)}">'
-        + "".join(f"<si><t>{v.replace('&', '&amp;')}</t></si>" for v in shared)
-        + "</sst>"
-    )
-    sheet = (
-        '<?xml version="1.0" encoding="UTF-8"?>'
-        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-        "<sheetData>"
-        '<row r="1">'
-        '<c r="A1" t="s"><v>0</v></c>'
-        '<c r="B1" t="s"><v>1</v></c>'
-        '<c r="D1" t="s"><v>2</v></c>'
-        "</row>"
-        '<row r="2"><c r="A1" t="inlineStr"><is><t>EU</t></is></c></row>'
-        "</sheetData></worksheet>"
-    )
+    ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    rns = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    pkg = "http://schemas.openxmlformats.org/package/2006/relationships"
+
+    def sheet_xml(header: list[tuple[str, int]]) -> str:
+        cells = "".join(
+            f'<c r="{ref}" t="s"><v>{idx}</v></c>' for ref, idx in header
+        )
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            f'<worksheet xmlns="{ns}"><sheetData>'
+            f'<row r="1">{cells}</row>'
+            "</sheetData></worksheet>"
+        )
+
+    def strings_xml(values: list[str]) -> str:
+        items = "".join(f"<si><t>{v.replace('&', '&amp;')}</t></si>" for v in values)
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            f'<sst xmlns="{ns}" count="{len(values)}" '
+            f'uniqueCount="{len(values)}">{items}</sst>'
+        )
+
+    def workbook_xml(tabs: list[tuple[str, str]]) -> str:
+        sheets = "".join(
+            f'<sheet name="{name}" sheetId="{i + 1}" r:id="{rid}"/>'
+            for i, (name, rid) in enumerate(tabs)
+        )
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            f'<workbook xmlns="{ns}" xmlns:r="{rns}">'
+            f"<sheets>{sheets}</sheets></workbook>"
+        )
+
+    def rels_xml(targets: list[tuple[str, str]]) -> str:
+        rels = "".join(
+            f'<Relationship Id="{rid}" Type="{rns}/worksheet" Target="{target}"/>'
+            for rid, target in targets
+        )
+        return f'<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="{pkg}">{rels}</Relationships>'
+
     content_types = (
         '<?xml version="1.0" encoding="UTF-8"?>'
         '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
         '<Default Extension="xml" ContentType="application/xml"/>'
         "</Types>"
     )
+
+    # One sheet, and a header with a hole at C and an ampersand in D.
     with zipfile.ZipFile(DATA / "sales.xlsx", "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("[Content_Types].xml", content_types)
-        zf.writestr("xl/sharedStrings.xml", sst)
-        zf.writestr("xl/worksheets/sheet1.xml", sheet)
+        zf.writestr("xl/sharedStrings.xml", strings_xml(["region", "revenue", "Q1 & Q2"]))
+        zf.writestr("xl/workbook.xml", workbook_xml([("Sales", "rId1")]))
+        zf.writestr("xl/_rels/workbook.xml.rels", rels_xml([("rId1", "worksheets/sheet1.xml")]))
+        zf.writestr(
+            "xl/worksheets/sheet1.xml",
+            sheet_xml([("A1", 0), ("B1", 1), ("D1", 2)]),
+        )
+
+    # Three tabs — Summary, Q2, Notes — stored in sheet3, sheet1, sheet2. The
+    # part number is not the position, which is the whole point of this fixture.
+    with zipfile.ZipFile(DATA / "sheets.xlsx", "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("[Content_Types].xml", content_types)
+        zf.writestr(
+            "xl/sharedStrings.xml",
+            strings_xml(["summary_col", "q2_col", "notes_col"]),
+        )
+        zf.writestr(
+            "xl/workbook.xml",
+            workbook_xml([("Summary", "rId1"), ("Q2", "rId2"), ("Notes", "rId3")]),
+        )
+        zf.writestr(
+            "xl/_rels/workbook.xml.rels",
+            rels_xml([
+                ("rId1", "worksheets/sheet3.xml"),
+                ("rId2", "worksheets/sheet1.xml"),
+                ("rId3", "/xl/worksheets/sheet2.xml"),
+            ]),
+        )
+        zf.writestr("xl/worksheets/sheet3.xml", sheet_xml([("A1", 0)]))
+        zf.writestr("xl/worksheets/sheet1.xml", sheet_xml([("A1", 1)]))
+        zf.writestr("xl/worksheets/sheet2.xml", sheet_xml([("A1", 2)]))
 
 
 def write_perf() -> None:

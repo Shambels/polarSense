@@ -583,13 +583,13 @@ test('json: a file with no objects in it reports nothing', async () => {
 });
 
 test('excel: the header row is the schema, through the shared string table', async () => {
-  const columns = await readExcelSchema(localStorage, path.join(DATA, 'sales.xlsx'));
+  const columns = await readExcelSchema(localStorage, path.join(DATA, 'sales.xlsx'), {});
   assert.equal(columns[0].name, 'region');
   assert.equal(columns[1].name, 'revenue');
 });
 
 test('excel: a skipped cell is named rather than closed up', async () => {
-  const columns = await readExcelSchema(localStorage, path.join(DATA, 'sales.xlsx'));
+  const columns = await readExcelSchema(localStorage, path.join(DATA, 'sales.xlsx'), {});
   // A1, B1, then D1 — so C is a hole, and "Q1 & Q2" must stay in fourth place.
   assert.equal(columns.length, 4);
   assert.equal(columns[2].name, 'column_3');
@@ -600,7 +600,7 @@ test('excel: a file that is not a zip reports nothing rather than throwing', asy
   const file = path.join(os.tmpdir(), `polarsense-notzip-${process.pid}.xlsx`);
   writeFileSync(file, 'this is not a spreadsheet');
   try {
-    assert.deepEqual(await readExcelSchema(localStorage, file), []);
+    assert.deepEqual(await readExcelSchema(localStorage, file, {}), []);
   } finally {
     rmSync(file, { force: true });
   }
@@ -628,4 +628,49 @@ test('service: read_json and read_excel resolve to the right kind', async () => 
   assert.equal(SOURCE_FUNCS.scan_ndjson, 'json');
   assert.equal(SOURCE_FUNCS.read_ndjson, 'json');
   assert.equal(SOURCE_FUNCS.read_excel, 'excel');
+});
+
+test('excel: sheet_name= picks the tab, not the part number', async () => {
+  const book = path.join(DATA, 'sheets.xlsx');
+  const named = async (kwargs) =>
+    (await readExcelSchema(localStorage, book, kwargs)).map((c) => c.name);
+
+  assert.deepEqual(await named({ sheet_name: 'Q2' }), ['q2_col']);
+  assert.deepEqual(await named({ sheet_name: 'Notes' }), ['notes_col']);
+  assert.deepEqual(await named({ sheet_name: 'Summary' }), ['summary_col']);
+});
+
+test('excel: with nothing asked for, the first tab wins over sheet1.xml', async () => {
+  // Summary is the first tab but lives in sheet3.xml — the assumption this
+  // replaced would have answered with Q2's column instead.
+  const columns = await readExcelSchema(localStorage, path.join(DATA, 'sheets.xlsx'), {});
+  assert.deepEqual(columns.map((c) => c.name), ['summary_col']);
+});
+
+test('excel: sheet_id= counts from one, a numeric sheet_name= from zero', async () => {
+  const book = path.join(DATA, 'sheets.xlsx');
+  // polars spells the position sheet_id, 1-based...
+  assert.deepEqual(
+    (await readExcelSchema(localStorage, book, { sheet_id: 2 })).map((c) => c.name),
+    ['q2_col']
+  );
+  // ...pandas overloads sheet_name, where a number is 0-based.
+  assert.deepEqual(
+    (await readExcelSchema(localStorage, book, { sheet_name: 1 })).map((c) => c.name),
+    ['q2_col']
+  );
+});
+
+test('excel: a sheet that is not there says nothing rather than sheet one', async () => {
+  const book = path.join(DATA, 'sheets.xlsx');
+  assert.deepEqual(await readExcelSchema(localStorage, book, { sheet_name: 'Q9' }), []);
+  assert.deepEqual(await readExcelSchema(localStorage, book, { sheet_id: 7 }), []);
+});
+
+test('excel: a target written from the package root resolves too', async () => {
+  // Notes is declared as /xl/worksheets/sheet2.xml rather than a relative path.
+  const columns = await readExcelSchema(
+    localStorage, path.join(DATA, 'sheets.xlsx'), { sheet_name: 'Notes' }
+  );
+  assert.deepEqual(columns.map((c) => c.name), ['notes_col']);
 });

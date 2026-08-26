@@ -158,7 +158,7 @@ export class SchemaService {
         columns = await readJsonSchema(resolved.uri, this.options.csvSniffBytes);
         break;
       case 'excel':
-        columns = await readExcelSchema(storage, resolved.uri);
+        columns = await readExcelSchema(storage, resolved.uri, source.kwargs);
         break;
     }
 

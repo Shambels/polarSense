@@ -35,7 +35,8 @@ export const PATH_KWARGS = ['source', 'file', 'path', 'table', 'source_uri'];
 /** Call-site keywords that change how the file is parsed. */
 const KEPT_KWARGS = [
   'separator', 'has_header', 'skip_rows', 'skip_lines', 'comment_prefix',
-  'quote_char', 'new_columns', 'encoding', 'storage_options'
+  'quote_char', 'new_columns', 'encoding', 'storage_options',
+  'sheet_name', 'sheet_id'
 ];
 
 /**

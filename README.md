@@ -244,7 +244,7 @@ segments are added as hive partition columns, the way polars adds them.
 | Delta | `_delta_log` walked newest-first to the most recent `metaData` action, falling back to the checkpoint parquet when the commits have been vacuumed |
 | Iceberg | `metadata/version-hint.text` → the current schema in that metadata file |
 | JSON / NDJSON | The first 50 objects of a bounded prefix read; keys unioned in first-seen order, dtypes from the values themselves, nested objects keep their fields |
-| Excel | The header row of the first sheet, out of the `.xlsx` zip — shared strings resolved, skipped cells named rather than closed up |
+| Excel | The header row, out of the `.xlsx` zip — `sheet_name=`/`sheet_id=` resolved through `workbook.xml`, shared strings resolved, skipped cells named rather than closed up |
 
 Values — when `values.enable` is on — come from parquet only, plus hive partition
 directory names.
@@ -327,9 +327,8 @@ reshapes are beyond what static reading can predict.
   annotation carries no path, so `def load(source): return pl.scan_parquet(source)`
   finds the frame but not the file — that is what the pragma comment is for.
 - **Multi-file globs assume one schema.** First match wins.
-- **Excel reads the first sheet only.** `sheet_name=` and `sheet_id=` are not
-  honoured yet, so a workbook whose columns you want are on sheet 2 answers with
-  sheet 1's. `.xls` is a different binary format altogether and reports nothing.
+- **`.xls` is not read.** It is OLE2, a different binary format wearing a
+  similar extension, and it reports nothing rather than guessing at its bytes.
 - **A JSON float of whole numbers reads as `i64`.** Once parsed there is no way
   to tell `1.0` from `1`, so a float column is only recognised when one of the
   sampled rows is actually fractional.

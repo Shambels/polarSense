@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **`read_excel` honours `sheet_name=` and `sheet_id=`.** 1.2.0 shipped the Excel
+  reader opening `xl/worksheets/sheet1.xml` and nothing else, so asking for a
+  particular tab answered with whichever sheet happened to be stored there. It
+  now reads `xl/workbook.xml` for the tabs in tab order and
+  `xl/_rels/workbook.xml.rels` for the part each one lives in, and picks from
+  those — two more members out of a zip that was already open.
+
+  polars spells the position `sheet_id` and counts from one; pandas overloads
+  `sheet_name`, where a number is a position counted from zero. Both are
+  understood, because both call sites reach the same reader.
+
+### Fixed
+
+- **The first sheet is the first *tab* now, not `sheet1.xml`.** That part name is
+  not a position — a workbook whose tabs have been reordered can keep its first
+  tab in `sheet3.xml` — so `pl.read_excel("book.xlsx")` with no arguments could
+  quietly complete against the wrong sheet. The workbook walk added above fixes
+  the default at the same time as the explicit case, which is most of why it was
+  worth doing.
+
+- **A sheet that is not in the workbook now says nothing.** Asking for
+  `sheet_name="Q2"` where there is no Q2 used to return sheet one's columns,
+  which was the one place this reader could be confidently wrong rather than
+  quiet. The fallback to `sheet1.xml` went with it: a file with no readable
+  `workbook.xml` reports nothing instead of guessing at a part name.
+
 ## 1.2.0
 
 ### Added
