@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>*,*::before,*::after{box-sizing:border-box}body,h1,h2,h3,h4,p,ol,ul,figure,pre{margin:0}ol,ul{padding:0}img,svg{display:block;max-width:100%}</style>
+<title>PolarSense v2.0 — Seeing the Data</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Literata:opsz,wght@7..72,400;7..72,500;7..72,600&display=swap">
+
+<style>
+  :root{
+    --ground:#F2F5F4; --surface:#FFFFFF; --surface-2:#E9EFED;
+    --ink:#0F1917; --ink-2:#33433F; --muted:#5C6C68;
+    --line:#D3DDDA; --line-strong:#B6C4C0;
+    --accent:#0E6E66; --accent-ink:#0A5049; --accent-soft:#DBEBE8;
+    --signal:#9A5A11; --signal-soft:#F3E6D3;
+    --shadow:0 1px 2px rgba(15,25,23,.06), 0 8px 24px -16px rgba(15,25,23,.25);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ground:#0B1211; --surface:#121B19; --surface-2:#182320;
+      --ink:#E5ECEA; --ink-2:#C3D0CD; --muted:#8DA09B;
+      --line:#22302D; --line-strong:#33443F;
+      --accent:#54C1B3; --accent-ink:#7FD6C9; --accent-soft:#10302C;
+      --signal:#D79B4F; --signal-soft:#2B2115;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#0B1211; --surface:#121B19; --surface-2:#182320;
+    --ink:#E5ECEA; --ink-2:#C3D0CD; --muted:#8DA09B;
+    --line:#22302D; --line-strong:#33443F;
+    --accent:#54C1B3; --accent-ink:#7FD6C9; --accent-soft:#10302C;
+    --signal:#D79B4F; --signal-soft:#2B2115;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+  }
+
+  *{box-sizing:border-box}
+  body{
+    background:var(--ground); color:var(--ink);
+    font-family:"Literata",Georgia,serif; font-size:17px; line-height:1.62;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:64rem;margin:0 auto;padding:3.5rem 1.5rem 6rem;display:flex;flex-direction:column;gap:3rem}
+
+  h1,h2,h3{font-family:"Archivo",system-ui,sans-serif;text-wrap:balance;margin:0}
+  h1{font-size:clamp(2rem,4.4vw,2.9rem);font-weight:700;letter-spacing:-.028em;line-height:1.05}
+  h2{font-size:1.42rem;font-weight:700;letter-spacing:-.018em}
+  h3{font-size:1rem;font-weight:600;letter-spacing:-.005em}
+  p{margin:0}
+  a{color:var(--accent-ink)}
+  strong{font-weight:600;color:var(--ink)}
+  code{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.845em;
+    background:var(--surface-2);border:1px solid var(--line);padding:.06em .34em;border-radius:3px;color:var(--ink-2)}
+  .eyebrow{font-family:"IBM Plex Mono",monospace;font-size:.7rem;letter-spacing:.16em;text-transform:uppercase;color:var(--accent)}
+  .lede{font-size:1.1rem;color:var(--ink-2);max-width:62ch}
+  .prose{max-width:66ch;display:flex;flex-direction:column;gap:.9rem}
+
+  section{display:flex;flex-direction:column;gap:1.2rem}
+  .sechead{display:flex;flex-direction:column;gap:.4rem;border-top:1px solid var(--line);padding-top:1.1rem}
+  .sechead .num{font-family:"IBM Plex Mono",monospace;font-size:.7rem;color:var(--muted);letter-spacing:.1em}
+  .sechead p{font-size:.95rem;color:var(--muted);max-width:62ch}
+
+  /* ---- scoreboard ---- */
+  .score{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:1px;
+    background:var(--line);border:1px solid var(--line);border-radius:6px;overflow:hidden;
+    box-shadow:var(--shadow);
+  }
+  .score div{background:var(--surface);padding:.9rem 1rem;display:flex;flex-direction:column;gap:.2rem}
+  .score b{
+    font-family:"Archivo",sans-serif;font-size:1.7rem;font-weight:700;line-height:1;
+    letter-spacing:-.02em;font-variant-numeric:tabular-nums;
+  }
+  .score span{font-family:"IBM Plex Mono",monospace;font-size:.66rem;letter-spacing:.11em;
+    text-transform:uppercase;color:var(--muted)}
+  .score .hi b{color:var(--accent)}
+
+  /* ---- items ---- */
+  .items{display:flex;flex-direction:column;gap:0}
+  .item{
+    display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.5rem 1.4rem;
+    padding:1.05rem 0;border-top:1px solid var(--line);align-items:start;
+  }
+  .item:last-child{border-bottom:1px solid var(--line)}
+  .item .body{display:flex;flex-direction:column;gap:.4rem;min-width:0}
+  .item h3{display:flex;align-items:baseline;gap:.55rem;flex-wrap:wrap}
+  .item h3 .where{
+    font-family:"IBM Plex Mono",monospace;font-size:.72rem;font-weight:400;color:var(--muted);
+  }
+  .item p{font-size:.92rem;color:var(--ink-2)}
+  .item.shipped{background:linear-gradient(90deg,var(--accent-soft) 0 3px,transparent 3px)}
+  .item.shipped h3{color:var(--accent-ink)}
+  .item.shipped p{color:var(--muted)}
+  .tick{
+    font-family:"IBM Plex Mono",monospace;font-size:.62rem;letter-spacing:.1em;text-transform:uppercase;
+    background:var(--accent);color:var(--surface);padding:.1rem .42rem;border-radius:3px;font-weight:600;
+    white-space:nowrap;
+  }
+  :root[data-theme="dark"] .tick,
+  :root:not([data-theme="light"]) .tick{color:#0B1211}
+  @media (prefers-color-scheme: light){ :root:not([data-theme="dark"]) .tick{color:#FFFFFF} }
+
+  .chips{display:flex;flex-direction:column;gap:.35rem;align-items:flex-end;white-space:nowrap}
+  .chip{
+    font-family:"IBM Plex Mono",monospace;font-size:.66rem;letter-spacing:.06em;
+    padding:.14rem .48rem;border-radius:3px;border:1px solid var(--line-strong);color:var(--muted);
+  }
+  .chip.hi{background:var(--accent-soft);border-color:transparent;color:var(--accent-ink);font-weight:600}
+  .chip.med{background:var(--surface-2);border-color:transparent;color:var(--ink-2)}
+  .chip.blocked{background:var(--signal-soft);border-color:transparent;color:var(--signal);font-weight:600}
+  @media (max-width:620px){
+    .item{grid-template-columns:minmax(0,1fr)}
+    .chips{flex-direction:row;align-items:center;flex-wrap:wrap}
+  }
+
+  ol.next{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:0}
+  ol.next li{
+    display:grid;grid-template-columns:2.2rem minmax(0,1fr) 4.5rem;gap:1rem;
+    padding:.9rem 0;border-top:1px solid var(--line);align-items:start;
+  }
+  ol.next li:last-child{border-bottom:1px solid var(--line)}
+  ol.next .n{font-family:"IBM Plex Mono",monospace;font-size:.9rem;font-weight:600;color:var(--accent)}
+  ol.next .what{display:flex;flex-direction:column;gap:.25rem;min-width:0}
+  ol.next .what b{font-family:"Archivo",sans-serif;font-size:.97rem;font-weight:600}
+  ol.next .what span{font-size:.88rem;color:var(--ink-2)}
+  ol.next .est{font-family:"IBM Plex Mono",monospace;font-size:.72rem;color:var(--muted);text-align:right;padding-top:.2rem}
+  @media (max-width:620px){
+    ol.next li{grid-template-columns:2.2rem minmax(0,1fr)}
+    ol.next .est{grid-column:2;text-align:left}
+  }
+
+  pre{margin:0;background:var(--surface);border:1px solid var(--line);border-radius:6px;
+    padding:.9rem 1rem;overflow-x:auto;box-shadow:var(--shadow)}
+  pre code{font-size:.78rem;line-height:1.7;background:none;border:none;padding:0;color:var(--ink-2)}
+
+  .note{border-left:3px solid var(--signal);background:var(--signal-soft);
+    padding:.8rem 1rem;border-radius:0 5px 5px 0;font-size:.92rem;color:var(--ink-2);
+    display:flex;flex-direction:column;gap:.4rem;max-width:70ch}
+  .note .k{font-family:"IBM Plex Mono",monospace;font-size:.66rem;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--signal)}
+  .note.pick{border-left-color:var(--accent);background:var(--accent-soft)}
+  .note.pick .k{color:var(--accent-ink)}
+
+  footer{border-top:1px solid var(--line);padding-top:1.1rem;color:var(--muted);
+    font-family:"IBM Plex Mono",monospace;font-size:.72rem}
+  ::selection{background:var(--accent-soft);color:var(--ink)}
+</style>
+</head>
+<style>
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);
+    border:1px solid var(--line);border-radius:6px;overflow:hidden;box-shadow:var(--shadow)}
+  .split > div{background:var(--surface);padding:1.1rem 1.2rem;display:flex;flex-direction:column;gap:.55rem}
+  .split h3{display:flex;align-items:baseline;gap:.5rem;flex-wrap:wrap}
+  .split p{font-size:.9rem;color:var(--ink-2)}
+  .split ul{list-style:none;display:flex;flex-direction:column;gap:.3rem;font-size:.86rem;color:var(--muted)}
+  .split li{padding-left:1.1rem;position:relative}
+  .split li::before{content:"·";position:absolute;left:.35rem;color:var(--accent)}
+  .split li.no::before{content:"×";color:var(--signal);font-family:"IBM Plex Mono",monospace;font-size:.8em;top:.06em}
+  @media (max-width:700px){.split{grid-template-columns:1fr}}
+  .verdict{font-family:"Archivo",sans-serif;font-size:1.05rem;font-weight:600;color:var(--ink);
+    letter-spacing:-.01em;line-height:1.45;max-width:60ch}
+  table.matrix{border-collapse:collapse;width:100%;font-size:.86rem;box-shadow:var(--shadow);
+    background:var(--surface);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+  table.matrix th,table.matrix td{text-align:left;padding:.6rem .85rem;border-top:1px solid var(--line);vertical-align:top}
+  table.matrix thead th{border-top:none;background:var(--surface-2);font-family:"IBM Plex Mono",monospace;
+    font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:500}
+  table.matrix td:first-child{font-family:"Archivo",sans-serif;font-weight:600;font-size:.9rem}
+  table.matrix .y{color:var(--accent-ink);font-weight:600}
+  table.matrix .n{color:var(--signal);font-weight:600}
+  .scroller{overflow-x:auto}
+</style>
+<body>
+<div class="wrap">
+
+  <header style="display:flex;flex-direction:column;gap:1.1rem">
+    <p class="eyebrow">Roadmap · PolarSense v2.0 · 26 Aug 2026</p>
+    <h1>Seeing the data, not just its columns</h1>
+    <p class="lede">v1 answers <em>what columns does this frame have</em> without ever starting Python. v2 asks a harder question — <em>what is actually in it</em> — and the whole design hangs on one decision made in the first hour: where the rows come from.</p>
+
+    <div class="score">
+      <div class="hi"><b>3</b><span>features asked for</span></div>
+      <div><b>2</b><span>possible data sources</span></div>
+      <div><b>0</b><span>new deps in phase 1</span></div>
+      <div><b>~5</b><span>days to phase 1</span></div>
+    </div>
+
+    <p class="lede" style="font-size:.95rem;color:var(--muted)">Effort figures are focused working days, on the same basis as the v1 roadmap. Every API named here was checked against its current documentation, not remembered.</p>
+  </header>
+
+  <section>
+    <div class="sechead">
+      <span class="num">Part 01</span>
+      <h2>The question underneath all three features</h2>
+      <p>Expand, details and graph look like three rendering features. They are not. Each needs data that the thing on screen does not contain.</p>
+    </div>
+
+    <div class="prose">
+      <p>What a notebook prints for a polars frame is a <code>text/html</code> table that polars has <em>already</em> truncated — ten rows, first and last columns, an ellipsis in the middle. The rows you want to page to were never sent. So a renderer that receives that output cannot paginate it, cannot compute a null count, and cannot plot a distribution. It has the ellipsis, not the data behind it.</p>
+      <p>Which means the real question is not "can a VS Code extension draw a nicer table" — obviously it can — but <strong>where does it go to get row 5,000</strong>. There are exactly two answers, and they are different products.</p>
+    </div>
+
+    <div class="split">
+      <div>
+        <h3>A · From the file <span class="chip hi">what v1 already does</span></h3>
+        <p>PolarSense already resolves the frame under the cursor to a concrete parquet, CSV, Arrow IPC, Delta or Iceberg file, and already ships <code>hyparquet</code>, whose reader takes <code>rowStart</code> and <code>rowEnd</code> and a column subset. Page 2 is one more range read of a file whose footer is already in the cache.</p>
+        <ul>
+          <li>No Python, no kernel, no interpreter</li>
+          <li>Identical in <code>.py</code> and <code>.ipynb</code> — same resolver, same code path</li>
+          <li>Works before the code has ever been run</li>
+          <li>Zero new dependencies</li>
+          <li class="no">Shows the <em>source</em>, not the result of a filter or join</li>
+          <li class="no">A frame built in memory has no file to read</li>
+        </ul>
+      </div>
+      <div>
+        <h3>B · From the kernel <span class="chip blocked">new trust model</span></h3>
+        <p>The Jupyter extension exports a stable <code>Kernels</code> API through <code>@vscode/jupyter-extension</code>: <code>kernels.getKernel(uri)</code> then <code>kernel.executeCode(code, token)</code>, an async iterable of outputs that runs without touching the execution count or history. This is the PyCharm experience exactly.</p>
+        <ul>
+          <li>The real frame, after every transform</li>
+          <li>Works on frames with no file behind them at all</li>
+          <li class="no">Only kernels the user has already started, in an open notebook</li>
+          <li class="no">Per-extension consent prompt; revocable via <code>Jupyter: Manage Access To Jupyter Kernels</code></li>
+          <li class="no">Means PolarSense executes Python in your session</li>
+          <li class="no">Nothing for a plain <code>.py</code> run in a terminal</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="note pick">
+      <span class="k">The pick</span>
+      <p><strong>A first, B second, and never A replaced by B.</strong> Path A is v1 with a webview on the end — the resolver, the schema cache and the parquet reader are all already written and already tested. Path B is a genuinely new extension with a genuinely new promise to the user. Shipping A alone covers the common case, which is a script that reads a file and prints the frame; and it covers it in <code>.py</code> files, where path B has nothing to offer at all.</p>
+    </div>
+
+    <div class="note">
+      <span class="k">The honest gap in A</span>
+      <p>For <code>df.filter(pl.col("region") == "EU").collect()</code>, the file-backed viewer shows you the whole file, not the 400 rows that survived the filter. That is a real difference from what PyCharm shows and it should be said on the panel itself — a header reading <em>source file · 4.2M rows · filters not applied</em> is honest; silently showing 4.2M rows and calling it the frame is not. Closing that gap <em>is</em> path B, and it is the entire reason path B is on this roadmap rather than dismissed.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead">
+      <span class="num">Part 02</span>
+      <h2>The three features, one at a time</h2>
+      <p>All three are feasible. They are not equally feasible, and the order below is the order of increasing cost, which is also the order they should be built in.</p>
+    </div>
+
+    <div class="items">
+
+      <div class="item">
+        <div class="body">
+          <h3>Show details <span class="where">new · reuses src/hover.ts</span></h3>
+          <p>The cheapest of the three by a wide margin, because the data is <em>already read</em>. Dtype, null count, min and max per column all come out of the parquet footer, and <code>src/hover.ts</code> renders exactly this today in a tooltip. The feature is that content in a panel with a row per column instead of a hover with one — plus row count, row-group count, file size and compression codec, all of which are in the same footer.</p>
+          <p>Distinct-count and a real <code>describe()</code> are the two things the footer cannot give you. Distinct is a column read, which is what <code>values.ts</code> already does and already caps at <code>values.maxDistinct</code>; mean and quantiles need every value and belong in path B. Showing four exact statistics beats showing eight where half are guesses — the same call the CSV dtype inference default makes.</p>
+        </div>
+        <div class="chips"><span class="chip hi">impact high</span><span class="chip">0.5 d</span></div>
+      </div>
+
+      <div class="item">
+        <div class="body">
+          <h3>Expand and paginate <span class="where">new · webview + hyparquet row ranges</span></h3>
+          <p>A webview panel holding a virtualised table, fed by <code>parquetReadObjects({ file, columns, rowStart, rowEnd })</code>. Parquet is the good case and it is very good: the read is bounded by page size regardless of file size, columns are already independent, and the footer gives an exact row count before a single row is decoded, so the pager knows how many pages there are up front.</p>
+          <p>Column navigation matters as much as row navigation and is the half that is easy to forget. The complaint in the brief is that <em>first and last columns</em> are all you see — on a 200-column frame the fix is a sticky first column, horizontal virtualisation and a column filter box, not more rows.</p>
+          <p>The formats degrade in a predictable order. CSV has no footer, so a row count is unknown until the file has been walked once and paging past the buffer is a sequential scan — <code>csv.sniffBytes</code> already establishes the pattern of reading a bounded prefix and being honest that it is a prefix. Delta and Iceberg are many files behind one table, so paging has to walk the file list the readers already produce. Arrow IPC has record batches, which are pages by another name.</p>
+        </div>
+        <div class="chips"><span class="chip hi">impact high</span><span class="chip">2 d</span></div>
+      </div>
+
+      <div class="item">
+        <div class="body">
+          <h3>Show graph <span class="where">new · the only one needing a dependency</span></h3>
+          <p>Two separable halves, and only one of them is interesting.</p>
+          <p><strong>Choosing the chart</strong> is a lookup table over dtypes the schema reader already produces, and it is about thirty lines: one numeric column is a histogram, one categorical is a bar of counts, temporal plus numeric is a line, numeric plus numeric is a scatter, categorical plus numeric is a bar. Cardinality picks between bar and histogram, and the footer's min/max sets the axis range without reading a row. No inference engine, no heuristics worth the name — and the user override the brief asks for is what makes a plain table defensible in the first place, because a wrong default that can be changed in one click costs nothing.</p>
+          <p><strong>Drawing it</strong> is where a dependency wants to appear, and it should be resisted for as long as it can be. The VSIX is 256 KB today; Vega-Lite is larger than the entire extension. Five chart types in hand-written SVG is a day's work and no new dependency — and if that proves miserable, <code>uPlot</code> is about 20 KB gzipped. The rule that actually matters is that aggregation happens in the extension host, never in the webview: a histogram is a hundred bin counts computed from one column read, and a million rows must never cross the message boundary.</p>
+        </div>
+        <div class="chips"><span class="chip med">impact med</span><span class="chip">2 d</span></div>
+      </div>
+
+      <div class="item">
+        <div class="body">
+          <h3>The button under the cell output <span class="where">notebook renderer · the PyCharm shape</span></h3>
+          <p>Worth separating out, because it is the part of the brief a webview panel does <em>not</em> deliver. A panel opens beside your code; the brief asks for a button attached to the output itself. That needs a <code>contributes.notebookRenderer</code> registered for <code>text/html</code> with <code>requiresMessaging</code>, talking back through <code>notebooks.createRendererMessaging</code>. Microsoft's Data Wrangler does exactly this for pandas and proves the shape works — its polars support is where the gap is.</p>
+          <p>The pleasant surprise: a renderer can carry all three buttons <em>without</em> a kernel, because the buttons only need to say <em>which frame</em>, and the extension host already knows that from the cell's source. Renderer for the affordance, path A for the data. The renderer does not force path B; it just makes path B's absence visible in the one case — an in-memory frame — where the panel has to admit it is showing the source file.</p>
+          <p>One thing to know before leaning on it. Registering a third-party <code>text/html</code> renderer is what Data Wrangler does <em>today</em>, but VS Code issue #153836 is an open request for it to stop &mdash; to extend the built-in HTML renderer rather than supplant it. Nothing here is deprecated and nothing breaks tomorrow, but this is the one API in this document whose recommended shape is visibly in motion, so it is the one to build behind a thin seam and the last of the five steps to commit to.</p>
+        </div>
+        <div class="chips"><span class="chip med">impact med</span><span class="chip">1.5 d</span></div>
+      </div>
+
+      <div class="item">
+        <div class="body">
+          <h3>Live frames from the kernel <span class="where">phase 2 · @vscode/jupyter-extension</span></h3>
+          <p>The API is real and stable, and the sample is <code>vscode-extension-samples/jupyter-kernel-execution-sample</code>. Two constraints shape the design more than the API does. First, <code>getKernel</code> only returns kernels the user has <em>already started</em>, for notebooks that are <em>currently open</em> — so this is an enhancement to a session in progress, never a way to start one. Second, and worse: the frame has to be addressable. <code>pl.scan_parquet(…).collect()</code> as a cell's last expression has no name. IPython keeps it in <code>_oh[n]</code>, which works and is how this can hook an unnamed output, but it is off when <code>cache_size</code> is zero and it pins the frame in memory. A named variable is the case to support properly; the unnamed one is a bonus that should fail quietly.</p>
+          <p>Everything else is easy once code can run: <code>df.slice(off, n)</code> is a page, <code>df.describe()</code> is the details panel, <code>df.group_by(c).len()</code> is the bar chart. Return <code>write_json</code> and parse it — never scrape the repr you were trying to escape.</p>
+        </div>
+        <div class="chips"><span class="chip blocked">needs a decision</span><span class="chip">3–4 d</span></div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead">
+      <span class="num">Part 03</span>
+      <h2>Where each surface actually works</h2>
+      <p>The <code>.py</code> column is the one that decides the architecture, and it is the one that is easiest to skip past.</p>
+    </div>
+
+    <div class="scroller">
+      <table class="matrix">
+        <thead>
+          <tr><th>Surface</th><th>Path A · file</th><th>Path B · kernel</th><th>Why</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>.ipynb notebook</td><td class="y">yes</td><td class="y">yes</td><td>A notebook document is what <code>getKernel(uri)</code> takes, and <code>notebook.ts</code> already assembles cells for the resolver.</td></tr>
+          <tr><td>.py, editor</td><td class="y">yes</td><td class="n">no</td><td>Nothing is running. A file-backed preview is the only thing that can exist here — and it works before you have run the script even once.</td></tr>
+          <tr><td>.py, run in terminal</td><td class="y">yes</td><td class="n">no</td><td>Output is text in a terminal with no process to query and no output model to render into.</td></tr>
+          <tr><td>Interactive Window</td><td class="y">yes</td><td class="chip">verify</td><td>It is notebook-backed under a <code>vscode-interactive</code> URI, so <code>getKernel</code> plausibly accepts it. Twenty minutes with the sample settles this and it is worth settling early.</td></tr>
+          <tr><td>vscode.dev / web</td><td class="chip">blocked</td><td class="n">no</td><td>Same <code>node:*</code> imports that block the v1 web build, plus a webview would need the HTTPS reader.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="prose">
+      <p>Read down the <code>.py</code> column. Path B answers <em>no</em> three times out of four, and the brief explicitly asks for <code>.py</code> as well as <code>.ipynb</code>. That is the case for building A first, stated more plainly than any argument about dependencies.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead">
+      <span class="num">Part 04</span>
+      <h2>One extension or two?</h2>
+      <p>The question the brief asks last, and the one with the least obvious answer.</p>
+    </div>
+
+    <div class="prose">
+      <p class="verdict">Not yet. Phase 1 belongs in PolarSense. Split at the moment you take the Jupyter dependency — and that moment is a real, nameable event, not a feeling.</p>
+      <p>The instinct to split is right about the destination and wrong about the timing. A second extension today means a second repository, a second release pipeline, a second marketplace listing, a second set of reviews, and an API surface between the two halves — all of it built before a single user has said the viewer is worth having. That is scaffolding for a building that has not been designed. The v1 roadmap made this call correctly twice already: cross-module frames became demand-driven rather than a workspace index, and cache warming got no state to go stale.</p>
+      <p>Phase 1 does not justify it either way. It adds a webview, a command and some SVG. It takes no new dependency, reads no rows it is not asked to read, and runs on the resolver that is already there. Inside PolarSense it is one <code>src/preview/</code> folder and one entry in <code>contributes.commands</code>.</p>
+    </div>
+
+    <div class="note">
+      <span class="k">What makes the split correct, when it comes</span>
+      <p><strong>The trust model, and nothing else.</strong> PolarSense's whole pitch is that it reads metadata and not your data — which is why <code>values.enable</code> is off by default and why its description says so in a sentence rather than a footnote. A viewer that reads rows on request is a stretch of that promise but still recognisably the same one: you asked for these rows, it read these rows. An extension that calls <code>executeCode</code> against your kernel is a different promise entirely, and it deserves its own marketplace page, its own permission conversation and its own one-star reviews. Bolting "also runs Python in your session" onto a completion provider is how a clean security story becomes an asterisk.</p>
+      <p>The secondary reasons are real but would not carry the decision alone: activation cost (a completion provider on <code>onLanguage:python</code> should not drag a charting bundle into every Python file, though a command-activated webview mostly avoids this anyway), <code>extensionDependencies</code> on <code>ms-toolsai.jupyter</code>, and a different marketplace category with Data Wrangler as the competitor rather than Pylance.</p>
+    </div>
+
+    <div class="note pick">
+      <span class="k">What to build now so the split is cheap later</span>
+      <p>One thing, and it costs an afternoon: make the resolver reachable from outside. Return an API object from <code>activate()</code> — <code>resolveFrameAt(uri, position)</code> giving path, schema and statistics — which is the ordinary VS Code mechanism for one extension to consume another and needs no package extraction, no monorepo and no versioning scheme. The viewer, whenever it becomes its own extension, declares <code>extensionDependencies: ["Pinch.polarsense"]</code> and calls it. Until then phase 1 calls the same function directly, in-process.</p>
+      <p>That resolver is the moat. Data Wrangler cannot tell you which parquet file is behind <code>df</code> without running your code; PolarSense can, statically, across module boundaries, before anything has executed. Both halves should be built on it, whichever VSIX they eventually ship in.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead">
+      <span class="num">Part 05</span>
+      <h2>What I'd build, in order</h2>
+      <p>Each step is useful shipped alone, and each one is a decision point about whether the next is worth it.</p>
+    </div>
+
+    <ol class="next">
+      <li><span class="n">1</span><span class="what"><b>Export the resolver</b><span>An API object off <code>activate()</code>. Makes the eventual split a packaging change rather than a rewrite, and is the only thing here that is harder to retrofit than to do now.</span></span><span class="est">0.5 d</span></li>
+      <li><span class="n">2</span><span class="what"><b>Show details</b><span>The hover, in a panel, per column. Footer data only, so no new I/O and no new reader. The cheapest real proof that a viewer is worth having.</span></span><span class="est">0.5 d</span></li>
+      <li><span class="n">3</span><span class="what"><b>The paginated table</b><span>Webview, virtualised rows <em>and</em> columns, <code>rowStart</code>/<code>rowEnd</code> against parquet. CSV and the table formats follow once the shell exists.</span></span><span class="est">2 d</span></li>
+      <li><span class="n">4</span><span class="what"><b>The notebook renderer</b><span>Three buttons under the cell output, opening the panels above. No kernel involved. This is the point at which it looks like the tool in the brief.</span></span><span class="est">1.5 d</span></li>
+      <li><span class="n">5</span><span class="what"><b>Show graph</b><span>Dtype-driven default, user-overridable, hand-written SVG. Aggregate in the host, never in the webview.</span></span><span class="est">2 d</span></li>
+      <li><span class="n">6</span><span class="what"><b>Decide on the kernel</b><span>Only after 1–5 have been used on real files for a week. If nobody has complained that the preview shows the source rather than the filtered frame, path B is not the next thing to build.</span></span><span class="est">—</span></li>
+    </ol>
+
+    <div class="note">
+      <span class="k">Things to get right early, because they are expensive later</span>
+      <p><strong>Say what you are showing.</strong> Every panel header names the file, the row count and whether transforms were applied. The v1 habit of marking a sampled value <code>(sampled)</code> is the same habit and it is the one that keeps this trustworthy.</p>
+      <p><strong>Never send rows you are not drawing.</strong> Pages and bin counts cross the webview boundary; datasets do not. This is the constraint that decides whether the viewer stays usable on a four-million-row file, and it is nearly impossible to retrofit once the message protocol assumes otherwise.</p>
+      <p><strong>Reading rows stays opt-in in spirit.</strong> A preview panel is explicitly asked for, so it does not need a setting the way <code>values.enable</code> did — but it should never open by itself, never warm in the background, and never read on hover.</p>
+    </div>
+
+    <div class="note">
+      <span class="k">Not on this list</span>
+      <p>Editing. Data Wrangler's centre of gravity is generating cleaning code from UI operations, and that is a much larger product than a viewer — it needs an operation model, code generation per dialect, and undo. The brief asks to <em>see</em> the data. Seeing it well, for polars specifically, on files nothing else can locate statically, is a complete product on its own.</p>
+    </div>
+  </section>
+
+  <footer>
+    <p>PolarSense v2.0 · 3 features · phase 1 ≈ 5 days, no new dependencies · companion to docs/roadmap.html and docs/build-plan.html</p>
+  </footer>
+
+</div>
+</body>
+</html>
