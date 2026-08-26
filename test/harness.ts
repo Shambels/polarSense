@@ -14,6 +14,8 @@ export { readIcebergSchema, parseIcebergMetadata } from '../src/schema/iceberg.j
 export { readJsonSchema } from '../src/schema/json.js';
 export { readExcelSchema } from '../src/schema/excel.js';
 export { readParquetValues } from '../src/schema/values.js';
+export { readParquetRows, readCsvRows } from '../src/schema/rows.js';
+export { formatValue } from '../src/schema/format.js';
 export { SchemaService } from '../src/schema/index.js';
 export { localStorage } from '../src/storage/local.js';
 export { resolvePath, hiveColumns, hiveValues, completeDataPaths } from '../src/paths.js';

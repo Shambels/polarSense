@@ -141,7 +141,18 @@ export function makeVscode(settings = {}, workspaceFolders = []) {
       createWebviewPanel: (viewType, title, showOptions, options) => {
         const panel = {
           viewType, title, showOptions, options,
-          webview: { html: '' },
+          // Both directions of the protocol: what the extension sent to be
+          // drawn, and the handler a click in the page would reach.
+          messages: [],
+          webview: {
+            html: '',
+            cspSource: 'vscode-webview://stub',
+            postMessage: (message) => { panel.messages.push(message); return Promise.resolve(true); },
+            onDidReceiveMessage: (handler) => {
+              panel.receive = handler;
+              return { dispose() {} };
+            }
+          },
           reveal: (column, preserveFocus) => { panel.revealed = { column, preserveFocus }; },
           onDidDispose: () => ({ dispose() {} }),
           dispose() {}

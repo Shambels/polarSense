@@ -1,7 +1,9 @@
 import * as vscode from 'vscode';
 import type { Analyzer } from './analysis.js';
 import type { SchemaService } from './schema/index.js';
+import * as path from 'node:path';
 import type { Column, SourceKind } from './core/types.js';
+import type { RowPage, RowRequest } from './schema/rows.js';
 import { frameAtOffset } from './core/resolve.js';
 import { framesSources } from './core/frame.js';
 import { evaluateFrame } from './core/schemaEval.js';
@@ -43,6 +45,24 @@ export interface ResolvedFrame {
   transformed: boolean;
   /** The variable the frame was bound to, when it had a name. */
   symbol?: string;
+  /**
+   * The literal reader arguments at the call site — `separator=`, `sheet_name=`.
+   * They are what the same bytes mean, so paging the file needs them as much as
+   * reading its header did.
+   */
+  kwargs: Record<string, string | number | boolean | string[] | null>;
+}
+
+/** Why a page could not be read. Every one of them is a sentence, not a failure. */
+export type RowsFailure =
+  | 'file-not-found'
+  | 'unsupported-scheme'
+  | 'unsupported-format'
+  | 'read-failed';
+
+export interface RowsResult {
+  page?: RowPage;
+  error?: RowsFailure;
 }
 
 /**
@@ -62,6 +82,16 @@ export interface PolarSenseApi {
    * a cursor in either lands on the same frame.
    */
   resolveFrameAt(uri: vscode.Uri, position: vscode.Position): Promise<ResolvedFrame | undefined>;
+  /**
+   * A page of the file behind a frame `resolveFrameAt` returned: this row range,
+   * these columns, nothing else. Rows are read only when this is called, and
+   * only the cells asked for are read — so a caller that draws a hundred rows of
+   * four columns costs a hundred rows of four columns, whatever the file weighs.
+   *
+   * It reads the *file*. A frame with a filter on it is not this, and
+   * `ResolvedFrame.transformed` is how a caller knows to say so.
+   */
+  readRows(frame: ResolvedFrame, request: RowRequest): Promise<RowsResult>;
 }
 
 export function createApi(
@@ -115,8 +145,21 @@ export function createApi(
         compression: primary.schema.compression,
         certain: evaluated ? evaluated.certain : true,
         transformed: !!found.frame && found.frame.kind !== 'source',
-        symbol: found.source.symbol
+        symbol: found.source.symbol,
+        kwargs: found.source.kwargs
       };
+    },
+
+    async readRows(frame, request) {
+      // The uri came from `resolveFrameAt`, which means it is the concrete file
+      // rather than what the source line said — already globbed, already the
+      // member file of a hive directory. Resolving it again is a stat.
+      const result = await schemas.rows(
+        { kind: frame.kind, path: frame.uri, kwargs: frame.kwargs },
+        { documentDir: path.dirname(frame.uri), workspaceDirs: [], extraRoots: [] },
+        request
+      );
+      return { page: result.page, error: result.error };
     }
   };
 }

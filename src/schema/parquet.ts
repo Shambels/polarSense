@@ -2,6 +2,7 @@ import { parquetMetadataAsync, parquetSchema } from 'hyparquet';
 import type { Column, ColumnStats } from '../core/types.js';
 import type { Storage } from '../storage/index.js';
 import { parquetDtype, type ParquetNode } from './dtypes.js';
+import { formatValue } from './format.js';
 
 export interface ParquetSchemaResult {
   columns: Column[];
@@ -130,8 +131,8 @@ function finish(raw: RawStats | undefined, dtype: string): ColumnStats | undefin
   if (!raw) return undefined;
   return {
     nullCount: raw.nullCount,
-    min: raw.min === undefined ? undefined : format(raw.min, dtype),
-    max: raw.max === undefined ? undefined : format(raw.max, dtype)
+    min: raw.min === undefined ? undefined : formatValue(raw.min, dtype) ?? undefined,
+    max: raw.max === undefined ? undefined : formatValue(raw.max, dtype) ?? undefined
   };
 }
 
@@ -147,26 +148,3 @@ function compare(a: unknown, b: unknown): number {
   return String(a) < String(b) ? -1 : String(a) > String(b) ? 1 : 0;
 }
 
-/**
- * hyparquet decodes DATE and TIMESTAMP statistics into Date objects, but other
- * writers emit the raw integer — days or micros since the epoch — which reads as
- * a meaningless number unless the dtype is applied. Handle both.
- */
-function format(value: unknown, dtype: string): string {
-  if (value instanceof Uint8Array) return '…';
-
-  if (value instanceof Date) {
-    const iso = value.toISOString();
-    return dtype === 'date' ? iso.slice(0, 10) : iso.replace('T', ' ').replace('Z', '').slice(0, 23);
-  }
-  if (dtype === 'date' && (typeof value === 'number' || typeof value === 'bigint')) {
-    return new Date(Number(value) * 86_400_000).toISOString().slice(0, 10);
-  }
-  if (dtype.startsWith('datetime') && (typeof value === 'number' || typeof value === 'bigint')) {
-    const n = Number(value);
-    const ms = dtype.includes('[ms') ? n : dtype.includes('[ns') ? n / 1e6 : n / 1000;
-    return new Date(ms).toISOString().replace('T', ' ').replace('Z', '').slice(0, 23);
-  }
-  if (typeof value === 'string' && value.length > 40) return `${value.slice(0, 40)}…`;
-  return String(value);
-}

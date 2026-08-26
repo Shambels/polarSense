@@ -9,6 +9,7 @@ import { readIcebergSchema } from './iceberg.js';
 import { readJsonSchema } from './json.js';
 import { readExcelSchema } from './excel.js';
 import { readParquetValues, type ValueSet } from './values.js';
+import { readCsvRows, readParquetRows, type RowPage, type RowRequest } from './rows.js';
 
 export interface SchemaServiceOptions {
   cacheSize: number;
@@ -29,6 +30,12 @@ export interface SchemaResult {
   error?: 'file-not-found' | 'unsupported-scheme' | 'read-failed';
   /** Which cache entry answered, so values can be hung off the same one. */
   cacheKey?: string;
+}
+
+export interface RowResult {
+  page?: RowPage;
+  uri?: string;
+  error?: 'file-not-found' | 'unsupported-scheme' | 'unsupported-format' | 'read-failed';
 }
 
 interface CacheEntry {
@@ -185,6 +192,52 @@ export class SchemaService {
     return { schema, uri: resolved.uri, cacheKey };
   }
 
+
+  /**
+   * A page of rows. The second thing here that reads data rather than metadata,
+   * and the one the user asks for by name: nothing calls this unless a preview
+   * was opened, and what it reads is the page being drawn — this row range, these
+   * columns — never the file.
+   *
+   * Not cached. A page is a bounded read of a file whose footer the OS still has
+   * warm, and remembering pages would mean holding rows of someone's data in
+   * memory long after the panel that asked for them was closed.
+   */
+  async rows(source: SourceRef, ctx: PathContext, request: RowRequest): Promise<RowResult> {
+    const resolved = await resolvePath(source, ctx);
+    if (!resolved) return { error: 'file-not-found' };
+
+    let storage: Storage;
+    try {
+      storage = storageFor(resolved.uri, { httpsEnabled: this.options.httpsEnabled });
+    } catch (err) {
+      if (err instanceof UnsupportedSchemeError) return { error: 'unsupported-scheme' };
+      throw err;
+    }
+
+    try {
+      switch (source.kind) {
+        case 'parquet':
+          return { page: await readParquetRows(storage, resolved.uri, request), uri: resolved.uri };
+        case 'csv':
+          return {
+            page: await readCsvRows(
+              resolved.uri, source.kwargs, { sniffBytes: this.options.csvSniffBytes }, request
+            ),
+            uri: resolved.uri
+          };
+        default:
+          // Arrow IPC has record batches, and Delta and Iceberg are lists of
+          // files the readers already produce — both are pages by another name,
+          // and both are work. Until then this says so rather than showing an
+          // empty grid that looks like an empty file.
+          return { error: 'unsupported-format', uri: resolved.uri };
+      }
+    } catch {
+      // A codec hyparquet cannot decompress, a file rewritten mid-read.
+      return { error: 'read-failed', uri: resolved.uri };
+    }
+  }
 
   /**
    * The values a column holds — the only thing here that reads data rather than

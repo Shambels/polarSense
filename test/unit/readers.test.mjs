@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url';
 import {
   readParquetSchema, readCsvSchema, readIpcSchema, readDeltaSchema, readIcebergSchema,
   readJsonSchema, readExcelSchema,
-  readParquetValues, SchemaService, checkpointFiles, localStorage, resolvePath, hiveColumns,
+  readParquetValues, readParquetRows, readCsvRows, formatValue,
+  SchemaService, checkpointFiles, localStorage, resolvePath, hiveColumns,
   hiveValues, completeDataPaths, SOURCE_FUNCS
 } from '../harness.mjs';
 
@@ -673,4 +674,82 @@ test('excel: a target written from the package root resolves too', async () => {
     localStorage, path.join(DATA, 'sheets.xlsx'), { sheet_name: 'Notes' }
   );
   assert.deepEqual(columns.map((c) => c.name), ['notes_col']);
+});
+
+const PAGES = path.join(DATA, 'values.parquet');
+
+test('rows: a page is the row range asked for and nothing either side', async () => {
+  const page = await readParquetRows(localStorage, PAGES, { rowStart: 100, limit: 10 });
+  assert.equal(page.rowStart, 100);
+  assert.equal(page.rows.length, 10);
+  assert.equal(page.rowCount, 200);
+  assert.equal(page.more, true);
+  // 40 APAC, then 60 EU, then 100 US: row 100 is the first US row.
+  assert.equal(page.rows[0][page.columns.indexOf('region')], 'US');
+  assert.equal(page.rows[0][page.columns.indexOf('order_id')], 'ord-0100');
+});
+
+test('rows: the last page stops at the end of the file', async () => {
+  const page = await readParquetRows(localStorage, PAGES, { rowStart: 195, limit: 10 });
+  assert.equal(page.rows.length, 5);
+  assert.equal(page.more, false);
+});
+
+test('rows: only the columns asked for are read', async () => {
+  const page = await readParquetRows(localStorage, PAGES, {
+    rowStart: 0, limit: 3, columns: ['revenue']
+  });
+  assert.deepEqual(page.columns, ['revenue']);
+  assert.deepEqual(page.rows, [['0'], ['1'], ['2']]);
+  // The file's own list still comes back, so a viewer can offer the rest.
+  assert.deepEqual(page.allColumns, ['region', 'order_id', 'revenue', 'empty']);
+});
+
+test('rows: a column the file does not have is dropped, not guessed at', async () => {
+  const page = await readParquetRows(localStorage, PAGES, {
+    rowStart: 0, limit: 1, columns: ['revenue', 'total_revenue']
+  });
+  assert.deepEqual(page.columns, ['revenue']);
+});
+
+test('rows: a null reads as a null, not as an empty string', async () => {
+  const page = await readParquetRows(localStorage, PAGES, {
+    rowStart: 0, limit: 1, columns: ['empty']
+  });
+  assert.deepEqual(page.rows, [[null]]);
+});
+
+test('rows: a CSV page comes out of the prefix, and says when that is all of it', async () => {
+  const full = await readCsvRows(
+    path.join(DATA, 'sales.csv'), {}, { sniffBytes: 262_144 }, { rowStart: 0, limit: 10 }
+  );
+  assert.ok(full.rows.length >= 2);
+  assert.equal(full.rowCount, undefined, 'a CSV has no row count to know');
+  assert.equal(full.prefixBytes, undefined, 'the whole file was read');
+  assert.equal(full.rows[0][full.columns.indexOf('region')], 'EU');
+
+  // A prefix that stops mid-file drops its last record: the read stopped
+  // mid-line, and half a row shown as data is worse than a row not shown.
+  const cut = await readCsvRows(
+    path.join(DATA, 'sales.csv'), {}, { sniffBytes: 80 }, { rowStart: 0, limit: 10 }
+  );
+  assert.equal(cut.prefixBytes, 80);
+  assert.ok(cut.rows.length < full.rows.length);
+});
+
+test('rows: a CSV honours the separator the call site passed', async () => {
+  const page = await readCsvRows(
+    path.join(DATA, 'sales_semi.csv'), { separator: ';' }, { sniffBytes: 262_144 },
+    { rowStart: 0, limit: 2 }
+  );
+  assert.ok(page.columns.length > 1, 'the separator was ignored');
+  assert.equal(page.rows[0].length, page.columns.length);
+});
+
+test('a value formats by its dtype, and a struct keeps its shape', () => {
+  assert.equal(formatValue(19_723, 'date'), '2024-01-01');
+  assert.equal(formatValue(null, 'str'), null);
+  assert.equal(formatValue({ a: 1n }, 'struct'), '{"a":"1"}');
+  assert.equal(formatValue([1, 2], 'list[i64]'), '[1,2]');
+  assert.equal(formatValue('x'.repeat(80), 'str', { maxLength: 10 }), 'xxxxxxxxxx…');
 });

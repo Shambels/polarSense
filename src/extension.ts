@@ -13,6 +13,7 @@ import { readSettings } from './config.js';
 import { initLog, setTrace, showLog, trace, warn } from './log.js';
 import { createApi, type PolarSenseApi } from './api.js';
 import { showDetails } from './preview/details.js';
+import { showData } from './preview/table.js';
 
 const PYTHON: vscode.DocumentSelector = [
   { language: 'python', scheme: 'file' },
@@ -165,6 +166,7 @@ export async function activate(
 
   context.subscriptions.push(
     vscode.commands.registerCommand('polarsense.showDetails', () => showDetails(api)),
+    vscode.commands.registerCommand('polarsense.showData', () => showData(api)),
     vscode.commands.registerCommand('polarsense.clearCache', () => {
       schemas.clear();
       modules.clear();

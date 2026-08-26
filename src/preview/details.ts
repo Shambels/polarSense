@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'node:path';
 import type { Column } from '../core/types.js';
 import type { PolarSenseApi, ResolvedFrame } from '../api.js';
+import { escape, fmt, frameFacts, frameNotes } from './facts.js';
 
 /**
  * The hover, in a panel, with a row per column instead of a tooltip for one.
@@ -60,31 +61,8 @@ export async function showDetails(api: PolarSenseApi): Promise<void> {
  * a frame can be tested without an editor around it.
  */
 export function renderDetails(frame: ResolvedFrame): string {
-  const facts = [
-    frame.rowCount === undefined ? undefined : `${fmt(frame.rowCount)} rows`,
-    `${fmt(frame.columns.length)} column${frame.columns.length === 1 ? '' : 's'}`,
-    frame.sizeBytes === undefined ? undefined : bytes(frame.sizeBytes),
-    frame.rowGroups === undefined
-      ? undefined
-      : `${fmt(frame.rowGroups)} row group${frame.rowGroups === 1 ? '' : 's'}`,
-    frame.compression
-  ].filter((fact): fact is string => !!fact);
-
-  // Say what is being shown, on the panel itself. The frame at the cursor may be
-  // a filter or a select away from the file, and every number above describes
-  // the file — showing them under the frame's name without saying so is the one
-  // way this panel could be quietly wrong.
-  const notes = [
-    frame.transformed
-      ? 'The frame here has transforms applied — a filter, a select, a join. ' +
-        'The columns below are the frame’s; the row count, size and codec are ' +
-        'the source file’s, and nothing here applies the transforms.'
-      : undefined,
-    frame.certain
-      ? undefined
-      : 'Part of the chain could not be read statically, so this column list is ' +
-        'approximate — it may hold columns the frame no longer has.'
-  ].filter((note): note is string => !!note);
+  const facts = frameFacts(frame);
+  const notes = frameNotes(frame);
 
   const hasDtype = frame.columns.some((column) => column.dtype);
   const hasStats = frame.columns.some((column) => statOf(column).some((value) => value !== ''));
@@ -140,9 +118,7 @@ export function renderDetails(frame: ResolvedFrame): string {
     frame.symbol ? ` <span class="symbol">· ${escape(frame.symbol)}</span>` : ''
   }</h1>
 <p class="origin">${escape(frame.uri)}</p>
-<ul class="facts">${facts.map((fact) => `<li>${escape(fact)}</li>`).join('')}${
-    frame.transformed ? '<li>transforms not applied</li>' : ''
-  }</ul>
+<ul class="facts">${facts.map((fact) => `<li>${escape(fact)}</li>`).join('')}</ul>
 ${notes.map((note) => `<p class="note">${note}</p>`).join('\n')}
 <div class="scroller">
 <table>
@@ -188,31 +164,5 @@ function cell(value: string): string {
   return value === '' ? '<span class="none">—</span>' : escape(value);
 }
 
-function fmt(n: number): string {
-  return n.toLocaleString('en-US');
-}
 
-/** Powers of 1024, one decimal, because a file size is a glance not a measurement. */
-function bytes(n: number): string {
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let size = n;
-  let unit = 0;
-  while (size >= 1024 && unit < units.length - 1) {
-    size /= 1024;
-    unit += 1;
-  }
-  return `${unit === 0 ? size : size.toFixed(1)} ${units[unit]}`;
-}
 
-/**
- * Every column name, dtype and statistic on this page came out of a data file.
- * Scripts are off, but an unescaped `<` would still wreck the table it is in —
- * and a file is not something to take markup from.
- */
-function escape(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
