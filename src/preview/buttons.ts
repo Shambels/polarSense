@@ -5,6 +5,7 @@ import { trace } from '../log.js';
 import { lastStatementOffset } from './cells.js';
 import { showDetails } from './details.js';
 import { showData } from './table.js';
+import { showGraph } from './graph.js';
 import type { FrameTarget } from './target.js';
 
 /**
@@ -66,7 +67,7 @@ async function receive(
   }
 
   const command = message.command;
-  if (command !== 'showData' && command !== 'showDetails') return;
+  if (command !== 'showData' && command !== 'showDetails' && command !== 'showGraph') return;
 
   const cell = cellFor(editor, message.outputId);
   if (!cell) {
@@ -82,7 +83,8 @@ async function receive(
   if (!target) return;
 
   trace(`notebook button ${command} on cell ${cell.index}`);
-  await (command === 'showData' ? showData(api, target) : showDetails(api, target));
+  const open = { showData, showDetails, showGraph }[command];
+  await open(api, target);
 }
 
 /**

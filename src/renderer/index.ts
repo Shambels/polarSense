@@ -50,6 +50,12 @@ const ACTIONS: [command: string, label: string, title: string][] = [
     'Data',
     'The rows of the file behind this frame, a hundred at a time. Reads rows ' +
     'from the file — not the frame, so filters in the cell are not applied.'
+  ],
+  [
+    'showGraph',
+    'Graph',
+    'The shape of a column of the file behind this frame — a histogram, a bar ' +
+    'of counts, a line, a scatter. Reads values and counts them here.'
   ]
 ];
 

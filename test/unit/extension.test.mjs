@@ -1120,6 +1120,119 @@ test('a transformed frame still says the rows are the file’s', async () => {
 });
 
 /**
+ * The graph panel, driven the way the page drives it: the command opens it, the
+ * page says it is ready, and every axis change is a message. What crosses is a
+ * few hundred points — never a column.
+ */
+async function openGraph(marked, fileDir = DATA) {
+  const { document, position } = makeDocument(marked, path.join(fileDir, 'script.py'));
+  vscode.workspace.textDocuments.push(document);
+  vscode.window.activeTextEditor = { document, selection: { active: position } };
+  vscode._registered.info = undefined;
+  try {
+    await vscode._registered.commands.get('polarsense.showGraph')();
+    // The panel is reused across calls, so it is still there after a command
+    // that refused to open one: what the extension *said* is the answer then.
+    const message = vscode._registered.info;
+    const panel = vscode._registered.webviews.find((p) => p.viewType === 'polarsense.graph');
+    if (!panel) return { panel: undefined, message };
+    panel.messages.length = 0;
+    await panel.receive({ type: 'ready' });
+    return {
+      panel,
+      message,
+      payload: panel.messages.at(-1),
+      nav: async (patch) => {
+        await panel.receive(patch);
+        return panel.messages.at(-1);
+      }
+    };
+  } finally {
+    vscode.workspace.textDocuments.length = 0;
+    vscode.window.activeTextEditor = undefined;
+  }
+}
+
+test('the graph panel opens on the first numeric column, binned', async () => {
+  const { payload, panel } = await openGraph(VALUES_PARQUET);
+  assert.equal(panel.title, 'values.parquet');
+  assert.deepEqual(panel.revealed, { column: vscode.ViewColumn.Beside, preserveFocus: true });
+  assert.equal(payload.x, 'revenue');
+  assert.equal(payload.y, '');
+  assert.equal(payload.kind, 'histogram');
+  assert.equal(payload.points.length, 30);
+  assert.equal(payload.points.reduce((total, point) => total + point.y, 0), 200);
+  assert.match(payload.rows, /200 rows read/);
+  // The whole point of aggregating in the host: what crosses is thirty numbers,
+  // and the shell holds none of them.
+  assert.doesNotMatch(panel.webview.html, /ord-0000/);
+  assert.match(panel.webview.html, /acquireVsCodeApi/);
+});
+
+test('a column with no shape to draw is not offered as an axis', async () => {
+  const { payload } = await openGraph(
+    'import polars as pl\nd|f = pl.scan_parquet("sales.parquet")\n'
+  );
+  const offered = payload.columns.map((column) => column.name);
+  assert.ok(offered.includes('revenue'));
+  // A chart of a list column is a chart of nothing, so it is not an option.
+  assert.ok(!offered.includes('tags'), offered.join(', '));
+});
+
+test('changing the axes changes the chart, and the kind follows the columns', async () => {
+  const { payload, nav } = await openGraph(VALUES_PARQUET);
+  assert.deepEqual(payload.kinds, ['histogram', 'bar']);
+
+  const counted = await nav({ x: 'region' });
+  assert.equal(counted.kind, 'bar');
+  assert.deepEqual(counted.points.map((point) => [point.label, point.y]),
+    [['US', 100], ['EU', 60], ['APAC', 40]]);
+  assert.deepEqual(counted.kinds, ['bar'], 'a column of labels can only be a bar');
+
+  const measured = await nav({ y: 'revenue' });
+  assert.equal(measured.x, 'region');
+  assert.equal(measured.yLabel, 'mean revenue');
+  assert.equal(measured.points.length, 3);
+
+  // Back to one column, and the override sticks until the columns change.
+  const dropped = await nav({ y: '' });
+  assert.equal(dropped.y, '');
+  const forced = await nav({ x: 'revenue', kind: undefined });
+  assert.equal(forced.kind, 'histogram');
+  const overridden = await nav({ kind: 'bar' });
+  assert.equal(overridden.kind, 'bar');
+  const elsewhere = await nav({ x: 'region' });
+  assert.equal(elsewhere.kind, 'bar', 'a new pair of columns picks its own default');
+});
+
+test('a format whose values are not read yet says so instead of drawing nothing', async () => {
+  const { payload } = await openGraph('import polars as pl\nd|f = pl.scan_ipc("sales.arrow")\n');
+  assert.match(payload.error ?? '', /ipc/);
+  assert.deepEqual(payload.points, []);
+});
+
+test('a CSV is charted from its prefix, and says that is what it is', async () => {
+  setSetting(vscode, 'csv.sniffBytes', 160);
+  try {
+    const { payload } = await openGraph('import polars as pl\nd|f = pl.read_csv("sales.csv")\n');
+    assert.ok(payload.points.length >= 1);
+    assert.ok(
+      payload.notes.some((note) => /prefix, not the file/.test(note)),
+      `the prefix was not admitted to: ${JSON.stringify(payload.notes)}`
+    );
+  } finally {
+    setSetting(vscode, 'csv.sniffBytes', 262144);
+  }
+});
+
+test('the graph panel is not opened where there is no frame at the cursor', async () => {
+  const before = vscode._registered.webviews.length;
+  const { message } = await openGraph('import polars as pl\ntot|al = 1 + 2\n');
+  assert.equal(vscode._registered.webviews.length, before, 'a panel was opened anyway');
+  assert.match(message ?? '', /no frame at the cursor/);
+});
+
+/**
  * The buttons under a cell's output. Nothing here runs Python: the renderer
  * says which output was clicked, the cell's own source says which frame that
  * is, and the panels are the same two the command palette opens.
@@ -1230,6 +1343,20 @@ test('a cell whose frame has no file behind it says so instead of opening', asyn
   ], { outputId: 'out-1' });
   assert.match(message ?? '', /no file behind it/);
   assert.equal(vscode._registered.webviews.length, before, 'a panel was opened anyway');
+});
+
+test('the graph button opens the third panel on the frame that cell printed', async () => {
+  const { message } = await clickButton('showGraph', [
+    'import polars as pl\ndf = pl.scan_parquet("values.parquet")\n',
+    'df.head()\n'
+  ], { outputId: 'out-1' });
+  assert.equal(message, undefined, `the panel said: ${message}`);
+  const panel = vscode._registered.webviews.find((p) => p.viewType === 'polarsense.graph');
+  panel.messages.length = 0;
+  await panel.receive({ type: 'ready' });
+  const payload = panel.messages.at(-1);
+  assert.equal(payload.file, 'values.parquet');
+  assert.equal(payload.kind, 'histogram');
 });
 
 test('a page that has just loaded is told whether the buttons are on', async () => {
