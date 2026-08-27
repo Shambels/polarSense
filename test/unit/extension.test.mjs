@@ -1193,6 +1193,13 @@ test('changing the axes changes the chart, and the kind follows the columns', as
   assert.equal(measured.x, 'region');
   assert.equal(measured.yLabel, 'mean revenue');
   assert.equal(measured.points.length, 3);
+  assert.ok(measured.aggs.includes('median'), 'the aggregate was not offered');
+
+  const median = await nav({ agg: 'median' });
+  assert.equal(median.agg, 'median');
+  assert.equal(median.yLabel, 'median revenue');
+  // 40 APAC rows are revenue 0–39, so their median is the middle two averaged.
+  assert.equal(median.points.find((point) => point.label === 'APAC').y, 19.5);
 
   // Back to one column, and the override sticks until the columns change.
   const dropped = await nav({ y: '' });

@@ -21,6 +21,15 @@ import type { Series, SeriesRead } from './series.js';
 
 export type ChartKind = 'histogram' | 'bar' | 'line' | 'scatter';
 
+/**
+ * What a bar of grouped rows measures. `count` is the one that needs no numbers
+ * — it is the rows in the group — which is also why a single categorical column
+ * has no choice to make: counting is all there is to do with labels.
+ */
+export type Agg = 'count' | 'sum' | 'mean' | 'median' | 'min' | 'max';
+
+export const AGGS: Agg[] = ['count', 'sum', 'mean', 'median', 'min', 'max'];
+
 /** The dtype families that behave differently when drawn, and nothing finer. */
 export type Family = 'number' | 'temporal' | 'category' | 'nested';
 
@@ -31,6 +40,8 @@ export interface ChartRequest {
   y?: string;
   /** The user's override, when they made one. Absent means the table decides. */
   kind?: ChartKind;
+  /** What to measure per group. Only a bar of two columns has anything to apply. */
+  agg?: Agg;
   maxRows: number;
 }
 
@@ -45,6 +56,9 @@ export interface Chart {
   kind: ChartKind;
   /** The kinds these columns can be drawn as, best first: the override's list. */
   kinds: ChartKind[];
+  /** What was measured per group, and the choices — empty where there is nothing to choose. */
+  agg?: Agg;
+  aggs: Agg[];
   /** The columns actually used — the request's, unless they had to be swapped. */
   x: string;
   y?: string;
@@ -163,6 +177,7 @@ export function buildChart(read: SeriesRead, request: ChartRequest): Chart {
     xLabel: request.x,
     yLabel: '',
     xNumeric: false,
+    aggs: [] as Agg[],
     ticks: [] as { x: number; label: string }[],
     points: [] as ChartPoint[],
     rowsRead: read.rowsRead,
@@ -210,7 +225,9 @@ export function buildChart(read: SeriesRead, request: ChartRequest): Chart {
     ? request.kind
     : preferred(kinds, first, xFamily);
 
-  const drawn = second ? paired(first, second, xFamily, chosen) : single(first, xFamily, chosen);
+  const drawn = second
+    ? paired(first, second, xFamily, chosen, request.agg)
+    : single(first, xFamily, chosen);
   // Bars stand in labelled slots; a histogram's bars and everything else are
   // placed on a scale, and only a scale needs a domain and ticks.
   const xNumeric = chosen !== 'bar';
@@ -226,6 +243,8 @@ export function buildChart(read: SeriesRead, request: ChartRequest): Chart {
     y: second?.name,
     xLabel: first.name,
     xNumeric,
+    agg: drawn.agg,
+    aggs: drawn.aggs ?? [],
     domain,
     ticks: domain ? axisTicks(domain, first.dtype, xFamily) : [],
     points: drawn.points,
@@ -282,6 +301,8 @@ function preferred(kinds: ChartKind[], series: Series, family: Family): ChartKin
 interface Drawn {
   points: ChartPoint[];
   yLabel: string;
+  agg?: Agg;
+  aggs?: Agg[];
   notes: string[];
   /** Set where the points do not span the axis themselves — a histogram's bins. */
   domain?: [number, number];
@@ -331,10 +352,18 @@ function single(series: Series, family: Family, kind: ChartKind): Drawn {
 }
 
 /** Two columns: a point per row, or a bar per category with its rows averaged. */
-function paired(first: Series, second: Series, family: Family, kind: ChartKind): Drawn {
+function paired(
+  first: Series,
+  second: Series,
+  family: Family,
+  kind: ChartKind,
+  wanted?: Agg
+): Drawn {
   const grouped = kind === 'bar' && family === 'category';
   const points: ChartPoint[] = [];
-  const groups = new Map<string, { total: number; rows: number }>();
+  // The values, not a running total: a median cannot be accumulated, and the
+  // array is bounded by the same maxRows the read already was.
+  const groups = new Map<string, number[]>();
   let dropped = 0;
 
   for (let i = 0; i < first.values.length; i++) {
@@ -346,10 +375,9 @@ function paired(first: Series, second: Series, family: Family, kind: ChartKind):
     }
     if (grouped) {
       const label = labelOf(raw, first.dtype);
-      const group = groups.get(label) ?? { total: 0, rows: 0 };
-      group.total += y;
-      group.rows += 1;
-      groups.set(label, group);
+      const group = groups.get(label);
+      if (group) group.push(y);
+      else groups.set(label, [y]);
       continue;
     }
     const x = toNumber(raw, family);
@@ -360,20 +388,24 @@ function paired(first: Series, second: Series, family: Family, kind: ChartKind):
   const missing = dropped ? [skipped(dropped, 'a value missing from one of the two')] : [];
 
   if (grouped) {
-    if (!groups.size) return { points: [], yLabel: '', notes: missing, empty: nothing(first) };
+    if (!groups.size) {
+      return { points: [], yLabel: '', aggs: AGGS, notes: missing, empty: nothing(first) };
+    }
+    const agg = wanted && AGGS.includes(wanted) ? wanted : 'mean';
     const ordered = [...groups.entries()]
-      .sort((a, b) => b[1].total / b[1].rows - a[1].total / a[1].rows || a[0].localeCompare(b[0]));
+      .map(([label, values]) => [label, apply(agg, values)] as const)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
     return {
-      points: ordered
-        .slice(0, MAX_BARS)
-        .map(([label, group], i) => ({ x: i, y: group.total / group.rows, label })),
+      points: ordered.slice(0, MAX_BARS).map(([label, value], i) => ({ x: i, y: value, label })),
       // Said on the axis rather than in a footnote: a bar of means and a bar of
       // totals look identical and answer different questions.
-      yLabel: `mean ${second.name}`,
+      yLabel: agg === 'count' ? 'rows' : `${agg} ${second.name}`,
+      agg,
+      aggs: AGGS,
       notes: [
         ...(ordered.length > MAX_BARS
           ? [`${first.name} has ${fmt(ordered.length)} distinct values; the ${MAX_BARS} with ` +
-             'the highest mean are drawn.']
+             `the highest ${agg} are drawn.`]
           : []),
         ...missing
       ]
@@ -401,6 +433,25 @@ function paired(first: Series, second: Series, family: Family, kind: ChartKind):
   }
 
   return { points: drawn, yLabel: second.name, notes };
+}
+
+/**
+One group's rows, measured. Reductions rather than `Math.min(...values)`,
+ * because a group can hold more values than an argument list can.
+ */
+function apply(agg: Agg, values: number[]): number {
+  switch (agg) {
+    case 'count': return values.length;
+    case 'sum': return values.reduce((total, n) => total + n, 0);
+    case 'mean': return values.reduce((total, n) => total + n, 0) / values.length;
+    case 'min': return values.reduce((low, n) => (n < low ? n : low));
+    case 'max': return values.reduce((high, n) => (n > high ? n : high));
+    default: {
+      const sorted = [...values].sort((a, b) => a - b);
+      const mid = sorted.length >> 1;
+      return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    }
+  }
 }
 
 /**

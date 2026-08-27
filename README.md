@@ -230,8 +230,9 @@ rows
 Which chart you get is a lookup over dtypes, not an inference engine: one numeric
 column is a histogram, one column of labels is a bar of counts, a date against a
 number is a line, two numbers are a scatter, and labels against a number are a bar
-of means — the axis says `mean revenue`, because a bar of means and a bar of totals
-look identical and answer different questions. A numeric column with a dozen values
+of means — with `count`, `sum`, `mean`, `median`, `min` and `max` a pick away, and
+the axis naming which, because a bar of means and a bar of totals look identical
+and answer different questions. A numeric column with a dozen values
 or fewer is drawn as bars rather than binned. The two pickers and the chart type sit
 above the plot, so a default that is wrong costs one click, and the type list only
 offers what those columns can actually be.
@@ -240,9 +241,8 @@ offers what those columns can actually be.
 histogram of four million rows is thirty numbers, which is what crosses. It reads
 at most `polarsense.graph.maxRows` rows of the one or two columns being drawn, and
 says *a sample* on the panel when that was less than the file. There is no filter,
-no group-by beyond the mean per label, and no second series: this answers *what
-does this column look like*, and a question past that one is a query you should
-write.
+no grouping by more than one column, and no second series: this answers *what does
+this column look like*, and a question past that one is a query you should write.
 
 In a notebook, all three panels are a click away from the output itself. A cell
 ending in a frame gets a small bar under what it printed:
@@ -444,8 +444,9 @@ reshapes are beyond what static reading can predict.
   behind one table; both are pages by another name and neither is written yet.
   Their schemas still work everywhere else, and the panel says which half is
   missing rather than showing an empty grid.
-- **A graph is one or two columns, not a query.** There is no filtering, no
-  group-by past the mean per label, no second series and no trend line — and
+- **A graph is one or two columns, not a query.** One column groups the rows and
+  one aggregate measures them; there is no filtering, no second grouping key, no
+  second series and no trend line — and
   where a chart would need more rows than `graph.maxRows`, it draws the ones it
   read and says it is a sample rather than pretending to the whole file. List
   and struct columns are not offered as axes: a chart of a list is a chart of

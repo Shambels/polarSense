@@ -12,9 +12,12 @@
   Which chart you get is a lookup over dtypes and nothing cleverer: one numeric
   column is a histogram, one column of labels is a bar of counts, a date against
   a number is a line, two numbers are a scatter, and labels against a number are
-  a bar of means. The axis says `mean revenue` rather than `revenue`, because a
-  bar of means and a bar of totals look identical and answer different
-  questions. A numeric column holding a dozen distinct values or fewer — a
+  a bar of means. What that bar measures is a pick of its own — `count`, `sum`,
+  `mean`, `median`, `min`, `max` — and the axis says which, because a bar of
+  means and a bar of totals look identical and answer different questions.
+  Counting says `rows`, since counting rows is not counting revenue. The picker
+  appears only where there is something to choose: one column of labels can only
+  be counted, and a scatter draws the rows themselves. A numeric column holding a dozen distinct values or fewer — a
   rating, a status code — is drawn as bars instead, since thirty bins over five
   values is a comb rather than a distribution. Two picks and a chart type sit
   above the plot, so a default that is wrong costs one click; the type list only
@@ -26,8 +29,8 @@
   in hand-written SVG and takes no new dependency; the bundle grew by 20 KB,
   which is about what a charting library costs before it has drawn anything.
 
-  What it deliberately does not do: no filtering, no group-by beyond the mean
-  per label, no second series, no trend line. It reads at most
+  What it deliberately does not do: no filtering, no grouping by more than one
+  column, no second series, no trend line. It reads at most
   `polarsense.graph.maxRows` rows (100,000) of the one or two columns being
   drawn, and says *a sample* on the panel whenever it stopped short of the file
   — a histogram of the first tenth of a file, captioned as the file, is exactly
