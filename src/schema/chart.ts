@@ -30,6 +30,16 @@ export type Agg = 'count' | 'sum' | 'mean' | 'median' | 'min' | 'max';
 
 export const AGGS: Agg[] = ['count', 'sum', 'mean', 'median', 'min', 'max'];
 
+/**
+ * How coarsely a temporal column is grouped. A timestamp is exact to the
+ * microsecond, which makes every row its own point and every count a 1 — so the
+ * question a date column is usually asked is "per what", and this is the answer
+ * given rather than guessed.
+ */
+export type Grain = 'year' | 'month' | 'week' | 'day' | 'hour' | 'minute' | 'second';
+
+export const GRAINS: Grain[] = ['year', 'month', 'week', 'day', 'hour', 'minute', 'second'];
+
 /** The dtype families that behave differently when drawn, and nothing finer. */
 export type Family = 'number' | 'temporal' | 'category' | 'nested';
 
@@ -42,6 +52,8 @@ export interface ChartRequest {
   kind?: ChartKind;
   /** What to measure per group. Only a bar of two columns has anything to apply. */
   agg?: Agg;
+  /** The period a temporal x is grouped into. Ignored where x is not a date. */
+  grain?: Grain;
   maxRows: number;
 }
 
@@ -63,6 +75,9 @@ export interface Chart {
   aggs: Agg[];
   /** One name per line, in drawing order. Empty for a chart that is one line. */
   seriesNames: string[];
+  /** The period the rows were grouped into, and the choices — empty where x is not a date. */
+  grain?: Grain;
+  grains: Grain[];
   /** The columns actually used — the request's, unless they had to be swapped. */
   x: string;
   y?: string;
@@ -189,6 +204,7 @@ export function buildChart(read: SeriesRead, request: ChartRequest): Chart {
     xNumeric: false,
     aggs: [] as Agg[],
     seriesNames: [] as string[],
+    grains: [] as Grain[],
     ticks: [] as { x: number; label: string }[],
     points: [] as ChartPoint[],
     rowsRead: read.rowsRead,
@@ -221,6 +237,49 @@ export function buildChart(read: SeriesRead, request: ChartRequest): Chart {
         'dates or labels.'
     };
   }
+  // A date grouped into periods: the rows counted per month, or a numeric column
+  // measured per month, and split into a line each where a label column says so.
+  // It is the same grouping the split already does, with the period as its key.
+  const grains: Grain[] = xFamily === 'temporal' ? GRAINS : [];
+  const grain = xFamily === 'temporal' && request.grain && GRAINS.includes(request.grain)
+    ? request.grain
+    : undefined;
+  if (grain) {
+    const by = second && yFamily !== 'number' ? second : undefined;
+    const value = second && yFamily === 'number' ? second : undefined;
+    const periods = grouped(first, grain);
+    const drawn = split(periods, 'temporal', by, value, request.agg);
+    // Bars are a fair reading of one count per month; two lines of bars are not,
+    // so they are offered only where there is a single line to draw.
+    const names = drawn.seriesNames ?? [];
+    const lines: ChartKind[] = names.length > 1
+      ? ['line', 'scatter']
+      : ['line', 'bar', 'scatter'];
+    const chosen = request.kind && lines.includes(request.kind) ? request.kind : 'line';
+    return {
+      ...base,
+      kinds: lines,
+      kind: chosen,
+      x: first.name,
+      y: second?.name,
+      xLabel: `${first.name} by ${grain}`,
+      xNumeric: chosen !== 'bar',
+      domain: chosen === 'bar' ? undefined : drawn.domain,
+      ticks: chosen !== 'bar' && drawn.domain
+        ? axisTicks(drawn.domain, periods.dtype, 'temporal')
+        : [],
+      points: drawn.points,
+      yLabel: drawn.yLabel,
+      agg: drawn.agg,
+      aggs: drawn.aggs ?? [],
+      seriesNames: names,
+      grain,
+      grains,
+      empty: drawn.empty,
+      notes: [...base.notes, ...drawn.notes]
+    };
+  }
+
   if (second && yFamily !== 'number') {
     if (xFamily === 'category') {
       // Labels against labels is a cross-tabulation, a table rather than a chart.
@@ -236,7 +295,7 @@ export function buildChart(read: SeriesRead, request: ChartRequest): Chart {
     // line this row belongs to*, which is the only reading of a categorical y
     // that draws anything at all.
     const lines: ChartKind[] = ['line', 'scatter'];
-    const drawn = split(first, second, xFamily);
+    const drawn = split(first, xFamily, second);
     return {
       ...base,
       kinds: lines,
@@ -250,6 +309,7 @@ export function buildChart(read: SeriesRead, request: ChartRequest): Chart {
       points: drawn.points,
       yLabel: drawn.yLabel,
       seriesNames: drawn.seriesNames ?? [],
+      grains,
       empty: drawn.empty,
       notes: [...base.notes, ...drawn.notes]
     };
@@ -281,6 +341,7 @@ export function buildChart(read: SeriesRead, request: ChartRequest): Chart {
     agg: drawn.agg,
     aggs: drawn.aggs ?? [],
     seriesNames: [],
+    grains,
     domain,
     ticks: domain ? axisTicks(domain, first.dtype, xFamily) : [],
     points: drawn.points,
@@ -473,6 +534,47 @@ function paired(
 }
 
 /**
+ * The start of the period a timestamp falls in.
+ *
+ * UTC throughout, because that is the clock every other date in this extension
+ * is printed on — `formatValue` goes through `toISOString`, so grouping on the
+ * local one would put a row in a month the panel does not show it in.
+ */
+export function truncate(ms: number, grain: Grain): number {
+  if (grain === 'second') return Math.floor(ms / 1000) * 1000;
+  if (grain === 'minute') return Math.floor(ms / 60_000) * 60_000;
+  if (grain === 'hour') return Math.floor(ms / 3_600_000) * 3_600_000;
+
+  const date = new Date(ms);
+  const day = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+  switch (grain) {
+    case 'day': return day;
+    // Monday, which is the week every calendar in Europe starts on and the one
+    // ISO 8601 defines. Sunday-first is a locale question this does not ask.
+    case 'week': return day - ((date.getUTCDay() + 6) % 7) * 86_400_000;
+    case 'month': return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1);
+    default: return Date.UTC(date.getUTCFullYear(), 0, 1);
+  }
+}
+
+/**
+ * The x column with every value moved to the start of its period, and printed
+ * as a plain date once the period is a day or longer — `2026-03-01` says
+ * "March" in a way `2026-03-01 00:00:00.000` does not.
+ */
+function grouped(x: Series, grain: Grain): Series {
+  const coarse = grain === 'hour' || grain === 'minute' || grain === 'second';
+  return {
+    name: x.name,
+    dtype: coarse ? x.dtype : 'date',
+    values: x.values.map((value) => {
+      const n = toNumber(value, 'temporal');
+      return Number.isFinite(n) ? new Date(truncate(n, grain)) : null;
+    })
+  };
+}
+
+/**
  * One line per label, counting the rows at each point of the axis.
  *
  * The x values are kept exact while there are few enough of them to be points on
@@ -481,24 +583,35 @@ function paired(
  * about the clock rather than about the data. Which of the two happened is said
  * on the panel, because twelve dates and thirty buckets are different charts.
  */
-function split(x: Series, by: Series, family: Family): Drawn {
+function split(
+  x: Series,
+  family: Family,
+  by?: Series,
+  value?: Series,
+  wanted?: Agg
+): Drawn {
+  const agg = value ? (wanted && AGGS.includes(wanted) ? wanted : 'mean') : undefined;
   const xs: number[] = [];
   const labels: string[] = [];
+  const measured: number[] = [];
   let dropped = 0;
 
   for (let i = 0; i < x.values.length; i++) {
-    const raw = by.values[i];
+    const raw = by ? by.values[i] : '';
     const n = toNumber(x.values[i], family);
-    if (!Number.isFinite(n) || raw === null || raw === undefined || raw === '') {
+    const measure = value ? toNumber(value.values[i], 'number') : 1;
+    if (!Number.isFinite(n) || !Number.isFinite(measure) ||
+        raw === null || raw === undefined || (by && raw === '')) {
       dropped++;
       continue;
     }
     xs.push(n);
-    labels.push(labelOf(raw, by.dtype));
+    labels.push(by ? labelOf(raw, by.dtype) : '');
+    measured.push(measure);
   }
 
-  const missing = dropped ? [skipped(dropped, 'a value missing from one of the two')] : [];
-  if (!xs.length) return { points: [], yLabel: 'rows', notes: missing, empty: nothing(by) };
+  const missing = dropped ? [skipped(dropped, 'a value missing from one of them')] : [];
+  if (!xs.length) return { points: [], yLabel: 'rows', notes: missing, empty: nothing(by ?? x) };
 
   // The busiest labels get the lines: six, because that is how many chart
   // colours the theme has, and a seventh line would have to repeat one.
@@ -515,37 +628,46 @@ function split(x: Series, by: Series, family: Family): Drawn {
     (width ? Math.min(BINS - 1, Math.floor((n - min) / width)) : n);
   const at = (key: number) => (width ? min + width * (key + 0.5) : key);
 
-  const counts = new Map<string, Map<number, number>>();
+  // The rows of each group, kept rather than tallied: what is done with them is
+  // the aggregate's business, and counting is only the case with nothing to add.
+  const groups = new Map<string, Map<number, number[]>>();
   for (let i = 0; i < xs.length; i++) {
     if (!keeping.has(labels[i])) continue;
-    const line = counts.get(labels[i]) ?? new Map<number, number>();
+    const line = groups.get(labels[i]) ?? new Map<number, number[]>();
     const key = bucket(xs[i]);
-    line.set(key, (line.get(key) ?? 0) + 1);
-    counts.set(labels[i], line);
+    const rows = line.get(key);
+    if (rows) rows.push(measured[i]);
+    else line.set(key, [measured[i]]);
+    groups.set(labels[i], line);
   }
 
   const points: ChartPoint[] = [];
   for (const label of kept) {
-    const line = [...(counts.get(label) ?? new Map<number, number>()).entries()]
+    const line = [...(groups.get(label) ?? new Map<number, number[]>()).entries()]
       .sort((a, b) => a[0] - b[0]);
-    for (const [key, count] of line) {
+    for (const [key, rows] of line) {
       points.push({
-        x: at(key), y: count, label: axisValue(at(key), x.dtype, family), series: label
+        x: at(key),
+        y: agg ? apply(agg, rows) : rows.length,
+        label: axisValue(at(key), x.dtype, family),
+        series: by ? label : undefined
       });
     }
   }
 
   return {
     points,
-    yLabel: 'rows',
-    seriesNames: kept,
+    yLabel: !value || agg === 'count' ? 'rows' : `${agg} ${value.name}`,
+    agg,
+    aggs: value ? AGGS : [],
+    seriesNames: by ? kept : [],
     domain: [min, width ? max + width : max],
     notes: [
       ...(width
         ? [`${x.name} holds more distinct values than a line has points, so the rows are ` +
            `counted in ${BINS} buckets across its range rather than one per value.`]
         : []),
-      ...(ordered.length > SERIES
+      ...(by && ordered.length > SERIES
         ? [`${by.name} has ${fmt(ordered.length)} values; the ${SERIES} with the most rows ` +
            'are drawn.']
         : []),

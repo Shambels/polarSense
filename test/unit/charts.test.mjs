@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  buildChart, kindsFor, familyOf, defaultAxis, readParquetSeries, readCsvSeries, localStorage
+  buildChart, kindsFor, familyOf, defaultAxis, truncate, readParquetSeries, readCsvSeries, localStorage
 } from '../harness.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -208,6 +208,83 @@ test('a date against labels is one line per label, counting the rows', () => {
   assert.deepEqual(drawn.notes, []);
   // Nothing to aggregate — counting rows is the only thing on offer.
   assert.deepEqual(drawn.aggs, []);
+});
+
+test('a timestamp is moved to the start of its period, on the clock the panel prints', () => {
+  // UTC, because formatValue goes through toISOString: grouping on the local
+  // clock would put a row in a month the panel does not show it in.
+  const at = (iso) => Date.parse(iso);
+  const on = (ms, grain) => new Date(truncate(ms, grain)).toISOString();
+
+  assert.equal(on(at('2026-03-17T14:37:52.481Z'), 'year'), '2026-01-01T00:00:00.000Z');
+  assert.equal(on(at('2026-03-17T14:37:52.481Z'), 'month'), '2026-03-01T00:00:00.000Z');
+  assert.equal(on(at('2026-03-17T14:37:52.481Z'), 'day'), '2026-03-17T00:00:00.000Z');
+  assert.equal(on(at('2026-03-17T14:37:52.481Z'), 'hour'), '2026-03-17T14:00:00.000Z');
+  assert.equal(on(at('2026-03-17T14:37:52.481Z'), 'minute'), '2026-03-17T14:37:00.000Z');
+  assert.equal(on(at('2026-03-17T14:37:52.481Z'), 'second'), '2026-03-17T14:37:52.000Z');
+  // A week starts on Monday: the 17th is a Tuesday, so it belongs to the 16th,
+  // and the Monday itself stays where it is.
+  assert.equal(on(at('2026-03-17T14:37:52.481Z'), 'week'), '2026-03-16T00:00:00.000Z');
+  assert.equal(on(at('2026-03-16T00:00:00.000Z'), 'week'), '2026-03-16T00:00:00.000Z');
+  // Sunday is the end of its week, not the start of the next one.
+  assert.equal(on(at('2026-03-22T23:59:59.000Z'), 'week'), '2026-03-16T00:00:00.000Z');
+});
+
+test('a date column can be grouped by period, and only a date column is offered it', () => {
+  const stamps = [
+    '2026-01-05T09:00:00Z', '2026-01-20T11:00:00Z', '2026-02-02T08:00:00Z',
+    '2026-02-14T22:00:00Z', '2026-02-28T01:00:00Z'
+  ].map((iso) => new Date(iso));
+
+  const monthly = chart([col('created_at', 'datetime[μs]', stamps)],
+    { x: 'created_at', grain: 'month' });
+  assert.equal(monthly.grain, 'month');
+  assert.equal(monthly.kind, 'line', 'a period is a run of time, so it is a line by default');
+  assert.deepEqual(monthly.points.map((point) => [point.label, point.y]),
+    [['2026-01-01', 2], ['2026-02-01', 3]]);
+  assert.equal(monthly.yLabel, 'rows');
+  assert.equal(monthly.xLabel, 'created_at by month');
+  // Bars are a fair reading of one count per month, so they are on the list.
+  assert.deepEqual(monthly.kinds, ['line', 'bar', 'scatter']);
+
+  const yearly = chart([col('created_at', 'datetime[μs]', stamps)],
+    { x: 'created_at', grain: 'year' });
+  assert.deepEqual(yearly.points.map((point) => [point.label, point.y]), [['2026-01-01', 5]]);
+
+  // The choices are offered before one is made, and only where they mean something.
+  assert.deepEqual(chart([col('created_at', 'date', stamps)], { x: 'created_at' }).grains,
+    ['year', 'month', 'week', 'day', 'hour', 'minute', 'second']);
+  assert.deepEqual(chart([col('revenue', 'f64', [1, 2, 3])], { x: 'revenue' }).grains, []);
+  assert.deepEqual(chart([col('region', 'str', ['EU'])], { x: 'region' }).grains, []);
+});
+
+test('a period groups the other column too: a line each, or a measurement', () => {
+  const stamps = ['2026-01-05', '2026-01-20', '2026-02-02', '2026-02-14']
+    .map((iso) => new Date(iso));
+
+  const split = chart([
+    col('created_at', 'date', stamps),
+    col('region', 'str', ['EU', 'US', 'EU', 'EU'])
+  ], { x: 'created_at', y: 'region', grain: 'month' });
+  assert.deepEqual(split.seriesNames, ['EU', 'US']);
+  assert.deepEqual(split.points.filter((p) => p.series === 'EU').map((p) => [p.label, p.y]),
+    [['2026-01-01', 1], ['2026-02-01', 2]]);
+  // Two lines of bars would interleave, so bars are not offered for a split.
+  assert.deepEqual(split.kinds, ['line', 'scatter']);
+
+  // With a number to measure, the aggregate picker means something again.
+  const measured = chart([
+    col('created_at', 'date', stamps),
+    col('revenue', 'f64', [10, 20, 1, 3])
+  ], { x: 'created_at', y: 'revenue', grain: 'month', agg: 'sum' });
+  assert.equal(measured.yLabel, 'sum revenue');
+  assert.deepEqual(measured.points.map((p) => [p.label, p.y]),
+    [['2026-01-01', 30], ['2026-02-01', 4]]);
+  assert.ok(measured.aggs.includes('median'));
+  // Without an aggregate named, the mean is what a measurement defaults to.
+  assert.equal(chart([
+    col('created_at', 'date', stamps), col('revenue', 'f64', [10, 20, 1, 3])
+  ], { x: 'created_at', y: 'revenue', grain: 'month' }).points[0].y, 15);
 });
 
 test('a split falls back to buckets when every row has its own timestamp', () => {

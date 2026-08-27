@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **A date column can be grouped by period.** The graph panel offers a `by`
+  picker next to a datetime column — `year`, `month`, `week`, `day`, `hour`,
+  `minute`, `second` — and every row is moved to the start of its period before
+  the rows are grouped. It applies to all three charts a date can be: the rows
+  counted per period, a line per label counted per period, and a numeric column
+  measured per period — the last of which brings the aggregate picker back, so
+  `sum revenue by month` is two picks. One count per period reads as bars as
+  fairly as it reads as a line, so bars join the chart list where there is a
+  single line to draw; two lines of bars would interleave, so they do not.
+
+  The default is `exact`, which is the behaviour as it was: distinct values
+  while there are few enough of them to be points on a line, and thirty buckets
+  across the range when there are not. That fallback exists because a
+  microsecond timestamp is its own value on every row; the picker is the answer
+  given rather than guessed, and it is the reason the fallback is now rarely
+  what you want.
+
+  Periods are cut on UTC, because every date this extension prints goes through
+  `toISOString` — grouping on the local clock would file a row under a month the
+  panel does not show it in. A week starts on Monday, as ISO 8601 says; whether
+  your locale starts it on Sunday is a question this does not ask.
+
 ## 1.7.0
 
 ### Added

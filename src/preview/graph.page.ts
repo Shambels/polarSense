@@ -81,6 +81,7 @@ export function shell(cspSource: string): string {
     <span class="pick"><label for="y">y</label><select id="y"></select></span>
     <span class="pick"><label for="kind">chart</label><select id="kind"></select></span>
     <span class="pick" id="aggpick"><label for="agg">per group</label><select id="agg"></select></span>
+    <span class="pick" id="grainpick"><label for="grain">by</label><select id="grain"></select></span>
     <span class="rows" id="rows"></span>
   </div>
   <div class="legend" id="legend"></div>
@@ -154,6 +155,13 @@ function draw() {
   // scatter draws the rows themselves, and a picker over neither is furniture.
   $('agg').replaceChildren(...state.aggs.map((agg) => option(agg, agg, agg === state.agg)));
   $('aggpick').hidden = !state.aggs.length;
+  // Only a date can be grouped into periods, and the first option is not one:
+  // a timestamp left alone is a different chart, not a missing choice.
+  $('grain').replaceChildren(
+    option('', 'exact', !state.grain),
+    ...state.grains.map((grain) => option(grain, grain, grain === state.grain))
+  );
+  $('grainpick').hidden = !state.grains.length;
 
   // The legend is the only thing that says which line is which, so it is drawn
   // from the same order the colours are taken in.
@@ -318,7 +326,7 @@ function number(value) {
   return rounded.toLocaleString('en-US');
 }
 
-for (const id of ['x', 'y', 'kind', 'agg']) {
+for (const id of ['x', 'y', 'kind', 'agg', 'grain']) {
   $(id).addEventListener('change', (event) => vscode.postMessage({ [id]: event.target.value }));
 }
 
