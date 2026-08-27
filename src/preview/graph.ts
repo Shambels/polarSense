@@ -245,8 +245,12 @@ function shell(webview: vscode.Webview): string {
   }
   select:focus{outline:1px solid var(--vscode-focusBorder);outline-offset:-1px}
   .rows{font-size:.72rem;color:var(--vscode-descriptionForeground);margin-left:auto}
-  .plot{flex:1;min-height:0;padding:.4rem 1.05rem 1rem;border-top:1px solid var(--vscode-panel-border)}
-  svg{width:100%;height:100%;overflow:visible}
+  .plot{flex:1;min-height:0;overflow:auto;padding:.4rem 1.05rem 1rem;
+    border-top:1px solid var(--vscode-panel-border)}
+  /* Width first: the panel is as wide as it is, and the height follows the
+     viewBox. A height of 100% let a short panel letterbox the chart into half
+     the width it had. */
+  svg{width:100%;height:auto;overflow:visible}
   /* The theme's own chart colours, so the marks stay legible in themes nobody
      here has seen — and one colour throughout, because a single series needs
      no legend and a second colour would imply one. */
@@ -349,8 +353,10 @@ function draw() {
  * slots, bars along a scale, a line, a cloud of points.
  */
 function plot() {
-  const W = 760;
-  const H = 400;
+  // 1.618:1. The viewBox is the aspect ratio as much as the coordinates:
+  // the page scales it to the panel width, and this is the height that comes with it.
+  const W = 970;
+  const H = 600;
   const left = 58;
   const right = 12;
   const top = 10;
