@@ -121,6 +121,49 @@ test('a category against a number is a bar of means, and the axis says mean', ()
   assert.deepEqual(drawn.points.map((point) => [point.label, point.y]), [['EU', 15], ['US', 2]]);
 });
 
+test('the bar measures what it was asked to measure, and says which on the axis', () => {
+  const columns = [
+    col('region', 'str', ['EU', 'US', 'EU', 'US', 'EU']),
+    col('revenue', 'f64', [10, 1, 20, 3, 60])
+  ];
+  const per = (agg) => {
+    const drawn = chart(columns, { x: 'region', y: 'revenue', agg });
+    return [drawn.yLabel, Object.fromEntries(drawn.points.map((p) => [p.label, p.y]))];
+  };
+
+  assert.deepEqual(per(undefined), ['mean revenue', { EU: 30, US: 2 }], 'mean is the default');
+  assert.deepEqual(per('sum'), ['sum revenue', { EU: 90, US: 4 }]);
+  assert.deepEqual(per('median'), ['median revenue', { EU: 20, US: 2 }]);
+  assert.deepEqual(per('min'), ['min revenue', { EU: 10, US: 1 }]);
+  assert.deepEqual(per('max'), ['max revenue', { EU: 60, US: 3 }]);
+  // Counting rows is not counting revenue, so the axis stops naming the column.
+  assert.deepEqual(per('count'), ['rows', { EU: 3, US: 2 }]);
+  // The bars are ordered by what is being measured, not by what was measured last.
+  assert.deepEqual(chart(columns, { x: 'region', y: 'revenue', agg: 'min' })
+    .points.map((p) => p.label), ['EU', 'US']);
+  assert.deepEqual(chart(columns, { x: 'region', y: 'revenue', agg: 'count' })
+    .points.map((p) => p.label), ['EU', 'US']);
+});
+
+test('an even group takes the middle two, and an aggregate nobody offers is ignored', () => {
+  const columns = [col('region', 'str', ['EU', 'EU', 'EU', 'EU']), col('n', 'f64', [1, 2, 3, 10])];
+  assert.equal(chart(columns, { x: 'region', y: 'n', agg: 'median' }).points[0].y, 2.5);
+  assert.equal(chart(columns, { x: 'region', y: 'n', agg: 'mode' }).agg, 'mean');
+});
+
+test('the aggregate is offered where there is a choice and nowhere else', () => {
+  const grouped = chart([
+    col('region', 'str', ['EU']), col('revenue', 'f64', [1])
+  ], { x: 'region', y: 'revenue' });
+  assert.deepEqual(grouped.aggs, ['count', 'sum', 'mean', 'median', 'min', 'max']);
+  // Counting is all there is to do with one column of labels, and a scatter
+  // draws the rows themselves — neither has anything to pick.
+  assert.deepEqual(chart([col('region', 'str', ['EU'])], { x: 'region' }).aggs, []);
+  assert.deepEqual(chart([
+    col('units', 'i64', [1, 2]), col('revenue', 'f64', [1, 2])
+  ], { x: 'units', y: 'revenue' }).aggs, []);
+});
+
 test('the columns are swapped rather than refused when they are the wrong way round', () => {
   const drawn = chart([
     col('revenue', 'f64', [10, 1, 20, 3]),

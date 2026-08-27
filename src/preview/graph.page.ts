@@ -61,6 +61,7 @@ export function shell(cspSource: string): string {
     <span class="pick"><label for="x">x</label><select id="x"></select></span>
     <span class="pick"><label for="y">y</label><select id="y"></select></span>
     <span class="pick"><label for="kind">chart</label><select id="kind"></select></span>
+    <span class="pick" id="aggpick"><label for="agg">per group</label><select id="agg"></select></span>
     <span class="rows" id="rows"></span>
   </div>
 </div>
@@ -124,6 +125,10 @@ function draw() {
   );
   $('kind').replaceChildren(...state.kinds.map((kind) => option(kind, kind, kind === state.kind)));
   $('kind').disabled = state.kinds.length < 2;
+  // Only a bar of grouped rows has anything to measure: a histogram counts, a
+  // scatter draws the rows themselves, and a picker over neither is furniture.
+  $('agg').replaceChildren(...state.aggs.map((agg) => option(agg, agg, agg === state.agg)));
+  $('aggpick').hidden = !state.aggs.length;
 
   const nothing = !state.points.length;
   $('svg').replaceChildren();
@@ -267,7 +272,7 @@ function number(value) {
   return rounded.toLocaleString('en-US');
 }
 
-for (const id of ['x', 'y', 'kind']) {
+for (const id of ['x', 'y', 'kind', 'agg']) {
   $(id).addEventListener('change', (event) => vscode.postMessage({ [id]: event.target.value }));
 }
 

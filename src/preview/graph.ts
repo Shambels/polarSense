@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'node:path';
-import type { Chart, ChartKind } from '../schema/chart.js';
+import type { Agg, Chart, ChartKind } from '../schema/chart.js';
 import { familyOf, defaultAxis } from '../schema/chart.js';
 import type { PolarSenseApi, ResolvedFrame, RowsFailure } from '../api.js';
 import { readSettings } from '../config.js';
@@ -34,6 +34,11 @@ interface View {
   y?: string;
   /** Set only once the user has overridden it; otherwise the lookup table decides. */
   kind?: ChartKind;
+  /**
+   * What to measure per group. Unlike the kind it survives a change of columns:
+   * a median is a median whichever two columns it is taken over.
+   */
+  agg?: Agg;
 }
 
 export async function showGraph(api: PolarSenseApi, at?: FrameTarget): Promise<void> {
@@ -89,12 +94,13 @@ function ensurePanel(api: PolarSenseApi): vscode.WebviewPanel {
   return panel;
 }
 
-/** What the page can ask for: a column on either axis, or a different chart. */
+/** What the page can ask for: a column on either axis, a chart, an aggregate. */
 interface Intent {
   type?: string;
   x?: string;
   y?: string;
   kind?: ChartKind;
+  agg?: Agg;
 }
 
 async function onMessage(api: PolarSenseApi, message: Intent): Promise<void> {
@@ -124,6 +130,7 @@ async function onMessage(api: PolarSenseApi, message: Intent): Promise<void> {
     }
   }
   if (typeof message?.kind === 'string') view.kind = message.kind;
+  if (typeof message?.agg === 'string') view.agg = message.agg;
 
   await update(api);
 }
@@ -137,6 +144,7 @@ async function update(api: PolarSenseApi): Promise<void> {
     x: current.x,
     y: current.y,
     kind: current.kind,
+    agg: current.agg,
     maxRows: readSettings().graphMaxRows
   });
 
@@ -155,6 +163,8 @@ interface Payload {
   y: string;
   kind: ChartKind | '';
   kinds: ChartKind[];
+  agg: Agg | '';
+  aggs: Agg[];
   xLabel: string;
   yLabel: string;
   xNumeric: boolean;
@@ -185,6 +195,8 @@ function payload(
     y: chart?.y ?? '',
     kind: chart?.kind ?? '',
     kinds: chart?.kinds ?? [],
+    agg: chart?.agg ?? '',
+    aggs: chart?.aggs ?? [],
     xLabel: chart?.xLabel ?? '',
     yLabel: chart?.yLabel ?? '',
     xNumeric: chart?.xNumeric ?? false,
