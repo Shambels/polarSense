@@ -256,6 +256,15 @@ test('a date column can be grouped by period, and only a date column is offered 
     ['year', 'month', 'week', 'day', 'hour', 'minute', 'second']);
   assert.deepEqual(chart([col('revenue', 'f64', [1, 2, 3])], { x: 'revenue' }).grains, []);
   assert.deepEqual(chart([col('region', 'str', ['EU'])], { x: 'region' }).grains, []);
+  // Temporal is not the same question as dated: a length of time and a time of
+  // day have no calendar to be grouped on, and grouping them by month would
+  // read them as milliseconds since 1970.
+  assert.deepEqual(chart([col('elapsed', 'duration[μs]', [1, 2])], { x: 'elapsed' }).grains, []);
+  assert.deepEqual(chart([col('opens_at', 'time', [1, 2])], { x: 'opens_at' }).grains, []);
+  assert.equal(chart([col('at', 'datetime[μs, UTC]', stamps)], { x: 'at' }).grains.length, 7);
+  // ...and one asked for on a column that has no calendar is not applied either.
+  assert.equal(chart([col('elapsed', 'duration[μs]', [1, 2])],
+    { x: 'elapsed', grain: 'month' }).grain, undefined);
 });
 
 test('a period groups the other column too: a line each, or a measurement', () => {

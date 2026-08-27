@@ -1,12 +1,26 @@
 # Changelog
 
-## 1.8.0
+## 1.8.1
 
 ### Changed
 
-- **The chart-type picker moved to the right-hand end of the control row.** The
-  pickers on the left choose what is being drawn; the chart type chooses how,
-  which is a different question and now sits at the other end of the row.
+- **The chart-type picker moved to the right-hand end of the control row**, with
+  the count of rows read under it. The pickers on the left choose what is being
+  drawn; the chart type chooses how, which is a different question and now sits
+  at the other end of the row — and how many rows went into the answer belongs
+  with neither, so it hangs off the same edge underneath.
+
+### Fixed
+
+- **The `per group` picker no longer appears on charts that have no groups.** It
+  is hidden on a histogram, a scatter and a line — as it was always meant to be,
+  and as the `by` picker is too. Both set `hidden` and neither honoured it: the
+  panel's own `display:inline-flex` on the control is an author rule, and an
+  author rule beats the browser's built-in `[hidden]` rule whatever its
+  specificity. One line of CSS, and the same one the table panel's pager arrows
+  have needed since they were written.
+
+## 1.8.0
 
 ### Added
 
@@ -15,8 +29,11 @@
   `hour`, `minute`, `second` — and every row is moved to the start of its period
   before the rows are grouped. It sits beneath that select rather than beside the
   others because it is an argument to it, not a fifth control of equal standing,
-  and it is not there at all when the column is not a date. It applies to all three charts a date can be: the rows
-  counted per period, a line per label counted per period, and a numeric column
+  and it is not there at all unless the column is a date or a datetime — a
+  duration and a time of day are temporal without being points on a calendar,
+  and grouping `3h 12m` by month would read it as milliseconds since 1970.
+
+  It applies to all three charts a date can be: the rows counted per period, a line per label counted per period, and a numeric column
   measured per period — the last of which brings the aggregate picker back, so
   `sum revenue by month` is two picks. One count per period reads as bars as
   fairly as it reads as a line, so bars join the chart list where there is a
