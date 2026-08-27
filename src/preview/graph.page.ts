@@ -16,8 +16,11 @@ export function shell(cspSource: string): string {
 <title>PolarSense</title>
 <style>${PANEL_CSS}
   .head{padding:.85rem 1.05rem .6rem}
-  .bar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:.7rem 0 .1rem}
+  .bar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-start;margin:.7rem 0 .1rem}
   .pick{display:inline-flex;align-items:center;gap:.35rem}
+  /* The period picker sits under the column it groups: it is an argument to
+     that select, not a fifth control of equal standing. */
+  .pick.stack{flex-direction:column;align-items:flex-start;gap:.3rem}
   .pick label{
     font-size:.66rem;text-transform:uppercase;letter-spacing:.09em;
     color:var(--vscode-descriptionForeground);
@@ -77,12 +80,14 @@ export function shell(cspSource: string): string {
   <ul class="facts" id="facts"></ul>
   <div id="notes"></div>
   <div class="bar">
-    <span class="pick"><label for="x" id="xlabel">x</label><select id="x"></select></span>
+    <span class="pick stack">
+      <span class="pick"><label for="x" id="xlabel">x</label><select id="x"></select></span>
+      <span class="pick" id="grainpick"><label for="grain">by</label><select id="grain"></select></span>
+    </span>
     <span class="pick"><label for="y">y</label><select id="y"></select></span>
-    <span class="pick"><label for="kind">chart</label><select id="kind"></select></span>
     <span class="pick" id="aggpick"><label for="agg">per group</label><select id="agg"></select></span>
-    <span class="pick" id="grainpick"><label for="grain">by</label><select id="grain"></select></span>
     <span class="rows" id="rows"></span>
+    <span class="pick"><label for="kind">chart</label><select id="kind"></select></span>
   </div>
   <div class="legend" id="legend"></div>
 </div>

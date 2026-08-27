@@ -2,12 +2,20 @@
 
 ## 1.8.0
 
+### Changed
+
+- **The chart-type picker moved to the right-hand end of the control row.** The
+  pickers on the left choose what is being drawn; the chart type chooses how,
+  which is a different question and now sits at the other end of the row.
+
 ### Added
 
 - **A date column can be grouped by period.** The graph panel offers a `by`
-  picker next to a datetime column — `year`, `month`, `week`, `day`, `hour`,
-  `minute`, `second` — and every row is moved to the start of its period before
-  the rows are grouped. It applies to all three charts a date can be: the rows
+  picker under the column picker it belongs to — `year`, `month`, `week`, `day`,
+  `hour`, `minute`, `second` — and every row is moved to the start of its period
+  before the rows are grouped. It sits beneath that select rather than beside the
+  others because it is an argument to it, not a fifth control of equal standing,
+  and it is not there at all when the column is not a date. It applies to all three charts a date can be: the rows
   counted per period, a line per label counted per period, and a numeric column
   measured per period — the last of which brings the aggregate picker back, so
   `sum revenue by month` is two picks. One count per period reads as bars as
