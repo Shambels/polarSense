@@ -148,6 +148,16 @@ export const PANEL_CSS = `
   .dtype.t-nested{color:var(--vscode-charts-red)}
 `;
 
+/**
+ * A one-off nonce for a page's own script tag. The panels load nothing from
+ * anywhere, so this exists to let the page's inline script run and nothing else.
+ */
+export function newNonce(): string {
+  return Array.from({ length: 32 }, () =>
+    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random() * 62)]
+  ).join('');
+}
+
 export function fmt(n: number): string {
   return n.toLocaleString('en-US');
 }
