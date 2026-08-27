@@ -187,6 +187,61 @@ test('a date against a number is a line, in date order, on a time axis', () => {
   assert.equal(drawn.yLabel, 'units');
 });
 
+test('a date against labels is one line per label, counting the rows', () => {
+  const day = (n) => new Date(`2026-01-0${n}`);
+  const drawn = chart([
+    col('created_at', 'date', [day(1), day(1), day(2), day(1), day(2), day(2)]),
+    col('region', 'str', ['EU', 'US', 'EU', 'EU', 'US', 'US'])
+  ], { x: 'created_at', y: 'region' });
+
+  // The second column is not a measurement: it says which line the row is on.
+  assert.equal(drawn.kind, 'line');
+  assert.deepEqual(drawn.kinds, ['line', 'scatter']);
+  assert.deepEqual(drawn.seriesNames, ['EU', 'US']);
+  assert.equal(drawn.yLabel, 'rows');
+  assert.equal(drawn.xNumeric, true);
+  const per = (name) => drawn.points.filter((point) => point.series === name)
+    .map((point) => [point.label, point.y]);
+  assert.deepEqual(per('EU'), [['2026-01-01', 2], ['2026-01-02', 1]]);
+  assert.deepEqual(per('US'), [['2026-01-01', 1], ['2026-01-02', 2]]);
+  // Exact dates while there are few of them: no note about buckets.
+  assert.deepEqual(drawn.notes, []);
+  // Nothing to aggregate — counting rows is the only thing on offer.
+  assert.deepEqual(drawn.aggs, []);
+});
+
+test('a split falls back to buckets when every row has its own timestamp', () => {
+  const stamps = Array.from({ length: 400 }, (_, i) => new Date(2026, 0, 1, 0, 0, 0, i));
+  const drawn = chart([
+    col('created_at', 'datetime[μs]', stamps),
+    col('region', 'str', stamps.map((_, i) => (i % 2 ? 'EU' : 'US')))
+  ], { x: 'created_at', y: 'region' });
+
+  assert.deepEqual(drawn.seriesNames, ['EU', 'US']);
+  // Thirty buckets a line, not four hundred points of one row each.
+  assert.ok(drawn.points.length <= 60, `${drawn.points.length} points`);
+  assert.equal(drawn.points.reduce((total, point) => total + point.y, 0), 400);
+  assert.ok(drawn.notes.some((note) => /30 buckets/.test(note)), drawn.notes.join(' | '));
+});
+
+test('a split draws the six busiest labels and says how many it left out', () => {
+  const n = 100;
+  const drawn = chart([
+    col('day', 'date', Array.from({ length: n }, (_, i) => new Date(2026, 0, 1 + (i % 10)))),
+    col('region', 'str', Array.from({ length: n }, (_, i) => `r${i % 9}`))
+  ], { x: 'day', y: 'region' });
+  assert.equal(drawn.seriesNames.length, 6);
+  assert.ok(drawn.notes.some((note) => /9 values; the 6 with the most rows/.test(note)),
+    drawn.notes.join(' | '));
+});
+
+test('labels against labels is still a table rather than a chart', () => {
+  const drawn = chart([
+    col('region', 'str', ['EU']), col('notes', 'str', ['a'])
+  ], { x: 'region', y: 'notes' });
+  assert.match(drawn.empty, /both hold labels/);
+});
+
 test('two numbers are a scatter, and the override picks another kind from the list', () => {
   const columns = [
     col('units', 'i64', [1, 2, 3]),
@@ -218,11 +273,6 @@ test('a column with nothing in it says so rather than drawing an empty chart', (
 test('what cannot be drawn is refused in words, not in an empty panel', () => {
   const nested = chart([col('tags', 'list[str]', [['a'], ['b']])], { x: 'tags' });
   assert.match(nested.empty, /list or struct/);
-
-  const twoLabels = chart([
-    col('region', 'str', ['EU']), col('notes', 'str', ['a'])
-  ], { x: 'region', y: 'notes' });
-  assert.match(twoLabels.empty, /labels rather than numbers/);
 
   const missing = chart([col('region', 'str', ['EU'])], { x: 'nope' });
   assert.match(missing.empty, /not a column of this file/);

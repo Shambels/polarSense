@@ -17,7 +17,17 @@
   means and a bar of totals look identical and answer different questions.
   Counting says `rows`, since counting rows is not counting revenue. The picker
   appears only where there is something to choose: one column of labels can only
-  be counted, and a scatter draws the rows themselves. A numeric column holding a dozen distinct values or fewer — a
+  be counted, and a scatter draws the rows themselves.
+
+  **A date against a column of labels is one line per label.** Put a datetime on
+  x and a string column on y and you get the rows counted at each point of the
+  axis, split into a line per value, with a colour and a legend — six lines at
+  most, because that is how many chart colours a VS Code theme has, and the
+  panel says how many values it left out. Where every row carries its own
+  timestamp, counting one point per distinct value would draw a flat line of
+  ones, so the rows are counted in thirty buckets across the range instead and
+  the panel says that is what happened. Two columns of labels are still refused:
+  that is a cross-tabulation, which is a table. A numeric column holding a dozen distinct values or fewer — a
   rating, a status code — is drawn as bars instead, since thirty bins over five
   values is a comb rather than a distribution. Two picks and a chart type sit
   above the plot, so a default that is wrong costs one click; the type list only

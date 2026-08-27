@@ -50,6 +50,8 @@ export interface ChartPoint {
   x: number;
   y: number;
   label: string;
+  /** Which line this point belongs to, where the chart was split into several. */
+  series?: string;
 }
 
 export interface Chart {
@@ -59,6 +61,8 @@ export interface Chart {
   /** What was measured per group, and the choices — empty where there is nothing to choose. */
   agg?: Agg;
   aggs: Agg[];
+  /** One name per line, in drawing order. Empty for a chart that is one line. */
+  seriesNames: string[];
   /** The columns actually used — the request's, unless they had to be swapped. */
   x: string;
   y?: string;
@@ -100,6 +104,12 @@ const MAX_LINE = 800;
 
 /** Distinct values at or below which a numeric column is bars, not a histogram. */
 const FEW = 12;
+
+/** Lines drawn at once: the theme has six chart colours, and a legend needs them apart. */
+const SERIES = 6;
+
+/** Distinct x values kept as themselves before a split falls back to binning. */
+const EXACT = 200;
 
 /**
  * The family of a column: its dtype where the file recorded one, and what its
@@ -178,6 +188,7 @@ export function buildChart(read: SeriesRead, request: ChartRequest): Chart {
     yLabel: '',
     xNumeric: false,
     aggs: [] as Agg[],
+    seriesNames: [] as string[],
     ticks: [] as { x: number; label: string }[],
     points: [] as ChartPoint[],
     rowsRead: read.rowsRead,
@@ -211,12 +222,36 @@ export function buildChart(read: SeriesRead, request: ChartRequest): Chart {
     };
   }
   if (second && yFamily !== 'number') {
-    // Two label columns is a cross-tabulation, which is a table and not a chart.
+    if (xFamily === 'category') {
+      // Labels against labels is a cross-tabulation, a table rather than a chart.
+      return {
+        ...base,
+        kind: 'bar',
+        empty: `${first.name} and ${second.name} both hold labels, so there is nothing ` +
+          'to measure. Drop one of them to count it instead.'
+      };
+    }
+    // Dates against labels: one line per label, counting the rows at each point
+    // of the axis. The second column is not a measurement here — it says *which
+    // line this row belongs to*, which is the only reading of a categorical y
+    // that draws anything at all.
+    const lines: ChartKind[] = ['line', 'scatter'];
+    const drawn = split(first, second, xFamily);
     return {
       ...base,
-      kind: 'bar',
-      empty: `${second.name} holds labels rather than numbers, so there is nothing to ` +
-        `measure against ${first.name}. Drop the second column to count them instead.`
+      kinds: lines,
+      kind: request.kind && lines.includes(request.kind) ? request.kind : 'line',
+      x: first.name,
+      y: second.name,
+      xLabel: first.name,
+      xNumeric: true,
+      domain: drawn.domain,
+      ticks: drawn.domain ? axisTicks(drawn.domain, first.dtype, xFamily) : [],
+      points: drawn.points,
+      yLabel: drawn.yLabel,
+      seriesNames: drawn.seriesNames ?? [],
+      empty: drawn.empty,
+      notes: [...base.notes, ...drawn.notes]
     };
   }
 
@@ -245,6 +280,7 @@ export function buildChart(read: SeriesRead, request: ChartRequest): Chart {
     xNumeric,
     agg: drawn.agg,
     aggs: drawn.aggs ?? [],
+    seriesNames: [],
     domain,
     ticks: domain ? axisTicks(domain, first.dtype, xFamily) : [],
     points: drawn.points,
@@ -303,6 +339,7 @@ interface Drawn {
   yLabel: string;
   agg?: Agg;
   aggs?: Agg[];
+  seriesNames?: string[];
   notes: string[];
   /** Set where the points do not span the axis themselves — a histogram's bins. */
   domain?: [number, number];
@@ -436,7 +473,89 @@ function paired(
 }
 
 /**
-One group's rows, measured. Reductions rather than `Math.min(...values)`,
+ * One line per label, counting the rows at each point of the axis.
+ *
+ * The x values are kept exact while there are few enough of them to be points on
+ * a line, and binned when there are not — a microsecond timestamp is its own
+ * distinct value on every row, and a line of a hundred thousand ones is a fact
+ * about the clock rather than about the data. Which of the two happened is said
+ * on the panel, because twelve dates and thirty buckets are different charts.
+ */
+function split(x: Series, by: Series, family: Family): Drawn {
+  const xs: number[] = [];
+  const labels: string[] = [];
+  let dropped = 0;
+
+  for (let i = 0; i < x.values.length; i++) {
+    const raw = by.values[i];
+    const n = toNumber(x.values[i], family);
+    if (!Number.isFinite(n) || raw === null || raw === undefined || raw === '') {
+      dropped++;
+      continue;
+    }
+    xs.push(n);
+    labels.push(labelOf(raw, by.dtype));
+  }
+
+  const missing = dropped ? [skipped(dropped, 'a value missing from one of the two')] : [];
+  if (!xs.length) return { points: [], yLabel: 'rows', notes: missing, empty: nothing(by) };
+
+  // The busiest labels get the lines: six, because that is how many chart
+  // colours the theme has, and a seventh line would have to repeat one.
+  const totals = new Map<string, number>();
+  for (const label of labels) totals.set(label, (totals.get(label) ?? 0) + 1);
+  const ordered = [...totals.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const kept = ordered.slice(0, SERIES).map(([label]) => label);
+  const keeping = new Set(kept);
+
+  const [min, max] = extent(xs) as [number, number];
+  const binned = new Set(xs).size > EXACT;
+  const width = (binned && (max - min) / BINS) || 0;
+  const bucket = (n: number) =>
+    (width ? Math.min(BINS - 1, Math.floor((n - min) / width)) : n);
+  const at = (key: number) => (width ? min + width * (key + 0.5) : key);
+
+  const counts = new Map<string, Map<number, number>>();
+  for (let i = 0; i < xs.length; i++) {
+    if (!keeping.has(labels[i])) continue;
+    const line = counts.get(labels[i]) ?? new Map<number, number>();
+    const key = bucket(xs[i]);
+    line.set(key, (line.get(key) ?? 0) + 1);
+    counts.set(labels[i], line);
+  }
+
+  const points: ChartPoint[] = [];
+  for (const label of kept) {
+    const line = [...(counts.get(label) ?? new Map<number, number>()).entries()]
+      .sort((a, b) => a[0] - b[0]);
+    for (const [key, count] of line) {
+      points.push({
+        x: at(key), y: count, label: axisValue(at(key), x.dtype, family), series: label
+      });
+    }
+  }
+
+  return {
+    points,
+    yLabel: 'rows',
+    seriesNames: kept,
+    domain: [min, width ? max + width : max],
+    notes: [
+      ...(width
+        ? [`${x.name} holds more distinct values than a line has points, so the rows are ` +
+           `counted in ${BINS} buckets across its range rather than one per value.`]
+        : []),
+      ...(ordered.length > SERIES
+        ? [`${by.name} has ${fmt(ordered.length)} values; the ${SERIES} with the most rows ` +
+           'are drawn.']
+        : []),
+      ...missing
+    ]
+  };
+}
+
+/**
+ * One group's rows, measured. Reductions rather than `Math.min(...values)`,
  * because a group can hold more values than an argument list can.
  */
 function apply(agg: Agg, values: number[]): number {

@@ -232,7 +232,9 @@ column is a histogram, one column of labels is a bar of counts, a date against a
 number is a line, two numbers are a scatter, and labels against a number are a bar
 of means — with `count`, `sum`, `mean`, `median`, `min` and `max` a pick away, and
 the axis naming which, because a bar of means and a bar of totals look identical
-and answer different questions. A numeric column with a dozen values
+and answer different questions. A date against a column of labels is one line per
+label, counting the rows at each point of the axis — up to six, coloured, with a
+legend. A numeric column with a dozen values
 or fewer is drawn as bars rather than binned. The two pickers and the chart type sit
 above the plot, so a default that is wrong costs one click, and the type list only
 offers what those columns can actually be.
@@ -445,8 +447,8 @@ reshapes are beyond what static reading can predict.
   Their schemas still work everywhere else, and the panel says which half is
   missing rather than showing an empty grid.
 - **A graph is one or two columns, not a query.** One column groups the rows and
-  one aggregate measures them; there is no filtering, no second grouping key, no
-  second series and no trend line — and
+  one aggregate measures them, or one splits them into lines; there is no
+  filtering, no third column, no trend line — and
   where a chart would need more rows than `graph.maxRows`, it draws the ones it
   read and says it is a sample rather than pretending to the whole file. List
   and struct columns are not offered as axes: a chart of a list is a chart of

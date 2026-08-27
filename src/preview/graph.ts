@@ -165,12 +165,13 @@ interface Payload {
   kinds: ChartKind[];
   agg: Agg | '';
   aggs: Agg[];
+  seriesNames: string[];
   xLabel: string;
   yLabel: string;
   xNumeric: boolean;
   domain?: [number, number];
   ticks: { x: number; label: string }[];
-  points: { x: number; y: number; label: string }[];
+  points: { x: number; y: number; label: string; series?: string }[];
   rows: string;
   empty?: string;
   error?: string;
@@ -197,6 +198,7 @@ function payload(
     kinds: chart?.kinds ?? [],
     agg: chart?.agg ?? '',
     aggs: chart?.aggs ?? [],
+    seriesNames: chart?.seriesNames ?? [],
     xLabel: chart?.xLabel ?? '',
     yLabel: chart?.yLabel ?? '',
     xNumeric: chart?.xNumeric ?? false,
