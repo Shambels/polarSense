@@ -10,6 +10,8 @@ import { readJsonSchema } from './json.js';
 import { readExcelSchema } from './excel.js';
 import { readParquetValues, type ValueSet } from './values.js';
 import { readCsvRows, readParquetRows, type RowPage, type RowRequest } from './rows.js';
+import { readCsvSeries, readParquetSeries, type SeriesRequest } from './series.js';
+import { buildChart, type Chart, type ChartRequest } from './chart.js';
 
 export interface SchemaServiceOptions {
   cacheSize: number;
@@ -34,6 +36,12 @@ export interface SchemaResult {
 
 export interface RowResult {
   page?: RowPage;
+  uri?: string;
+  error?: 'file-not-found' | 'unsupported-scheme' | 'unsupported-format' | 'read-failed';
+}
+
+export interface ChartResult {
+  chart?: Chart;
   uri?: string;
   error?: 'file-not-found' | 'unsupported-scheme' | 'unsupported-format' | 'read-failed';
 }
@@ -235,6 +243,60 @@ export class SchemaService {
       }
     } catch {
       // A codec hyparquet cannot decompress, a file rewritten mid-read.
+      return { error: 'read-failed', uri: resolved.uri };
+    }
+  }
+
+  /**
+   * The shape of one or two columns, as a few hundred numbers.
+   *
+   * The third thing here that reads data rather than metadata, and the widest
+   * read of the three: a bin count needs the whole column, not a page of it.
+   * What bounds it is `maxRows` and what makes it affordable is parquet being
+   * columnar — a histogram of one column of a two-hundred-column file reads one
+   * column chunk. Nothing is cached, for the same reason a page is not: these
+   * are somebody's values and they should not outlive the panel that asked.
+   */
+  async chart(source: SourceRef, ctx: PathContext, request: ChartRequest): Promise<ChartResult> {
+    const resolved = await resolvePath(source, ctx);
+    if (!resolved) return { error: 'file-not-found' };
+
+    let storage: Storage;
+    try {
+      storage = storageFor(resolved.uri, { httpsEnabled: this.options.httpsEnabled });
+    } catch (err) {
+      if (err instanceof UnsupportedSchemeError) return { error: 'unsupported-scheme' };
+      throw err;
+    }
+
+    const read: SeriesRequest = {
+      columns: request.y ? [request.x, request.y] : [request.x],
+      maxRows: Math.max(1, request.maxRows)
+    };
+
+    try {
+      switch (source.kind) {
+        case 'parquet':
+          return {
+            chart: buildChart(await readParquetSeries(storage, resolved.uri, read), request),
+            uri: resolved.uri
+          };
+        case 'csv':
+          return {
+            chart: buildChart(
+              await readCsvSeries(
+                resolved.uri, source.kwargs, { sniffBytes: this.options.csvSniffBytes }, read
+              ),
+              request
+            ),
+            uri: resolved.uri
+          };
+        default:
+          // The same list as `rows`, and for the same reason: a format whose
+          // rows cannot be read cannot have its values counted either.
+          return { error: 'unsupported-format', uri: resolved.uri };
+      }
+    } catch {
       return { error: 'read-failed', uri: resolved.uri };
     }
   }

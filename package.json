@@ -78,6 +78,10 @@
       {
         "command": "polarsense.showData",
         "title": "PolarSense: Show data (reads rows)"
+      },
+      {
+        "command": "polarsense.showGraph",
+        "title": "PolarSense: Show graph (reads rows)"
       }
     ],
     "notebookRenderer": [
@@ -159,6 +163,11 @@
           "type": "number",
           "default": 50,
           "description": "Above this many distinct values, offer none at all. A hundred of four million order ids is not a completion list, and the columns worth completing are the ones with few enough values to show."
+        },
+        "polarsense.graph.maxRows": {
+          "type": "number",
+          "default": 100000,
+          "description": "How many rows to read when drawing a graph. Only the one or two columns being drawn are read, and the bins and counts are computed in the extension — no rows are sent to the panel. A chart of fewer rows than the file holds says it is a sample."
         },
         "polarsense.diagnostics.enable": {
           "type": "boolean",

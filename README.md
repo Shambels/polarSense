@@ -210,8 +210,42 @@ so its rows are read out of the same bounded prefix the header comes from and th
 panel says that is what you are looking at. Arrow IPC, Delta and Iceberg show their
 schema and say plainly that their rows are not read yet.
 
-In a notebook, both panels are a click away from the output itself. A cell ending
-in a frame gets a small bar under what it printed:
+**PolarSense: Show graph (reads rows)** draws the shape of a column instead of
+listing it:
+
+```
+values.parquet · df
+200 rows · 4 columns · 1.7 KB · 1 row group · zstd
+
+x [ region ▾ ]   y [ none ▾ ]   chart [ bar ▾ ]        200 rows read
+
+rows
+100 ┤ ███
+ 60 ┤ ███  ███
+ 40 ┤ ███  ███  ███
+    └──US───EU──APAC──
+             region
+```
+
+Which chart you get is a lookup over dtypes, not an inference engine: one numeric
+column is a histogram, one column of labels is a bar of counts, a date against a
+number is a line, two numbers are a scatter, and labels against a number are a bar
+of means — the axis says `mean revenue`, because a bar of means and a bar of totals
+look identical and answer different questions. A numeric column with a dozen values
+or fewer is drawn as bars rather than binned. The two pickers and the chart type sit
+above the plot, so a default that is wrong costs one click, and the type list only
+offers what those columns can actually be.
+
+**The rows never reach the panel.** Bins are counted in the extension and a
+histogram of four million rows is thirty numbers, which is what crosses. It reads
+at most `polarsense.graph.maxRows` rows of the one or two columns being drawn, and
+says *a sample* on the panel when that was less than the file. There is no filter,
+no group-by beyond the mean per label, and no second series: this answers *what
+does this column look like*, and a question past that one is a query you should
+write.
+
+In a notebook, all three panels are a click away from the output itself. A cell
+ending in a frame gets a small bar under what it printed:
 
 ```
    shape: (200, 4)
@@ -219,7 +253,7 @@ in a frame gets a small bar under what it printed:
    │ region ┆ order_id ┆ revenue │
    └────────┴──────────┴─────────┘
 
-   POLARSENSE  [ Details ]  [ Data ]
+   POLARSENSE  [ Details ]  [ Data ]  [ Graph ]
 ```
 
 No kernel is involved and none is needed. The button says which output was
@@ -317,7 +351,7 @@ segments are added as hive partition columns, the way polars adds them.
 | Excel | The header row, out of the `.xlsx` zip — `sheet_name=`/`sheet_id=` resolved through `workbook.xml`, shared strings resolved, skipped cells named rather than closed up |
 
 Values — when `values.enable` is on — come from parquet only, plus hive partition
-directory names.
+directory names. Rows and graphs come from parquet and CSV.
 
 Schemas are read when a file opens rather than when you first ask for a column, so
 the first completion is a cache hit. They are cached on the file's mtime and size,
@@ -342,8 +376,9 @@ so a frame defined in cell 1 completes in cell 8.
 | `polarsense.values.enable` | `false` | Offer real values from your data. **Reads rows, not just metadata** |
 | `polarsense.values.maxRows` | `10000` | Rows of one column to read when offering values |
 | `polarsense.values.maxDistinct` | `50` | Above this many distinct values, offer none |
+| `polarsense.graph.maxRows` | `100000` | Rows to read when drawing a graph. Only the columns drawn are read, and only the bins cross to the panel |
 | `polarsense.diagnostics.enable` | `true` | Warn about column names that don't exist |
-| `polarsense.notebook.buttons` | `true` | Show the Details / Data buttons under a frame printed in a notebook |
+| `polarsense.notebook.buttons` | `true` | Show the Details / Data / Graph buttons under a frame printed in a notebook |
 | `polarsense.trace` | `false` | Log every resolution to the PolarSense output channel |
 
 The status bar shows what the frame at your cursor resolved to, or why it didn't.
@@ -409,6 +444,13 @@ reshapes are beyond what static reading can predict.
   behind one table; both are pages by another name and neither is written yet.
   Their schemas still work everywhere else, and the panel says which half is
   missing rather than showing an empty grid.
+- **A graph is one or two columns, not a query.** There is no filtering, no
+  group-by past the mean per label, no second series and no trend line — and
+  where a chart would need more rows than `graph.maxRows`, it draws the ones it
+  read and says it is a sample rather than pretending to the whole file. List
+  and struct columns are not offered as axes: a chart of a list is a chart of
+  nothing. Charts come from parquet and CSV, the two formats whose rows are
+  read at all.
 - **A CSV preview is a prefix of the file.** Without a footer there is no row
   count and no offset to seek to, so the rows shown are the ones inside the first
   `csv.sniffBytes` bytes, and the last record of a truncated prefix is dropped

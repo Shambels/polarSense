@@ -4,6 +4,7 @@ import type { SchemaService } from './schema/index.js';
 import * as path from 'node:path';
 import type { Column, SourceKind } from './core/types.js';
 import type { RowPage, RowRequest } from './schema/rows.js';
+import type { Chart, ChartRequest } from './schema/chart.js';
 import { frameAtOffset } from './core/resolve.js';
 import { framesSources } from './core/frame.js';
 import { evaluateFrame } from './core/schemaEval.js';
@@ -65,6 +66,11 @@ export interface RowsResult {
   error?: RowsFailure;
 }
 
+export interface ChartResult {
+  chart?: Chart;
+  error?: RowsFailure;
+}
+
 /**
  * PolarSense's answer to "which file is this frame, and what is in it", exported
  * so another extension can ask it. The viewer in `docs/roadmap-v2.html` is the
@@ -92,6 +98,17 @@ export interface PolarSenseApi {
    * `ResolvedFrame.transformed` is how a caller knows to say so.
    */
   readRows(frame: ResolvedFrame, request: RowRequest): Promise<RowsResult>;
+  /**
+   * The shape of one or two of that file's columns: a histogram, a bar of
+   * counts, a line, a scatter — chosen from the dtypes unless `kind` says
+   * otherwise, and computed here.
+   *
+   * Aggregating on this side of the call is the point of it. What comes back is
+   * at most a few hundred points whatever the file weighs, so a caller drawing
+   * a four-million-row column never holds four million values — and the caller
+   * cannot get them from here even if it wanted them.
+   */
+  readChart(frame: ResolvedFrame, request: ChartRequest): Promise<ChartResult>;
 }
 
 export function createApi(
@@ -160,6 +177,15 @@ export function createApi(
         request
       );
       return { page: result.page, error: result.error };
+    },
+
+    async readChart(frame, request) {
+      const result = await schemas.chart(
+        { kind: frame.kind, path: frame.uri, kwargs: frame.kwargs },
+        { documentDir: path.dirname(frame.uri), workspaceDirs: [], extraRoots: [] },
+        request
+      );
+      return { chart: result.chart, error: result.error };
     }
   };
 }

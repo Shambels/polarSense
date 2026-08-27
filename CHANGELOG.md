@@ -1,5 +1,58 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **The shape of a column, drawn.** `PolarSense: Show graph (reads rows)` opens
+  a panel beside your code holding a chart of the file behind the frame at your
+  cursor, and the notebook bar carries a third button — *Graph* — that opens the
+  same panel for the frame a cell printed.
+
+  Which chart you get is a lookup over dtypes and nothing cleverer: one numeric
+  column is a histogram, one column of labels is a bar of counts, a date against
+  a number is a line, two numbers are a scatter, and labels against a number are
+  a bar of means. The axis says `mean revenue` rather than `revenue`, because a
+  bar of means and a bar of totals look identical and answer different
+  questions. A numeric column holding a dozen distinct values or fewer — a
+  rating, a status code — is drawn as bars instead, since thirty bins over five
+  values is a comb rather than a distribution. Two picks and a chart type sit
+  above the plot, so a default that is wrong costs one click; the type list only
+  ever offers what those two columns can actually be drawn as.
+
+  **The rows do not leave the extension.** A histogram of four million rows is
+  thirty numbers, and thirty numbers are what cross to the panel — the same rule
+  the data panel is built on, applied where it matters more. The chart is drawn
+  in hand-written SVG and takes no new dependency; the bundle grew by 20 KB,
+  which is about what a charting library costs before it has drawn anything.
+
+  What it deliberately does not do: no filtering, no group-by beyond the mean
+  per label, no second series, no trend line. It reads at most
+  `polarsense.graph.maxRows` rows (100,000) of the one or two columns being
+  drawn, and says *a sample* on the panel whenever it stopped short of the file
+  — a histogram of the first tenth of a file, captioned as the file, is exactly
+  the kind of quiet wrongness this extension is built to avoid. A list or struct
+  column is not offered as an axis at all, because a chart of a list is a chart
+  of nothing.
+
+  Charts come from parquet and CSV, like rows. A CSV is charted out of the same
+  bounded prefix its header comes from and says so; a CSV also has no dtypes, so
+  there the family of a column is read off its values — a column that parses as
+  numbers nine times in ten is numbers. Arrow IPC, Delta and Iceberg say which
+  half is missing rather than drawing an empty plot.
+
+### Internal
+
+- `src/schema/series.ts` reads one or two columns unformatted and capped, which
+  is a third kind of read beside the schema and the page: a bin count needs a
+  whole column, and cannot be computed from a hundred rows formatted for a grid.
+- `src/schema/chart.ts` is pure and holds both halves of the feature — the dtype
+  lookup and the binning, counting and sampling — so what chart a pair of columns
+  gets can be tested against a list of values rather than against a file.
+- The exported API gained `readChart(frame, request)`. It returns the aggregate
+  rather than the values, so aggregating in the host is a property of the API and
+  not merely of the panel that happens to call it today.
+
 ## 1.6.1
 
 ### Changed
