@@ -234,7 +234,10 @@ of means — with `count`, `sum`, `mean`, `median`, `min` and `max` a pick away,
 the axis naming which, because a bar of means and a bar of totals look identical
 and answer different questions. A date against a column of labels is one line per
 label, counting the rows at each point of the axis — up to six, coloured, with a
-legend. A numeric column with a dozen values
+legend. A date column also carries a `by` picker — year, month, week, day, hour,
+minute, second — which moves every row to the start of its period before grouping,
+so `sum revenue by month` is two picks. Periods are cut on UTC and a week starts on
+Monday. A numeric column with a dozen values
 or fewer is drawn as bars rather than binned. The two pickers and the chart type sit
 above the plot, so a default that is wrong costs one click, and the type list only
 offers what those columns can actually be.

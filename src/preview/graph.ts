@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'node:path';
-import type { Agg, Chart, ChartKind } from '../schema/chart.js';
+import type { Agg, Chart, ChartKind, Grain } from '../schema/chart.js';
 import { familyOf, defaultAxis } from '../schema/chart.js';
 import type { PolarSenseApi, ResolvedFrame, RowsFailure } from '../api.js';
 import { readSettings } from '../config.js';
@@ -39,6 +39,11 @@ interface View {
    * a median is a median whichever two columns it is taken over.
    */
   agg?: Agg;
+  /**
+   * The period a temporal x is grouped into, and the same again: asking for it
+   * per month is a question about the data, not about which columns are shown.
+   */
+  grain?: Grain;
 }
 
 export async function showGraph(api: PolarSenseApi, at?: FrameTarget): Promise<void> {
@@ -101,6 +106,7 @@ interface Intent {
   y?: string;
   kind?: ChartKind;
   agg?: Agg;
+  grain?: Grain;
 }
 
 async function onMessage(api: PolarSenseApi, message: Intent): Promise<void> {
@@ -131,6 +137,8 @@ async function onMessage(api: PolarSenseApi, message: Intent): Promise<void> {
   }
   if (typeof message?.kind === 'string') view.kind = message.kind;
   if (typeof message?.agg === 'string') view.agg = message.agg;
+  // Empty is "not grouped": the picker's own first option, not a missing value.
+  if (typeof message?.grain === 'string') view.grain = message.grain || undefined;
 
   await update(api);
 }
@@ -145,6 +153,7 @@ async function update(api: PolarSenseApi): Promise<void> {
     y: current.y,
     kind: current.kind,
     agg: current.agg,
+    grain: current.grain,
     maxRows: readSettings().graphMaxRows
   });
 
@@ -166,6 +175,8 @@ interface Payload {
   agg: Agg | '';
   aggs: Agg[];
   seriesNames: string[];
+  grain: Grain | '';
+  grains: Grain[];
   xLabel: string;
   yLabel: string;
   xNumeric: boolean;
@@ -199,6 +210,8 @@ function payload(
     agg: chart?.agg ?? '',
     aggs: chart?.aggs ?? [],
     seriesNames: chart?.seriesNames ?? [],
+    grain: chart?.grain ?? '',
+    grains: chart?.grains ?? [],
     xLabel: chart?.xLabel ?? '',
     yLabel: chart?.yLabel ?? '',
     xNumeric: chart?.xNumeric ?? false,
