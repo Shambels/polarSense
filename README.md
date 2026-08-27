@@ -217,7 +217,7 @@ listing it:
 values.parquet · df
 200 rows · 4 columns · 1.7 KB · 1 row group · zstd
 
-x [ region ▾ ]   y [ none ▾ ]   chart [ bar ▾ ]        200 rows read
+x [ region ▾ ]   y [ none ▾ ]                   chart [▁▄█] [⋰] [╱]
 
 rows
 100 ┤ ███
@@ -238,14 +238,15 @@ legend. A date column also carries a `by` picker — year, month, week, day, hou
 minute, second — which moves every row to the start of its period before grouping,
 so `sum revenue by month` is two picks. Periods are cut on UTC and a week starts on
 Monday. A numeric column with a dozen values
-or fewer is drawn as bars rather than binned. The two pickers and the chart type sit
-above the plot, so a default that is wrong costs one click, and the type list only
-offers what those columns can actually be.
+or fewer is drawn as bars rather than binned. The two pickers sit above the plot and
+the chart type sits at the other end of the same row — a row of icons, one per
+chart, of which only the ones those columns can actually be are shown — so a
+default that is wrong costs one click.
 
 **The rows never reach the panel.** Bins are counted in the extension and a
 histogram of four million rows is thirty numbers, which is what crosses. It reads
 at most `polarsense.graph.maxRows` rows of the one or two columns being drawn, and
-says *a sample* on the panel when that was less than the file. There is no filter,
+says so in a note above the plot when that was less than the file. There is no filter,
 no grouping by more than one column, and no second series: this answers *what does
 this column look like*, and a question past that one is a query you should write.
 

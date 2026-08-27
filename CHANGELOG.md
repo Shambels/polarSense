@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **The chart type is a row of icons rather than a dropdown.** Four charts, four
+  pictures — bars in slots, a distribution, a line with a bend in it, a scatter
+  of points — as a radio group at the right-hand end of the control row, so the
+  list is read without opening it and the one in use is visible at a glance.
+  Each button keeps the name as its tooltip and as its accessible name, and a
+  frame whose columns can only be one chart still shows that one, disabled: a
+  control that cannot change anything should not invite the click that proves
+  it. There are no keyboard arrows within the group yet — the buttons are tab
+  stops, which is what a row of four needs to be usable and no more.
+
+- **The `x` and `by` pickers share a left edge.** The pair is laid out as a
+  two-column grid rather than as two rows of label-and-select, so the label
+  column is as wide as its widest label and the selects line up under each other
+  whether the one above says `x` or `group by`.
+
+- **More air between the frame and the pickers.** The gap above the control row
+  is now wider than the gaps inside it: what is above is what this frame *is*,
+  the row is what to draw of it, and the two were reading as one block.
+
+### Removed
+
+- **The count of rows read is gone from the control row.** Where it mattered it
+  was already said better elsewhere: a CSV read from a prefix and a read cut
+  short by `polarsense.graph.maxRows` both put a note above the plot saying so.
+  What was left was a number that only ever confirmed the file had been read
+  whole — chrome above the chart rather than a fact about it. The panel no
+  longer sends it.
+
 ## 1.8.1
 
 ### Changed
