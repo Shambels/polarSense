@@ -1162,11 +1162,17 @@ test('the graph panel opens on the first numeric column, binned', async () => {
   assert.equal(payload.kind, 'histogram');
   assert.equal(payload.points.length, 30);
   assert.equal(payload.points.reduce((total, point) => total + point.y, 0), 200);
-  assert.match(payload.rows, /200 rows read/);
+  // How many rows went in is not a field any more: the bins are the count, and a
+  // read cut short says so in a note instead.
+  assert.equal(payload.rows, undefined);
   // The whole point of aggregating in the host: what crosses is thirty numbers,
   // and the shell holds none of them.
   assert.doesNotMatch(panel.webview.html, /ord-0000/);
   assert.match(panel.webview.html, /acquireVsCodeApi/);
+  // The chart type is a group of icon buttons built from state.kinds: the shell
+  // carries the group and none of the buttons.
+  assert.match(panel.webview.html, /role="radiogroup"/);
+  assert.doesNotMatch(panel.webview.html, /<select id="kind"/);
 });
 
 test('a column with no shape to draw is not offered as an axis', async () => {

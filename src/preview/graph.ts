@@ -4,7 +4,7 @@ import type { Agg, Chart, ChartKind, Grain } from '../schema/chart.js';
 import { familyOf, defaultAxis } from '../schema/chart.js';
 import type { PolarSenseApi, ResolvedFrame, RowsFailure } from '../api.js';
 import { readSettings } from '../config.js';
-import { fmt, frameFacts, frameNotes } from './facts.js';
+import { frameFacts, frameNotes } from './facts.js';
 import { cursorTarget, NO_PYTHON, type FrameTarget } from './target.js';
 import { shell } from './graph.page.js';
 
@@ -183,7 +183,6 @@ interface Payload {
   domain?: [number, number];
   ticks: { x: number; label: string }[];
   points: { x: number; y: number; label: string; series?: string }[];
-  rows: string;
   empty?: string;
   error?: string;
 }
@@ -218,11 +217,10 @@ function payload(
     domain: chart?.domain,
     ticks: chart?.ticks ?? [],
     points: chart?.points ?? [],
-    // What was actually measured, in the words the panels use for it elsewhere.
-    rows: chart
-      ? `${fmt(chart.rowsRead)} row${chart.rowsRead === 1 ? '' : 's'} read` +
-        (chart.complete ? '' : ' (a sample)')
-      : '',
+    // How many rows were read is not sent: where it mattered — a prefix of a
+    // CSV, a sample cut short by graph.maxRows — the chart already says so in a
+    // note, and a count that only ever confirmed the file was read whole was a
+    // line of chrome above the plot rather than a fact about it.
     empty: chart?.empty,
     error: error && explain(error, current.frame.kind)
   };

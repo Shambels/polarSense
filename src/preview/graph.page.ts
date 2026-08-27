@@ -16,18 +16,23 @@ export function shell(cspSource: string): string {
 <title>PolarSense</title>
 <style>${PANEL_CSS}
   .head{padding:.85rem 1.05rem .6rem}
-  .bar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-start;margin:.7rem 0 .1rem}
+  /* The gap above is wider than the gaps inside the row on purpose: the facts
+     and notes above are what this frame is, the row is what to draw of it. */
+  .bar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-start;margin:1.7rem 0 .1rem}
   .pick{display:inline-flex;align-items:center;gap:.35rem}
   /* An author rule beats the browser's own [hidden]{display:none}, so a
      .pick with nothing to offer stayed on screen without this. */
   .pick[hidden]{display:none}
   /* The period picker sits under the column it groups: it is an argument to
-     that select, not a fifth control of equal standing. */
-  .pick.stack{flex-direction:column;align-items:flex-start;gap:.3rem}
-  /* The right-hand stack carries the margin that pushes the tail of the row
-     over, and hangs its contents off that edge rather than off the left one. */
-  .pick.stack.right{margin-left:auto;align-items:flex-end}
-  .pick label{
+     that select, not a fifth control of equal standing. A grid rather than two
+     rows of label-and-select, because a grid column is as wide as its widest
+     label — which is what puts the two selects on the same left edge whether
+     the one above them says x or group by. */
+  .pick.stack{display:inline-grid;grid-template-columns:auto auto;
+    gap:.3rem .35rem;align-items:center;justify-items:start}
+  /* The tail of the row hangs off the right edge rather than off the left one. */
+  .pick.right{margin-left:auto}
+  .pick label,.pick .cap{
     font-size:.66rem;text-transform:uppercase;letter-spacing:.09em;
     color:var(--vscode-descriptionForeground);
   }
@@ -38,7 +43,33 @@ export function shell(cspSource: string): string {
     border-radius:5px;padding:.26rem .4rem;max-width:14rem;
   }
   select:focus{outline:1px solid var(--vscode-focusBorder);outline-offset:-1px}
-  .rows{font-size:.72rem;color:var(--vscode-descriptionForeground)}
+  /* Four charts, four pictures: the names were never the point, and a shape is
+     read faster than a word in a list that has to be opened to be seen. */
+  .kinds{
+    display:inline-flex;gap:.1rem;padding:.12rem;border-radius:5px;
+    background:var(--vscode-dropdown-background);
+    border:1px solid var(--vscode-dropdown-border,var(--vscode-widget-border,transparent));
+  }
+  .kinds button{
+    display:inline-flex;align-items:center;justify-content:center;
+    width:1.7rem;height:1.5rem;padding:0;border:0;border-radius:4px;
+    background:none;color:var(--vscode-dropdown-foreground);cursor:pointer;
+  }
+  .kinds button:hover:not(:disabled){background:var(--vscode-toolbar-hoverBackground)}
+  /* Which one is chosen is carried by the button and not only by its icon: a
+     theme whose active colours are unset still leaves a filled cell behind. */
+  .kinds button[aria-checked="true"]{
+    background:var(--vscode-inputOption-activeBackground,var(--vscode-toolbar-hoverBackground));
+    color:var(--vscode-inputOption-activeForeground,var(--vscode-foreground));
+    box-shadow:inset 0 0 0 1px var(--vscode-inputOption-activeBorder,transparent);
+  }
+  .kinds button:focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:-1px}
+  .kinds button:disabled{cursor:default}
+  .kinds svg{width:15px;height:15px;fill:currentColor}
+  /* The line icon is the one shape that is a stroke rather than a fill, and it
+     says so here: a presentation attribute would lose to the rule above it. */
+  .kinds polyline{fill:none;stroke:currentColor;stroke-width:1.7;
+    stroke-linecap:round;stroke-linejoin:round}
   .plot{flex:1;min-height:0;overflow:auto;padding:.4rem 1.05rem 1rem;
     border-top:1px solid var(--vscode-panel-border)}
   /* Width first: the panel is as wide as it is, and the height follows the
@@ -87,14 +118,13 @@ export function shell(cspSource: string): string {
   <div id="notes"></div>
   <div class="bar">
     <span class="pick stack">
-      <span class="pick"><label for="x" id="xlabel">x</label><select id="x"></select></span>
-      <span class="pick" id="grainpick"><label for="grain">by</label><select id="grain"></select></span>
+      <label for="x" id="xlabel">x</label><select id="x"></select>
+      <label for="grain" class="grainrow">by</label><select id="grain" class="grainrow"></select>
     </span>
     <span class="pick"><label for="y">y</label><select id="y"></select></span>
     <span class="pick" id="aggpick"><label for="agg">per group</label><select id="agg"></select></span>
-    <span class="pick stack right">
-      <span class="pick"><label for="kind">chart</label><select id="kind"></select></span>
-      <span class="rows" id="rows"></span>
+    <span class="pick right">
+      <span class="kinds" id="kind" role="radiogroup" aria-labelledby="kindcap"></span>
     </span>
   </div>
   <div class="legend" id="legend"></div>
@@ -124,11 +154,47 @@ function option(value, label, selected) {
   return node;
 }
 
+/**
+ * A chart type, drawn. Each icon is the chart in miniature — bars in slots, a
+ * distribution, a line with a bend in it, a scatter of points — so the row can
+ * be read without opening anything, which a list of names could not be.
+ */
+const ICONS = {
+  bar: [
+    ['rect', { x: 2, y: 8, width: 3.2, height: 6 }],
+    ['rect', { x: 6.4, y: 3, width: 3.2, height: 11 }],
+    ['rect', { x: 10.8, y: 6, width: 3.2, height: 8 }]
+  ],
+  histogram: [
+    ['rect', { x: 1, y: 10, width: 2.6, height: 4 }],
+    ['rect', { x: 4, y: 6.5, width: 2.6, height: 7.5 }],
+    ['rect', { x: 7, y: 2.5, width: 2.6, height: 11.5 }],
+    ['rect', { x: 10, y: 7.5, width: 2.6, height: 6.5 }],
+    ['rect', { x: 13, y: 11, width: 2, height: 3 }]
+  ],
+  line: [
+    ['polyline', { points: '2,12 6,7.5 9.5,9.5 14,3' }]
+  ],
+  scatter: [
+    ['circle', { cx: 3.4, cy: 11.4, r: 1.6 }],
+    ['circle', { cx: 7, cy: 6.4, r: 1.6 }],
+    ['circle', { cx: 10.2, cy: 10, r: 1.6 }],
+    ['circle', { cx: 13.4, cy: 4, r: 1.6 }]
+  ]
+};
+
 /** An SVG element, with its attributes. Never a string: marks are drawn, not written. */
 function svg(tag, attrs, className) {
   const node = document.createElementNS(NS, tag);
   for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, String(value));
   if (className) node.setAttribute('class', className);
+  return node;
+}
+
+/** The picture for a chart type, or nothing where there is no picture for it. */
+function icon(kind) {
+  const node = svg('svg', { viewBox: '0 0 16 16', 'aria-hidden': 'true', focusable: 'false' });
+  for (const [tag, attrs] of ICONS[kind] || []) node.appendChild(svg(tag, attrs));
   return node;
 }
 
@@ -147,7 +213,6 @@ function draw() {
 
   const notes = state.error ? [state.error, ...state.notes] : state.notes;
   $('notes').replaceChildren(...notes.map((note) => text('p', note, 'note')));
-  $('rows').textContent = state.rows;
 
   // On a bar the x column is the grouping key — one slot per distinct value —
   // so it is called that. Calling it x while the select beside it says "per
@@ -162,8 +227,24 @@ function draw() {
     option('', 'none', !state.y),
     ...columns.map(([name, shown]) => option(name, shown, name === state.y))
   );
-  $('kind').replaceChildren(...state.kinds.map((kind) => option(kind, kind, kind === state.kind)));
-  $('kind').disabled = state.kinds.length < 2;
+  // A radio group rather than a select: four options that each have a picture
+  // are worth the width, and the chosen one is then visible without a click.
+  // The name stays as the tooltip and as the accessible name — the icon is a
+  // faster way to read the list, not a replacement for knowing what it says.
+  $('kind').replaceChildren(...state.kinds.map((kind) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.setAttribute('role', 'radio');
+    button.setAttribute('aria-checked', String(kind === state.kind));
+    button.setAttribute('aria-label', kind);
+    button.title = kind;
+    // One possible chart is not a choice, and a control that cannot change
+    // anything should not invite the click that proves it.
+    button.disabled = state.kinds.length < 2;
+    button.appendChild(icon(kind));
+    button.addEventListener('click', () => vscode.postMessage({ kind }));
+    return button;
+  }));
   // Only a bar of grouped rows has anything to measure: a histogram counts, a
   // scatter draws the rows themselves, and a picker over neither is furniture.
   $('agg').replaceChildren(...state.aggs.map((agg) => option(agg, agg, agg === state.agg)));
@@ -174,7 +255,7 @@ function draw() {
     option('', 'exact', !state.grain),
     ...state.grains.map((grain) => option(grain, grain, grain === state.grain))
   );
-  $('grainpick').hidden = !state.grains.length;
+  for (const node of document.querySelectorAll('.grainrow')) node.hidden = !state.grains.length;
 
   // The legend is the only thing that says which line is which, so it is drawn
   // from the same order the colours are taken in.
@@ -339,7 +420,7 @@ function number(value) {
   return rounded.toLocaleString('en-US');
 }
 
-for (const id of ['x', 'y', 'kind', 'agg', 'grain']) {
+for (const id of ['x', 'y', 'agg', 'grain']) {
   $(id).addEventListener('change', (event) => vscode.postMessage({ [id]: event.target.value }));
 }
 
