@@ -127,6 +127,13 @@ const SERIES = 6;
 const EXACT = 200;
 
 /**
+ * The temporal dtypes that are points on a calendar. A duration and a time of
+ * day are temporal too and neither has one: grouping `3h 12m` by month reads it
+ * as milliseconds since 1970, which is a number dressed as an answer.
+ */
+const CALENDAR = /^(date|datetime|timestamp)/;
+
+/**
  * The family of a column: its dtype where the file recorded one, and what its
  * values look like where it did not. A CSV with dtype inference off has nothing
  * but the values, and refusing to chart it on that ground would be refusing to
@@ -240,8 +247,10 @@ export function buildChart(read: SeriesRead, request: ChartRequest): Chart {
   // A date grouped into periods: the rows counted per month, or a numeric column
   // measured per month, and split into a line each where a label column says so.
   // It is the same grouping the split already does, with the period as its key.
-  const grains: Grain[] = xFamily === 'temporal' ? GRAINS : [];
-  const grain = xFamily === 'temporal' && request.grain && GRAINS.includes(request.grain)
+  const grains: Grain[] = xFamily === 'temporal' && CALENDAR.test(first.dtype.toLowerCase())
+    ? GRAINS
+    : [];
+  const grain = grains.length && request.grain && GRAINS.includes(request.grain)
     ? request.grain
     : undefined;
   if (grain) {

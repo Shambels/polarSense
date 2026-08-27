@@ -18,9 +18,15 @@ export function shell(cspSource: string): string {
   .head{padding:.85rem 1.05rem .6rem}
   .bar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-start;margin:.7rem 0 .1rem}
   .pick{display:inline-flex;align-items:center;gap:.35rem}
+  /* An author rule beats the browser's own [hidden]{display:none}, so a
+     .pick with nothing to offer stayed on screen without this. */
+  .pick[hidden]{display:none}
   /* The period picker sits under the column it groups: it is an argument to
      that select, not a fifth control of equal standing. */
   .pick.stack{flex-direction:column;align-items:flex-start;gap:.3rem}
+  /* The right-hand stack carries the margin that pushes the tail of the row
+     over, and hangs its contents off that edge rather than off the left one. */
+  .pick.stack.right{margin-left:auto;align-items:flex-end}
   .pick label{
     font-size:.66rem;text-transform:uppercase;letter-spacing:.09em;
     color:var(--vscode-descriptionForeground);
@@ -32,7 +38,7 @@ export function shell(cspSource: string): string {
     border-radius:5px;padding:.26rem .4rem;max-width:14rem;
   }
   select:focus{outline:1px solid var(--vscode-focusBorder);outline-offset:-1px}
-  .rows{font-size:.72rem;color:var(--vscode-descriptionForeground);margin-left:auto}
+  .rows{font-size:.72rem;color:var(--vscode-descriptionForeground)}
   .plot{flex:1;min-height:0;overflow:auto;padding:.4rem 1.05rem 1rem;
     border-top:1px solid var(--vscode-panel-border)}
   /* Width first: the panel is as wide as it is, and the height follows the
@@ -86,8 +92,10 @@ export function shell(cspSource: string): string {
     </span>
     <span class="pick"><label for="y">y</label><select id="y"></select></span>
     <span class="pick" id="aggpick"><label for="agg">per group</label><select id="agg"></select></span>
-    <span class="rows" id="rows"></span>
-    <span class="pick"><label for="kind">chart</label><select id="kind"></select></span>
+    <span class="pick stack right">
+      <span class="pick"><label for="kind">chart</label><select id="kind"></select></span>
+      <span class="rows" id="rows"></span>
+    </span>
   </div>
   <div class="legend" id="legend"></div>
 </div>
