@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Changed
+
+- **The Marketplace listing is its own page now.** One `README.md` was serving
+  two readers who want opposite things: someone deciding whether to install this
+  wants the demo, the five things it does and the settings they might flip;
+  someone about to change the code wants the trigger-site list, the API surface
+  and the release process. The long version won, and the listing had grown to
+  640 lines of which the last third was `npm install`. `README.marketplace.md`
+  is now what ships — vsce packages it through `--readme-path` and renames it to
+  `README.md` inside the VSIX — and GitHub keeps the full document unchanged.
+
+  The two files are not generated from each other, on purpose: the short one is a
+  showcase, not a truncation, and a section that reads well as reference reads
+  badly as a pitch. The cost is that a user-visible change has to be written
+  twice, which is now part of the standing rule in `CLAUDE.md`. Relative links in
+  the shipped file resolve from the repository root rather than from the file's
+  own folder, which is why it sits at the root beside the original.
+
 ### Fixed
 
 - **`Path(__file__).parent / "data.parquet"` finds the file.** The one spelling
@@ -20,6 +38,16 @@
   it sits in, and answering with a directory nobody wrote is the kind of guess
   this extension does not make. `.parents[1]` is not read either — a subscript
   is a different shape, and one level up is what scripts write.
+
+### Internal
+
+- **`CLAUDE.md` no longer ships to the Marketplace.** `.vscodeignore` is a
+  denylist and it caught us again in miniature: the working-notes file was added
+  to the repository root and went straight into the VSIX, 3.6 KB of instructions
+  to an assistant published as part of the extension. It is excluded now,
+  alongside the GitHub `README.md` that `--readme-path` replaces. Nothing about
+  the size check would have caught either — both are small, and small is exactly
+  what that guard is blind to.
 
 ## 1.10.1
 

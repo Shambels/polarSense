@@ -74,23 +74,39 @@ command looks the way it does.
 
 `--no-dependencies` matters. esbuild has already bundled everything into
 `dist/extension.js`, so vsce must not walk `node_modules` — with it, the VSIX is
-about 200 KB; without it, tens of megabytes of files that are never loaded.
+about 280 KB; without it, tens of megabytes of files that are never loaded.
 
-Two things that break packaging, both with unhelpful errors:
+`--readme-path README.marketplace.md` matters too. The Marketplace listing is
+rendered from the readme *inside the VSIX*, never from GitHub, so this flag is
+what makes the listing the short showcase while `README.md` stays the long
+document on GitHub. vsce renames the file to `README.md` in the package, and
+force-includes it whatever `.vscodeignore` says. The root `README.md` is excluded
+there so only one readme ships.
+
+Three things that break packaging, all with unhelpful errors:
 
 - **A relative link in `README.md` with no `repository` field.** vsce rewrites
   relative markdown links to absolute GitHub URLs and errors out if it cannot.
   The `repository` field in `package.json` is what it reads.
 - **Images must use markdown syntax**, `![alt](assets/demo.gif)`. vsce does not
   rewrite `<img src>`, so an HTML tag produces a broken image on the listing.
+- **Relative links resolve from the repository root**, not from the folder the
+  readme lives in. That is why `README.marketplace.md` sits at the root: written
+  there, `assets/demo.gif` and `README.md` are correct both on the listing and
+  when the file is read on GitHub. Moved into `docs/`, the same links would still
+  render on the Marketplace and break on GitHub.
 
-Check the file list vsce prints. A healthy package is **8 files, about 200 KB**:
+Check the file list vsce prints. A healthy package is **9 files, about 280 KB**
+(the readme is `README.marketplace.md` under its new name):
 
 ```
 package.json  README.md  LICENSE  CHANGELOG.md
-dist/extension.js
+dist/extension.js  dist/renderer.js
 assets/tree-sitter.wasm  assets/tree-sitter-python.wasm  assets/icon.png
 ```
+
+Anything else in that list is a `.vscodeignore` miss. `CLAUDE.md` reached a
+published package this way — small enough that the size guard never noticed.
 
 `.vscodeignore` is a **denylist**: anything new in the repo ships unless it is
 named there. That is how a 249 MB `.venv` once reached a package — packaging
@@ -156,8 +172,9 @@ page.
 
 ```
 [ ] CHANGELOG.md written and committed, number matches what changed
+[ ] README.marketplace.md updated too, if the change is user-visible
 [ ] npm version patch|minor|major   (tests, bump, commit, tag, package)
-[ ] the .vsix file list contains no src/ test/ docs/
+[ ] the .vsix file list is the 9 files above — no src/ test/ docs/, one readme
 [ ] installed the .vsix locally and typed into a string
 [ ] git push --follow-tags   — including assets/demo.gif
 [ ] uploaded, and Open VSX if you publish there

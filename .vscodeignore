@@ -40,6 +40,13 @@ _to_delete/**
 coverage/**
 *.log
 
-# --- developer documentation; README and CHANGELOG are the user-facing pair ---
+# --- developer documentation ---
+# README.md is the GitHub one and is deliberately excluded: the Marketplace
+# listing is built from README.marketplace.md, which vsce force-includes via
+# --readme-path and renames to README.md inside the VSIX. Shipping both would
+# put two readmes in the package. CHANGELOG.md is the Marketplace's Changelog
+# tab and stays.
 docs/**
 RELEASING.md
+README.md
+CLAUDE.md
