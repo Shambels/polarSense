@@ -621,6 +621,13 @@ That single command does five things, via npm's own lifecycle hooks in
 | — | commit + tag | `v0.1.2`, from npm itself |
 | `postversion` | `npm run package` | Leaves `polarsense-0.1.2.vsix` ready to upload |
 
+The Marketplace listing is not this file. `README.marketplace.md` is what goes
+into the VSIX — vsce packages it with `--readme-path` and renames it to
+`README.md` there, and the root `README.md` is excluded from the package — so
+this document can stay as long as it needs to be. A user-visible change goes in
+both: the trigger-site list, the settings table and the limitations appear in
+each, at different lengths.
+
 Push **before** updating the Marketplace listing: the README's GIF is served from
 GitHub at render time, so an unpushed commit shows a broken image on the page.
 
