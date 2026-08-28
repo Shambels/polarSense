@@ -106,8 +106,9 @@ export function chartFetchSnippet(
     '        try:',
     '            if _dt == _ps_pl.Duration:',
     // A duration is a magnitude, not a point on a calendar: microseconds, so it
-    // can be summed and averaged like the number it is.
-    '                _family = "number"',
+    // can be summed and averaged like the number it is — and its own family, so
+    // the axis reads it back as a span of time rather than a count of them.
+    '                _family = "duration"',
     '                _vals = _s.dt.total_microseconds().to_list()',
     '            elif _dt in (_ps_pl.Datetime, _ps_pl.Date, _ps_pl.Time):',
     '                try:',
@@ -133,6 +134,9 @@ export function chartFetchSnippet(
 /** What a family reported by the snippet means to the chart's dtype-driven code. */
 const DTYPE: Record<string, string> = {
   number: 'f64',
+  // A duration keeps a duration dtype so the chart measures it as a magnitude
+  // and the axis formats it as a span; the values are already microseconds.
+  duration: 'duration[μs]',
   temporal: 'datetime[ms]',
   category: 'str'
 };

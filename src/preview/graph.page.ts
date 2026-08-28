@@ -308,7 +308,7 @@ function plot() {
     const value = yMin + (span * i) / 4;
     const y = py(value);
     node.appendChild(svg('line', { x1: left, y1: y, x2: left + width, y2: y }, 'rule'));
-    node.appendChild(label(left - 6, y + 3, number(value), 'end'));
+    node.appendChild(label(left - 6, y + 3, yfmt(value), 'end'));
   }
   node.appendChild(svg('line', { x1: left, y1: py(Math.max(yMin, 0)), x2: left + width,
     y2: py(Math.max(yMin, 0)) }, 'axis'));
@@ -411,13 +411,42 @@ function extent(numbers) {
 function tooltip(point) {
   const title = document.createElementNS(NS, 'title');
   title.textContent = (point.series ? point.series + ' · ' : '') +
-    point.label + ' — ' + number(point.y);
+    point.label + ' — ' + yfmt(point.y);
   return title;
 }
 
 function number(value) {
   const rounded = Math.abs(value) >= 1000 ? Math.round(value) : Number(value.toPrecision(4));
   return rounded.toLocaleString('en-US');
+}
+
+/** The value on the measured axis: a span of time where it is one, a number otherwise. */
+function yfmt(value) {
+  return state && state.yDuration ? duration(value) : number(value);
+}
+
+/**
+ * Microseconds as a short human span — 13d 19h, 15m, 500µs — the largest two
+ * units that carry it. The kernel hands durations over in microseconds, so that
+ * is the unit assumed here; two components is the shape of the number without
+ * the wall of digits behind it.
+ */
+function duration(us) {
+  if (!isFinite(us)) return '';
+  const sign = us < 0 ? '-' : '';
+  let n = Math.round(Math.abs(us));
+  if (n === 0) return '0';
+  const units = [['d', 86400000000], ['h', 3600000000], ['m', 60000000],
+    ['s', 1000000], ['ms', 1000], ['µs', 1]];
+  let start = units.findIndex(([, size]) => n >= size);
+  if (start === -1) start = units.length - 1;
+  const parts = [];
+  for (let i = start; i < units.length && parts.length < 2; i++) {
+    const v = Math.floor(n / units[i][1]);
+    n -= v * units[i][1];
+    if (v > 0) parts.push(v + units[i][0]);
+  }
+  return sign + parts.join(' ');
 }
 
 for (const id of ['x', 'y', 'agg', 'grain']) {

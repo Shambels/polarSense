@@ -105,6 +105,12 @@ export interface Chart {
   notes: string[];
   /** Set when there is nothing to draw, and says why rather than drawing nothing. */
   empty?: string;
+  /**
+   * The measured axis is a duration, so the page formats its ticks as a span of
+   * time rather than as a count of microseconds. Set from the y column's dtype
+   * once the axes have settled — a swap can move the duration from x to y.
+   */
+  yDuration?: boolean;
 }
 
 /** Bars past this many stop being a chart and start being a table. */
@@ -196,13 +202,31 @@ export function defaultAxis(
 }
 
 /**
+ * The read, turned into the few hundred numbers the page draws. The choosing and
+ * computing is `computeChart`; this only marks the settled y axis as a duration
+ * so the page formats a fortnight as `13d 19h` rather than as a wall of
+ * microseconds. Looking it up by the returned y name is what survives the axis
+ * swap, which can move a duration from the x the user picked onto the y.
+ */
+export function buildChart(read: SeriesRead, request: ChartRequest): Chart {
+  const chart = computeChart(read, request);
+  const ySeries = chart.y ? read.series.find((series) => series.name === chart.y) : undefined;
+  return ySeries && isDuration(ySeries.dtype) ? { ...chart, yDuration: true } : chart;
+}
+
+/** A duration dtype, however its unit is spelled — `duration[μs]`, `duration[ns]`. */
+export function isDuration(dtype: string): boolean {
+  return /^duration/i.test(dtype.trim().toLowerCase());
+}
+
+/**
  * The read, turned into the few hundred numbers the page draws.
  *
  * Everything expensive has already happened by the time this is called: this is
  * arithmetic over arrays that are in memory, which is why it is pure and can be
  * tested against a column of values rather than against a file.
  */
-export function buildChart(read: SeriesRead, request: ChartRequest): Chart {
+function computeChart(read: SeriesRead, request: ChartRequest): Chart {
   const xSeries = read.series.find((series) => series.name === request.x);
   const ySeries = request.y ? read.series.find((series) => series.name === request.y) : undefined;
 

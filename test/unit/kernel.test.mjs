@@ -43,26 +43,29 @@ test('the kernel JSON becomes the same read the file readers hand buildChart', (
   const parsed = parseChartJson(wrap({
     columns: [
       { name: 'boro_nm', family: 'category', values: ['MANHATTAN', 'QUEENS', 'BRONX'] },
-      { name: 'dt_mean', family: 'number', values: [1_000_000, 2_000_000, 3_000_000] }
+      { name: 'dt_mean', family: 'duration', values: [1_000_000, 2_000_000, 3_000_000] }
     ],
     rowCount: 3,
     complete: true
   }));
   assert.ok('read' in parsed, 'expected a read');
   const { read } = parsed;
-  // Families map onto the dtypes the chart's own code already understands.
+  // Families map onto the dtypes the chart's own code already understands — a
+  // duration keeps a duration dtype so it is measured but reads back as a span.
   assert.equal(read.series[0].dtype, 'str');
-  assert.equal(read.series[1].dtype, 'f64');
+  assert.equal(read.series[1].dtype, 'duration[μs]');
   assert.equal(read.rowsRead, 3);
   assert.equal(read.complete, true);
 
   // And it draws: a label column against a computed magnitude is a bar per
   // group, which is the whole point of reaching the kernel at all. One row per
-  // group, so the mean of a group is the value the cell computed.
+  // group, so the mean of a group is the value the cell computed — and the
+  // measured axis is flagged a duration so the page formats it as time.
   const chart = buildChart(read, { x: 'boro_nm', y: 'dt_mean', maxRows: 1000 });
   assert.equal(chart.kind, 'bar');
   assert.equal(chart.points.length, 3);
   assert.equal(chart.agg, 'mean');
+  assert.equal(chart.yDuration, true);
   assert.deepEqual(chart.points.map((p) => p.label).sort(), ['BRONX', 'MANHATTAN', 'QUEENS']);
 });
 
