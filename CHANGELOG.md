@@ -1,5 +1,61 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **A graph of a computed frame is drawn from the notebook's kernel.** Until now
+  the Graph panel drew the *file* behind the frame, so a frame whose columns came
+  out of a `group_by`, a join or a new column offered those columns in its
+  pickers and then drew nothing when you chose one — they are not in the file to
+  read. In a notebook with a running kernel, a transformed frame now reads its
+  *real* values from that kernel, so `dt_mean`, `dt_median`, `count` and the rest
+  draw the numbers you actually computed. It reaches the frame the cheap way
+  first — IPython keeps a cell's printed result in `_oh[n]`, so reading it
+  re-runs nothing — and falls back to the frame's own variable, collecting it if
+  it is lazy. Only the one or two columns on screen cross the wire, capped by
+  `polarsense.graph.maxRows` exactly as a file read is, so a chart of a computed
+  four-million-row frame is still a few hundred points. The new
+  `polarsense.graph.useKernel` setting governs it (on by default), and the
+  Jupyter extension asks your consent the first time a frame is read.
+
+  It deliberately does *not* start a kernel or a notebook — only a session
+  already running is read, so this enhances a session in progress and never
+  begins one — does nothing in a `.py` file, where nothing is running, and runs
+  nothing but a read of the frame, no execution count touched and no history
+  written. The file path is never replaced: an untransformed frame, a declined
+  consent, a restarted kernel or a frame the analysis cannot name all fall back
+  to reading the source file, and the panel says the transforms were not applied
+  rather than drawing the source as if it were the result.
+
+### Changed
+
+- **A duration is drawn as a magnitude, not a point on a calendar.** A column of
+  durations — a computed `dt_mean`, an elapsed time — can now be the measured
+  axis of a chart, where a label-against-duration pair used to refuse with
+  "nothing to measure". Durations are drawn in microseconds; a friendlier unit
+  on the axis is not done yet, so a mean of a fortnight reads as a large number
+  rather than "13d".
+
+### Fixed
+
+- **The Graph panel no longer offers columns it cannot draw.** A transformed
+  frame with no kernel to fall back on used to list its computed column names and
+  then quietly draw nothing when one was picked — the column the file does not
+  hold. It now offers the columns the file *does* hold, with the header still
+  saying the transforms were not applied, so every option in the picker draws
+  something.
+
+### Internal
+
+- The kernel read is split so the testable half is tested without a kernel:
+  `src/schema/kernelSeries.ts` is pure — it writes the read-only Python and
+  parses the JSON that comes back into the same `SeriesRead` the file readers
+  produce — and `src/preview/kernel.ts` is the thin `vscode`/Jupyter wiring that
+  runs it, reached by extension id at runtime so no dependency is declared.
+  `ResolvedFrame` gained `sourceColumns` for the fallback to offer.
+
+
 ## 1.8.2
 
 ### Changed

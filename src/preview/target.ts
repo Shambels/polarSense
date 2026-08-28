@@ -17,6 +17,17 @@ export interface FrameTarget {
    * telling someone to move a cursor they did not use is no help at all.
    */
   missing: string;
+  /**
+   * The notebook this target came from, when it came from a cell rather than an
+   * editor cursor. It is the door to the cell's kernel: the graph uses it to ask
+   * for the frame the cell actually computed. `uri` above is the cell's own
+   * document; this names the notebook that owns it, and the execution count that
+   * is IPython's `_oh[n]` key.
+   */
+  notebook?: {
+    uri: vscode.Uri;
+    executionOrder?: number;
+  };
 }
 
 export const NO_PYTHON = 'PolarSense: open a Python file to see a frame.';

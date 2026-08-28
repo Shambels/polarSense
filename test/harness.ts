@@ -17,6 +17,7 @@ export { readParquetValues } from '../src/schema/values.js';
 export { readParquetRows, readCsvRows } from '../src/schema/rows.js';
 export { readParquetSeries, readCsvSeries } from '../src/schema/series.js';
 export { buildChart, kindsFor, familyOf, defaultAxis, truncate } from '../src/schema/chart.js';
+export { chartFetchSnippet, parseChartJson, MARKER } from '../src/schema/kernelSeries.js';
 export { formatValue } from '../src/schema/format.js';
 export { SchemaService } from '../src/schema/index.js';
 export { localStorage } from '../src/storage/local.js';

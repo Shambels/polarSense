@@ -16,6 +16,7 @@ export interface Settings {
   valueMaxRows: number;
   valueMaxDistinct: number;
   graphMaxRows: number;
+  graphUseKernel: boolean;
   trace: boolean;
 }
 
@@ -37,6 +38,7 @@ export function readSettings(): Settings {
     valueMaxRows: config.get('values.maxRows', 10_000),
     valueMaxDistinct: config.get('values.maxDistinct', 50),
     graphMaxRows: config.get('graph.maxRows', 100_000),
+    graphUseKernel: config.get('graph.useKernel', true),
     trace: config.get('trace', false)
   };
 }

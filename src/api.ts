@@ -23,6 +23,13 @@ export interface ResolvedFrame {
   kind: SourceKind;
   /** The columns that exist at that position, with the file's own statistics. */
   columns: Column[];
+  /**
+   * The file's own columns, before any transform. Equal to `columns` for an
+   * untransformed frame; for a transformed one it is what can actually be read
+   * from the file, which is what a viewer falls back to offering when it has no
+   * kernel to compute the real columns from.
+   */
+  sourceColumns: Column[];
   /** Rows in the *file*, when the format records it — see `transformed`. */
   rowCount?: number;
   /**
@@ -156,6 +163,7 @@ export function createApi(
         uri: primary.uri ?? primary.schema.origin,
         kind: found.source.kind,
         columns: evaluated?.columns ?? primary.schema.columns,
+        sourceColumns: primary.schema.columns,
         rowCount: primary.schema.rowCount,
         sizeBytes: primary.schema.sizeBytes,
         rowGroups: primary.schema.rowGroups,

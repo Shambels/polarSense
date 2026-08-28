@@ -106,7 +106,13 @@ function cellTarget(cell: vscode.NotebookCell): FrameTarget | undefined {
     missing:
       'PolarSense: this cell’s frame has no file behind it that can be found ' +
       'without running the code — it may be built in memory, or read from a ' +
-      'path this analysis cannot fold down to a literal.'
+      'path this analysis cannot fold down to a literal.',
+    // The cell carries its own kernel: the notebook it belongs to and the
+    // execution count that keys its printed result in IPython's history.
+    notebook: {
+      uri: cell.notebook.uri,
+      executionOrder: cell.executionSummary?.executionOrder
+    }
   };
 }
 
