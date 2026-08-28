@@ -12,7 +12,7 @@ export function shell(cspSource: string): string {
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <title>PolarSense</title>
 <style>${PANEL_CSS}
   .head{padding:.85rem 1.05rem .6rem}
@@ -70,6 +70,26 @@ export function shell(cspSource: string): string {
      says so here: a presentation attribute would lose to the rule above it. */
   .kinds polyline{fill:none;stroke:currentColor;stroke-width:1.7;
     stroke-linecap:round;stroke-linejoin:round}
+  /* The export sits beside the chart types and not inside them: it does
+     something rather than choosing something, so it gets its own box at the
+     same height rather than a seventh cell in the group. */
+  .tool{
+    display:inline-flex;align-items:center;justify-content:center;
+    width:1.76rem;padding:0;border-radius:5px;
+    /* Its height is the group's beside it rather than a number of its own:
+       the two boxes are one row, and a row that is nearly level reads worse
+       than one that is level. */
+    align-self:stretch;
+    background:var(--vscode-dropdown-background);
+    color:var(--vscode-dropdown-foreground);cursor:pointer;
+    border:1px solid var(--vscode-dropdown-border,var(--vscode-widget-border,transparent));
+  }
+  .tool:hover:not(:disabled){background:var(--vscode-toolbar-hoverBackground)}
+  .tool:focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:-1px}
+  /* Nothing drawn is nothing to export, and a control that can only fail
+     should not invite the click that proves it. */
+  .tool:disabled{cursor:default;opacity:.45}
+  .tool svg{width:15px;height:15px;fill:currentColor}
   .plot{flex:1;min-height:0;overflow:auto;padding:.4rem 1.05rem 1rem;
     border-top:1px solid var(--vscode-panel-border)}
   /* Width first: the panel is as wide as it is, and the height follows the
@@ -125,6 +145,8 @@ export function shell(cspSource: string): string {
     <span class="pick" id="aggpick"><label for="agg">per group</label><select id="agg"></select></span>
     <span class="pick right">
       <span class="kinds" id="kind" role="radiogroup" aria-labelledby="kindcap"></span>
+      <button type="button" id="save" class="tool" disabled
+        title="Save chart as PNG" aria-label="Save chart as PNG"></button>
     </span>
   </div>
   <div class="legend" id="legend"></div>
@@ -183,6 +205,13 @@ const ICONS = {
   ]
 };
 
+/** The export, drawn: an arrow onto a line, which is what a download looks like everywhere. */
+const SAVE_ICON = [
+  ['rect', { x: 7.1, y: 1.5, width: 1.8, height: 5.4 }],
+  ['polygon', { points: '4.6,6.4 11.4,6.4 8,11.1' }],
+  ['rect', { x: 2.6, y: 12.5, width: 10.8, height: 1.6, rx: 0.6 }]
+];
+
 /** An SVG element, with its attributes. Never a string: marks are drawn, not written. */
 function svg(tag, attrs, className) {
   const node = document.createElementNS(NS, tag);
@@ -191,10 +220,10 @@ function svg(tag, attrs, className) {
   return node;
 }
 
-/** The picture for a chart type, or nothing where there is no picture for it. */
-function icon(kind) {
+/** A picture, from its shapes — or an empty one where there is no picture. */
+function icon(shapes) {
   const node = svg('svg', { viewBox: '0 0 16 16', 'aria-hidden': 'true', focusable: 'false' });
-  for (const [tag, attrs] of ICONS[kind] || []) node.appendChild(svg(tag, attrs));
+  for (const [tag, attrs] of shapes || []) node.appendChild(svg(tag, attrs));
   return node;
 }
 
@@ -241,7 +270,7 @@ function draw() {
     // One possible chart is not a choice, and a control that cannot change
     // anything should not invite the click that proves it.
     button.disabled = state.kinds.length < 2;
-    button.appendChild(icon(kind));
+    button.appendChild(icon(ICONS[kind]));
     button.addEventListener('click', () => vscode.postMessage({ kind }));
     return button;
   }));
@@ -273,6 +302,7 @@ function draw() {
   $('svg').style.display = nothing ? 'none' : '';
   $('empty').hidden = !nothing;
   $('empty').textContent = nothing ? (state.empty || state.error || 'Nothing to draw here.') : '';
+  $('save').disabled = nothing;
   if (!nothing) plot();
 }
 
@@ -448,6 +478,106 @@ function duration(us) {
   }
   return sign + parts.join(' ');
 }
+
+/**
+ * The chart, as a file.
+ *
+ * Nothing here is a download: a webview cannot write one, and the host has
+ * neither a canvas nor a theme to draw with — so the page rasterizes exactly
+ * what is on screen and hands the bytes over, and the host only picks the path.
+ *
+ * A serialized <svg> carries none of the page's stylesheet and none of the
+ * theme's variables with it, so every element in the clone is given the
+ * *computed* value of the handful of properties that actually paint something.
+ * That is also why the policy at the top of this document allows img-src data:
+ * — loading the drawing as an image is the only way it reaches a canvas.
+ */
+const PAINT = ['fill', 'fill-opacity', 'stroke', 'stroke-width', 'stroke-opacity',
+  'stroke-linecap', 'stroke-linejoin', 'font-family', 'font-size', 'font-weight',
+  'text-anchor', 'opacity'];
+
+function paint(live, copy) {
+  const computed = getComputedStyle(live);
+  copy.setAttribute('style',
+    PAINT.map((name) => name + ':' + computed.getPropertyValue(name)).join(';'));
+  // A deep clone has the same children in the same order, so the walk pairs up.
+  for (let i = 0; i < live.children.length; i++) paint(live.children[i], copy.children[i]);
+}
+
+/**
+ * The legend, drawn into the export. On screen it is HTML above the plot; in a
+ * PNG there is no HTML, and six unlabelled colours are a puzzle rather than a
+ * chart. Widths are estimated from the name length because measuring text means
+ * laying it out, and an estimate that is wide enough only ever wraps early.
+ */
+function legendInto(copy, width, bottom) {
+  const swatches = Array.from(document.querySelectorAll('#legend i'));
+  if (!swatches.length) return bottom;
+  const face = getComputedStyle($('legend').firstElementChild);
+  let x = 58;
+  let y = bottom + 22;
+  swatches.forEach((swatch, i) => {
+    const name = state.seriesNames[i] || '';
+    const span = 32 + name.length * 6.4;
+    if (x > 58 && x + span > width - 12) { x = 58; y += 18; }
+    const dot = svg('circle', { cx: x + 5, cy: y - 4, r: 4.5 });
+    dot.setAttribute('style', 'fill:' + getComputedStyle(swatch).backgroundColor);
+    copy.appendChild(dot);
+    const caption = svg('text', { x: x + 17, y });
+    caption.setAttribute('style',
+      'fill:' + face.color + ';font-size:12px;font-family:' + face.fontFamily);
+    caption.textContent = name;
+    copy.appendChild(caption);
+    x += span;
+  });
+  return y + 10;
+}
+
+function save() {
+  const source = $('svg');
+  const box = (source.getAttribute('viewBox') || '').split(' ').map(Number);
+  if (box.length !== 4 || !isFinite(box[2]) || !isFinite(box[3])) return;
+
+  const copy = source.cloneNode(true);
+  paint(source, copy);
+  // The hovers are the panel's, not the picture's.
+  for (const title of copy.querySelectorAll('title')) title.remove();
+  const height = legendInto(copy, box[2], box[3]);
+  copy.setAttribute('xmlns', NS);
+  copy.setAttribute('viewBox', '0 0 ' + box[2] + ' ' + height);
+  copy.setAttribute('width', box[2]);
+  copy.setAttribute('height', height);
+
+  // Twice the drawing's own coordinates: the viewBox is an aspect ratio, and a
+  // chart pasted into anything is read at whatever width that thing gives it.
+  const scale = 2;
+  $('save').disabled = true;
+  const image = new Image();
+  image.onload = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = box[2] * scale;
+    canvas.height = height * scale;
+    const ctx = canvas.getContext('2d');
+    // The page's own background first: a dark theme's marks on the transparency
+    // a PNG would otherwise keep are a dark theme's marks on white.
+    ctx.fillStyle = getComputedStyle(document.body).backgroundColor;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    done(canvas.toDataURL('image/png').split(',')[1]);
+  };
+  image.onerror = () => done(undefined);
+  image.src = 'data:image/svg+xml;charset=utf-8,' +
+    encodeURIComponent(new XMLSerializer().serializeToString(copy));
+}
+
+/** Bytes to the host, or nothing and let it say so. Either way the button comes back. */
+function done(png) {
+  $('save').disabled = !state || !state.points.length;
+  vscode.postMessage({ type: 'export', png });
+}
+
+$('save').appendChild(icon(SAVE_ICON));
+$('save').addEventListener('click', save);
 
 for (const id of ['x', 'y', 'agg', 'grain']) {
   $(id).addEventListener('change', (event) => vscode.postMessage({ [id]: event.target.value }));

@@ -94,7 +94,9 @@ export function makeVscode(settings = {}, workspaceFolders = []) {
     // Keys VS Code's configuration registry does not hold in this window. The
     // manifest declares every setting, so this is empty until a test says
     // otherwise — see unregisterSetting.
-    unregistered: new Set(), executed: []
+    unregistered: new Set(), executed: [],
+    // The save dialog's answer, and what was written after it.
+    saveTo: undefined, saveDialog: undefined, written: undefined
   };
   const defaults = {
     enable: true,
@@ -139,6 +141,12 @@ export function makeVscode(settings = {}, workspaceFolders = []) {
       createStatusBarItem: () => ({ show() {}, hide() {}, dispose() {}, text: '', tooltip: '' }),
       showErrorMessage: (m) => { registered.error = m; },
       showInformationMessage: (m) => { registered.info = m; },
+      // A save dialog answers with whatever the test parked in `saveTo` —
+      // undefined being the answer when the dialog is dismissed.
+      showSaveDialog: (options) => {
+        registered.saveDialog = options;
+        return Promise.resolve(registered.saveTo);
+      },
       // Enough of a webview to see what the extension put in it: the panel is
       // reused across calls in the real editor too, so the tests reuse one.
       createWebviewPanel: (viewType, title, showOptions, options) => {
@@ -167,6 +175,12 @@ export function makeVscode(settings = {}, workspaceFolders = []) {
     },
     workspace: {
       workspaceFolders,
+      fs: {
+        writeFile: (uri, bytes) => {
+          registered.written = { uri, bytes };
+          return Promise.resolve();
+        }
+      },
       notebookDocuments: [],
       getConfiguration: () => ({
         get: (key, fallback) => defaults[key] ?? fallback,

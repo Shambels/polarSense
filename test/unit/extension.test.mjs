@@ -1173,6 +1173,39 @@ test('the graph panel opens on the first numeric column, binned', async () => {
   // carries the group and none of the buttons.
   assert.match(panel.webview.html, /role="radiogroup"/);
   assert.doesNotMatch(panel.webview.html, /<select id="kind"/);
+  // The export sits beside them, and rasterizing needs the one thing the
+  // policy otherwise forbids: an image from a data URL.
+  assert.match(panel.webview.html, /id="save"/);
+  assert.match(panel.webview.html, /img-src data:/);
+});
+
+test('the drawn chart is written out as a PNG', async () => {
+  const registered = vscode._registered;
+  const { panel } = await openGraph(VALUES_PARQUET);
+  // The page rasterizes, so what crosses is already bytes — here, a stub PNG.
+  const png = Buffer.from('not really a png').toString('base64');
+
+  registered.written = undefined;
+  registered.saveTo = vscode.Uri.file(path.join(DATA, 'chosen.png'));
+  await panel.receive({ type: 'export', png });
+  // The suggested name says which frame and which columns, so a folder of
+  // charts is not a folder of chart.png.
+  assert.match(registered.saveDialog.defaultUri.fsPath, /values-revenue\.png$/);
+  assert.equal(registered.written.uri.fsPath, path.join(DATA, 'chosen.png'));
+  assert.equal(Buffer.from(registered.written.bytes).toString(), 'not really a png');
+
+  // A dismissed dialog writes nothing, quietly: declining is an answer.
+  registered.written = undefined;
+  registered.saveTo = undefined;
+  registered.info = undefined;
+  await panel.receive({ type: 'export', png });
+  assert.equal(registered.written, undefined);
+  assert.equal(registered.info, undefined);
+
+  // A page that could not rasterize says so rather than writing an empty file.
+  await panel.receive({ type: 'export' });
+  assert.equal(registered.written, undefined);
+  assert.match(registered.info, /could not be turned into an image/);
 });
 
 test('a column with no shape to draw is not offered as an axis', async () => {

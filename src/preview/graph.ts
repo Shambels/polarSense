@@ -4,6 +4,7 @@ import type { Agg, Chart, ChartKind, Grain } from '../schema/chart.js';
 import { familyOf, defaultAxis, buildChart } from '../schema/chart.js';
 import type { PolarSenseApi, ResolvedFrame, RowsFailure } from '../api.js';
 import { readSettings } from '../config.js';
+import { trace } from '../log.js';
 import { frameFacts, frameNotes } from './facts.js';
 import { cursorTarget, NO_PYTHON, type FrameTarget } from './target.js';
 import { readChartFromKernel, kernelAvailable } from './kernel.js';
@@ -144,7 +145,7 @@ function ensurePanel(api: PolarSenseApi): vscode.WebviewPanel {
   return panel;
 }
 
-/** What the page can ask for: a column on either axis, a chart, an aggregate. */
+/** What the page can ask for: a column on either axis, a chart, an aggregate, a file. */
 interface Intent {
   type?: string;
   x?: string;
@@ -152,6 +153,8 @@ interface Intent {
   kind?: ChartKind;
   agg?: Agg;
   grain?: Grain;
+  /** Set on an `export`: the drawn chart, rasterized by the page, base64 PNG. */
+  png?: string;
 }
 
 async function onMessage(api: PolarSenseApi, message: Intent): Promise<void> {
@@ -160,6 +163,11 @@ async function onMessage(api: PolarSenseApi, message: Intent): Promise<void> {
   if (message?.type === 'ready') {
     if (last) { void panel.webview.postMessage(last); return; }
     await update(api);
+    return;
+  }
+
+  if (message?.type === 'export') {
+    await savePng(message.png);
     return;
   }
 
@@ -186,6 +194,49 @@ async function onMessage(api: PolarSenseApi, message: Intent): Promise<void> {
   if (typeof message?.grain === 'string') view.grain = message.grain || undefined;
 
   await update(api);
+}
+
+/**
+ * The drawn chart, written where the user says.
+ *
+ * The picture is made in the page and not here: the host has no canvas, and the
+ * colours on that chart are the theme's, which only the webview can resolve. So
+ * this half does the two things a webview cannot — ask for a path and write
+ * bytes — and nothing else. The name is a suggestion built from what is drawn,
+ * because a folder of `chart.png` is a folder of one chart.
+ */
+async function savePng(png: string | undefined): Promise<void> {
+  if (!view) return;
+  if (!png) {
+    vscode.window.showInformationMessage(
+      'PolarSense: the chart could not be turned into an image.'
+    );
+    return;
+  }
+
+  const stem = path.basename(view.frame.uri).replace(/\.[^.]+$/, '') || 'chart';
+  const name = [stem, view.x, view.y]
+    .filter((part): part is string => !!part)
+    .join('-')
+    .replace(/[^\w.-]+/g, '_') + '.png';
+  // A frame read over https has no directory to offer; the dialog opens
+  // wherever VS Code would open it rather than somewhere invented.
+  const dir = path.dirname(view.frame.uri);
+  const target = await vscode.window.showSaveDialog({
+    defaultUri: path.isAbsolute(dir) ? vscode.Uri.file(path.join(dir, name)) : undefined,
+    filters: { 'PNG image': ['png'] },
+    saveLabel: 'Save chart'
+  });
+  if (!target) return;
+
+  try {
+    await vscode.workspace.fs.writeFile(target, new Uint8Array(Buffer.from(png, 'base64')));
+    trace(`graph: chart written to ${target.fsPath}`);
+  } catch (err) {
+    vscode.window.showErrorMessage(
+      `PolarSense: the chart could not be written — ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
 }
 
 /** Read the columns the current view names, aggregate them, and send the points. */
