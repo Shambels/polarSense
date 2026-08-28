@@ -436,3 +436,24 @@ test('a chart of a real file is the file, not a page of it', async () => {
     [['US', 100], ['EU', 60], ['APAC', 40]]);
   assert.deepEqual(drawn.notes, [], 'a complete read has nothing to apologise for');
 });
+
+test('a duration is a magnitude, so it is measured rather than refused', () => {
+  // polars files a duration under time, but you sum and average it like a
+  // number — so the chart treats it as one. A date stays a point on a calendar.
+  assert.equal(familyOf('duration[μs]'), 'number');
+  assert.equal(familyOf('duration[ns]'), 'number');
+  assert.equal(familyOf('date'), 'temporal');
+
+  // A label column against a duration is a bar per label with its rows averaged
+  // — which is what a computed `dt_mean` per group is. Before durations were
+  // numbers this pair drew nothing, on the grounds a duration was not a value.
+  const drawn = chart([
+    col('boro_nm', 'str', ['A', 'B', 'A', 'B']),
+    col('elapsed', 'duration[μs]', [10, 20, 30, 50])
+  ], { x: 'boro_nm', y: 'elapsed' });
+  assert.equal(drawn.kind, 'bar');
+  assert.equal(drawn.agg, 'mean');
+  assert.equal(drawn.points.length, 2);
+  // A → mean(10, 30) = 20, B → mean(20, 50) = 35, ordered by value.
+  assert.deepEqual(drawn.points.map((p) => [p.label, p.y]), [['B', 35], ['A', 20]]);
+});

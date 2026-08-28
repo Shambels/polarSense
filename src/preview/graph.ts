@@ -1,11 +1,13 @@
 import * as vscode from 'vscode';
 import * as path from 'node:path';
 import type { Agg, Chart, ChartKind, Grain } from '../schema/chart.js';
-import { familyOf, defaultAxis } from '../schema/chart.js';
+import { familyOf, defaultAxis, buildChart } from '../schema/chart.js';
 import type { PolarSenseApi, ResolvedFrame, RowsFailure } from '../api.js';
 import { readSettings } from '../config.js';
 import { frameFacts, frameNotes } from './facts.js';
 import { cursorTarget, NO_PYTHON, type FrameTarget } from './target.js';
+import { readChartFromKernel, kernelAvailable } from './kernel.js';
+import type { KernelTarget } from '../schema/kernelSeries.js';
 import { shell } from './graph.page.js';
 
 /**
@@ -28,6 +30,15 @@ let last: unknown;
 
 interface View {
   frame: ResolvedFrame;
+  /**
+   * Where the drawn values come from. `file` is the source behind the frame,
+   * read directly — the path that always exists. `kernel` is the frame the
+   * notebook cell actually computed, read from its running kernel, which is the
+   * only way a transform's result reaches the chart.
+   */
+  source: 'file' | 'kernel';
+  /** Set only when `source` is `kernel`: how to reach the computed frame. */
+  kernel?: { notebookUri: vscode.Uri; target: KernelTarget };
   /** The columns worth offering — the frame's, without the ones nothing can draw. */
   columns: { name: string; dtype: string }[];
   x: string;
@@ -59,9 +70,35 @@ export async function showGraph(api: PolarSenseApi, at?: FrameTarget): Promise<v
     return;
   }
 
+  // The graph draws the source file by default: no kernel, the same path in a
+  // .py file, and exact when nothing has been done to the frame. It reaches for
+  // the kernel only where the file cannot answer — a frame the cell transformed
+  // (or one the resolver could not follow), in a notebook, with the setting left
+  // on, a kernel already running, and something to address the frame by. Never
+  // the reverse: the file path is the one that always exists.
+  const settings = readSettings();
+  const note = target.notebook;
+  const addressable = !!note && (note.executionOrder !== undefined || !!frame.symbol);
+  const wantKernel = settings.graphUseKernel && addressable
+    && (frame.transformed || !frame.certain);
+  const kernel = wantKernel && note && await kernelAvailable(note.uri)
+    ? {
+        notebookUri: note.uri,
+        target: { outputRef: note.executionOrder, symbol: frame.symbol } as KernelTarget
+      }
+    : undefined;
+
+  // Kernel-backed, the real computed columns are all readable, so they are what
+  // is offered. On the file path a transformed frame can draw only the columns
+  // the file actually holds — offering its computed columns would be offering
+  // names that draw nothing, which is the one thing worse than offering fewer.
+  const offer = kernel
+    ? frame.columns
+    : frame.transformed ? frame.sourceColumns : frame.columns;
+
   // A list or struct column has no shape to draw, so it is not offered — an
   // option that can only produce a refusal is worse than no option.
-  const columns = frame.columns
+  const columns = offer
     .filter((column) => familyOf(column.dtype) !== 'nested')
     .map((column) => ({ name: column.name, dtype: column.dtype }));
 
@@ -74,7 +111,15 @@ export async function showGraph(api: PolarSenseApi, at?: FrameTarget): Promise<v
     return;
   }
 
-  view = { frame, columns, x, y: undefined, kind: undefined };
+  view = {
+    frame,
+    source: kernel ? 'kernel' : 'file',
+    kernel,
+    columns,
+    x,
+    y: undefined,
+    kind: undefined
+  };
   last = undefined;
 
   const current = ensurePanel(api);
@@ -147,18 +192,45 @@ async function onMessage(api: PolarSenseApi, message: Intent): Promise<void> {
 async function update(api: PolarSenseApi): Promise<void> {
   if (!panel || !view) return;
   const current = view;
-
-  const result = await api.readChart(current.frame, {
+  const request = {
     x: current.x,
     y: current.y,
     kind: current.kind,
     agg: current.agg,
     grain: current.grain,
     maxRows: readSettings().graphMaxRows
-  });
+  };
 
-  last = payload(current, result.chart, result.error);
+  if (current.source === 'kernel' && current.kernel) {
+    // Only the one or two columns on screen are read, capped the same way the
+    // file read is: the kernel serializes those and nothing else, so a chart of
+    // a computed frame costs the same message as a chart of a file.
+    const columns = [current.x, current.y].filter((name): name is string => !!name);
+    const result = await readChartFromKernel(
+      current.kernel.notebookUri, current.kernel.target, columns, request.maxRows
+    );
+    // A frame that was there when the panel opened and is gone now — a kernel
+    // restarted, a variable reassigned — is not the file's answer either, so it
+    // says what happened rather than quietly drawing the source in its place.
+    last = result.read
+      ? payload(current, buildChart(result.read, request), undefined)
+      : kernelMiss(current);
+  } else {
+    const result = await api.readChart(current.frame, request);
+    last = payload(current, result.chart, result.error);
+  }
+
   void panel.webview.postMessage(last);
+}
+
+/** What the panel shows when the kernel it opened against can no longer answer. */
+function kernelMiss(current: View): Payload {
+  return {
+    ...payload(current, undefined, undefined),
+    empty: 'PolarSense could not read this frame from the kernel just now — it may ' +
+      'have been restarted, or the variable is gone. Close the graph and open it ' +
+      'again to draw the source file instead.'
+  };
 }
 
 interface Payload {
@@ -192,14 +264,23 @@ function payload(
   chart: Chart | undefined,
   error: RowsFailure | undefined
 ): Payload {
-  const notes = frameNotes(current.frame);
+  const kernelBacked = current.source === 'kernel';
+  // On the kernel path the transforms have been applied, so the file-path
+  // caveats — the "transforms not applied" fact and its note — would be false.
+  // Drop them, and say instead where these numbers came from.
+  const facts = frameFacts(current.frame)
+    .filter((fact) => !kernelBacked || fact !== 'transforms not applied');
+  if (kernelBacked) facts.push('from the kernel');
+
+  const notes = frameNotes(current.frame)
+    .filter((note) => !kernelBacked || !note.startsWith('The frame here has transforms applied'));
   for (const note of chart?.notes ?? []) notes.push(note);
 
   return {
     file: path.basename(current.frame.uri),
     uri: current.frame.uri,
     symbol: current.frame.symbol,
-    facts: frameFacts(current.frame),
+    facts,
     notes,
     columns: current.columns,
     x: chart?.x ?? current.x,

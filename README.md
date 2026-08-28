@@ -250,6 +250,17 @@ says so in a note above the plot when that was less than the file. There is no f
 no grouping by more than one column, and no second series: this answers *what does
 this column look like*, and a question past that one is a query you should write.
 
+When a graph is opened on a frame a notebook cell **computed** — a `group_by`, a
+join, a new column — the values it draws come from that cell's running kernel
+rather than the file behind the frame. It reads the frame the cell already
+printed, so nothing re-runs, and `dt_mean`, `dt_median` and `count` draw the
+numbers you actually calculated instead of columns the file does not hold. This
+is the one place PolarSense runs Python: it is read-only, opt-in through
+`polarsense.graph.useKernel`, and asks your consent the first time. With the
+setting off, no kernel running, or a plain `.py` file, the graph falls back to
+the source file and says the transforms were not applied — the file path is
+never taken away.
+
 In a notebook, all three panels are a click away from the output itself. A cell
 ending in a frame gets a small bar under what it printed:
 
@@ -262,8 +273,9 @@ ending in a frame gets a small bar under what it printed:
    POLARSENSE  [ Details ]  [ Data ]  [ Graph ]
 ```
 
-No kernel is involved and none is needed. The button says which output was
-clicked; the cell's own source says which frame that is, and PolarSense already
+No kernel is needed to *find* the frame — the one exception is graphing a
+computed frame, above, which reads the kernel for its values. The button says
+which output was clicked; the cell's own source says which frame that is, and PolarSense already
 knows which file is behind it — so the buttons work on a notebook you have opened
 but never run, on a frame defined eight cells earlier. A cell whose frame is built
 in memory rather than read from a file says so instead of opening a panel.
@@ -383,6 +395,7 @@ so a frame defined in cell 1 completes in cell 8.
 | `polarsense.values.maxRows` | `10000` | Rows of one column to read when offering values |
 | `polarsense.values.maxDistinct` | `50` | Above this many distinct values, offer none |
 | `polarsense.graph.maxRows` | `100000` | Rows to read when drawing a graph. Only the columns drawn are read, and only the bins cross to the panel |
+| `polarsense.graph.useKernel` | `true` | In a notebook, read a computed frame's real values from the running kernel so a graph shows the transform's result. Read-only; falls back to the source file when off or no kernel |
 | `polarsense.diagnostics.enable` | `true` | Warn about column names that don't exist |
 | `polarsense.notebook.buttons` | `true` | Show the Details / Data / Graph buttons under a frame printed in a notebook |
 | `polarsense.trace` | `false` | Log every resolution to the PolarSense output channel |
@@ -444,7 +457,10 @@ reshapes are beyond what static reading can predict.
   belong to the file behind it, and a `filter` changes none of them. Both panels
   say `transforms not applied` when that is the case rather than quietly showing
   you four million rows and calling it the frame. Closing that gap means running
-  your code, which this extension does not do.
+  your code — which the **graph** now does in a notebook with a running kernel
+  (see `graph.useKernel`), reading the computed frame's real values — but the
+  details and data panels still describe the file, and every panel falls back to
+  it when there is no kernel.
 - **Rows are read from parquet and CSV only.** Arrow IPC would mean decoding its
   record batches, and Delta and Iceberg mean paging across the list of files
   behind one table; both are pages by another name and neither is written yet.
@@ -537,7 +553,7 @@ const polarsense = vscode.extensions.getExtension('Pinch.polarsense');
 const api = await polarsense?.activate();   // undefined if the parser failed to start
 
 const frame = await api?.resolveFrameAt(editor.document.uri, editor.selection.active);
-// { uri, kind, columns, rowCount?, certain, transformed, symbol? }
+// { uri, kind, columns, sourceColumns, rowCount?, certain, transformed, symbol? }
 ```
 
 The position is on the frame — a variable, a method chain, or a column name inside
@@ -548,7 +564,9 @@ when a transform on the way there could not be modelled.
 `uri` and `rowCount` describe the **file**, not the frame: when `transformed` is true
 the frame is that file with a filter, a select or a join applied, and anything reading
 rows from `uri` is reading the source rather than what the code would print. Say so
-rather than quietly showing the wrong count.
+rather than quietly showing the wrong count. `sourceColumns` is the file's own
+columns before any transform — equal to `columns` for an untransformed frame, and
+what a viewer falls back to offering when it cannot compute the frame's real ones.
 
 ### Releasing a new version
 

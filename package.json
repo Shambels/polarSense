@@ -167,7 +167,13 @@
         "polarsense.graph.maxRows": {
           "type": "number",
           "default": 100000,
-          "description": "How many rows to read when drawing a graph. Only the one or two columns being drawn are read, and the bins and counts are computed in the extension — no rows are sent to the panel. A chart of fewer rows than the file holds says it is a sample."
+          "description": "How many rows to read when drawing a graph. Only the one or two columns being drawn are read, and the bins and counts are computed in the extension — no rows are sent to the panel. A chart of fewer rows than the file holds says it is a sample. The same cap applies to a graph read from a notebook kernel."
+        },
+        "polarsense.graph.useKernel": {
+          "type": "boolean",
+          "default": true,
+          "description": "When you graph a frame in a notebook whose columns were computed by a transform — a group_by, a join, a new column — ask the running Jupyter kernel for the frame's real values, so the chart shows the result you computed rather than the source file behind it. This runs a read-only, one-shot expression in your kernel through the Jupyter extension's API, which asks your consent the first time and touches no execution history. Off, or with no kernel running, the graph falls back to the source file and says the transforms were not applied. Frames with no transforms, and plain .py files, always read the file directly and never touch the kernel.",
+          "scope": "machine"
         },
         "polarsense.diagnostics.enable": {
           "type": "boolean",

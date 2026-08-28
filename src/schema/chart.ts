@@ -143,7 +143,11 @@ export function familyOf(dtype: string, values: readonly unknown[] = []): Family
   const d = dtype.toLowerCase();
   if (d) {
     if (/^(list|array|struct|object|binary|map)/.test(d)) return 'nested';
-    if (/^(date|time|duration|timestamp)/.test(d)) return 'temporal';
+    // A duration is a quantity — you sum it and average it — not a point on a
+    // calendar, so the chart measures it like the number it is, even though
+    // polars files it under time. A date or a timestamp stays temporal.
+    if (/^duration/.test(d)) return 'number';
+    if (/^(date|time|timestamp)/.test(d)) return 'temporal';
     if (/^(i|u|f)\d/.test(d) || /^(int|uint|float|double|decimal|long|short)/.test(d)) {
       return 'number';
     }
