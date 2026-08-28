@@ -1,7 +1,7 @@
 {
   "name": "polarsense",
   "displayName": "PolarSense",
-  "description": "Column-name autocompletion for polars, pandas and duckdb, read from the parquet, CSV, Arrow IPC, Delta or Iceberg file behind your DataFrame.",
+  "description": "Column completion, typo checks and hover statistics for polars, pandas and duckdb, plus schema, data and chart panels \u2014 all read from the parquet, CSV, Arrow, Delta, Iceberg, JSON or Excel file behind your DataFrame. No Python interpreter, no code execution.",
   "version": "1.10.0",
   "license": "MIT",
   "publisher": "Pinch",

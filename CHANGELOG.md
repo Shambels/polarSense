@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **The marketplace description says what the extension has become.** It still
+  led with column-name completion out of the file behind the frame, which was
+  the whole of it several releases ago and is now one of five things: the typo
+  diagnostic, the hover statistics, and the details, data and graph panels had
+  no mention at all, nor did JSON and Excel among the formats read. The new
+  wording names those and keeps the two claims that decide whether someone
+  installs this at all — no Python interpreter, no code execution. It stays one
+  sentence plus that clause, because the marketplace truncates a paragraph.
+
 ## 1.10.0
 
 ### Added
