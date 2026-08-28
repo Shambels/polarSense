@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **A duration on a chart axis reads as a span of time.** The measured axis of a
+  chart — a computed `dt_mean`, an elapsed time — now shows `13d 19h`, `15m`,
+  `500µs` where 1.9.0 drew the raw microseconds: on the y-axis gridlines and the
+  hover, and host-side, unit-aware (so `duration[ns]` comes out right too), on a
+  duration x-axis and anywhere the data grid prints one. Two units at most — an
+  axis tick wants the shape of the number, not every digit of it. The axis is
+  flagged a duration only when the drawn column is one, so a plain number still
+  reads as a plain number.
+
 ## 1.9.0
 
 ### Added

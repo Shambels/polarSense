@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  buildChart, kindsFor, familyOf, defaultAxis, truncate, readParquetSeries, readCsvSeries, localStorage
+  buildChart, kindsFor, familyOf, defaultAxis, truncate, readParquetSeries, readCsvSeries,
+  formatValue, localStorage
 } from '../harness.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -456,4 +457,23 @@ test('a duration is a magnitude, so it is measured rather than refused', () => {
   assert.equal(drawn.points.length, 2);
   // A → mean(10, 30) = 20, B → mean(20, 50) = 35, ordered by value.
   assert.deepEqual(drawn.points.map((p) => [p.label, p.y]), [['B', 35], ['A', 20]]);
+});
+
+test('a duration reads as a span of time, not a count of microseconds', () => {
+  // The largest two units that carry it, from a value in the dtype's own unit.
+  assert.equal(formatValue(1_191_600_000_000, 'duration[μs]'), '13d 19h');
+  assert.equal(formatValue(900_000_000, 'duration[μs]'), '15m');
+  assert.equal(formatValue(1_000, 'duration[μs]'), '1ms');
+  assert.equal(formatValue(0, 'duration[μs]'), '0s');
+  // Nanoseconds scale to the same answer: 13d 19h in ns is 13d 19h.
+  assert.equal(formatValue(1_191_600_000_000_000, 'duration[ns]'), '13d 19h');
+  // A plain number keeps its digits — only a duration dtype triggers the span.
+  assert.equal(formatValue(1_191_600_000_000, 'i64'), '1191600000000');
+
+  // And the chart only flags the axis a duration when the y column is one.
+  const bars = buildChart(read([
+    col('g', 'str', ['a', 'a']),
+    col('n', 'i64', [3, 5])
+  ]), { x: 'g', y: 'n', maxRows: 100 });
+  assert.equal(bars.yDuration, undefined);
 });

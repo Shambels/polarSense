@@ -244,6 +244,8 @@ interface Payload {
   y: string;
   kind: ChartKind | '';
   kinds: ChartKind[];
+  /** The measured axis is a duration; the page formats its ticks as a span. */
+  yDuration: boolean;
   agg: Agg | '';
   aggs: Agg[];
   seriesNames: string[];
@@ -295,6 +297,7 @@ function payload(
     xLabel: chart?.xLabel ?? '',
     yLabel: chart?.yLabel ?? '',
     xNumeric: chart?.xNumeric ?? false,
+    yDuration: chart?.yDuration ?? false,
     domain: chart?.domain,
     ticks: chart?.ticks ?? [],
     points: chart?.points ?? [],
