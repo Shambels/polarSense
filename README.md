@@ -217,7 +217,7 @@ listing it:
 values.parquet · df
 200 rows · 4 columns · 1.7 KB · 1 row group · zstd
 
-x [ region ▾ ]   y [ none ▾ ]                   chart [▁▄█] [⋰] [╱]
+x [ region ▾ ]   y [ none ▾ ]              chart [▁▄█] [⋰] [╱]   [⤓]
 
 rows
 100 ┤ ███
@@ -242,6 +242,15 @@ or fewer is drawn as bars rather than binned. The two pickers sit above the plot
 the chart type sits at the other end of the same row — a row of icons, one per
 chart, of which only the ones those columns can actually be are shown — so a
 default that is wrong costs one click.
+
+At the end of that row is a **download button**, which writes the chart on screen
+to a PNG where you choose. What comes out is the plot — marks, axes, gridlines,
+captions and the legend where there is one — at twice its drawn size and on the
+panel's own background, so a dark theme's chart is not grey marks on
+transparency when it lands in a document. The suggested name says which frame and
+which columns, `values-region-revenue.png`, rather than `chart.png`. The header
+above the plot is not in the picture: the file name, the row counts and the notes
+are what the panel says *about* the frame, not part of the chart.
 
 **The rows never reach the panel.** Bins are counted in the extension and a
 histogram of four million rows is thirty numbers, which is what crosses. It reads
@@ -473,7 +482,9 @@ reshapes are beyond what static reading can predict.
   read and says it is a sample rather than pretending to the whole file. List
   and struct columns are not offered as axes: a chart of a list is a chart of
   nothing. Charts come from parquet and CSV, the two formats whose rows are
-  read at all.
+  read at all. A chart is exported as a PNG and nothing else — no SVG, no PDF,
+  no copy to the clipboard — because a chart pasted into a message, an issue or
+  a slide is a raster wherever it lands.
 - **A CSV preview is a prefix of the file.** Without a footer there is no row
   count and no offset to seek to, so the rows shown are the ones inside the first
   `csv.sniffBytes` bytes, and the last record of a truncated prefix is dropped

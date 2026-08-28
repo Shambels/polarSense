@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **A chart can be saved as a PNG.** A download button sits at the right of the
+  chart-type row, and pressing it writes the picture that is on screen — the
+  marks, the axes, the gridlines, the captions and, where there is one, the
+  legend — to a file you pick. It is rasterized in the panel rather than in the
+  extension, because the colours on that chart are the theme's and only the
+  webview can resolve a `--vscode-charts-*` variable to an actual colour; the
+  host does the two things a webview cannot, which is ask for a path and write
+  bytes. The image is drawn at twice the chart's own coordinates and on the
+  panel's own background, so a dark theme's chart pasted into a document is not
+  light-grey marks on transparency. The suggested filename names the frame and
+  the columns drawn — `values-region-revenue.png` — because a folder of
+  `chart.png` is a folder of one chart. It exports the plot and nothing around
+  it: the header, the row counts and the notes above the chart are what the
+  panel says about the file, not part of the picture, and there is no SVG or PDF
+  option — a chart pasted into a message or an issue is a raster everywhere it
+  lands.
+
 ## 1.9.1
 
 ### Changed
