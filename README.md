@@ -362,6 +362,19 @@ without interpolation, `Path(...) / "file.parquet"` and `os.path.join(...)` are 
 folded down to a path before the file is opened. Relative paths are tried against
 the file's own directory, then each workspace folder, then `polarsense.pathRoots`.
 
+The path a runnable script actually uses is folded too:
+
+```python
+df = pl.scan_parquet(Path(__file__).parent / "sales.parquet")
+df.select("|")               # completes — the file beside this one
+```
+
+`Path(__file__).parent` is the file's own directory, which is the first place a
+relative path is looked for anyway, so the two spellings find the same file —
+except only this one still runs from another working directory. `.parent.parent`
+climbs, `.resolve()` and `os.path.dirname(os.path.abspath(__file__))` fold the
+same way, and a bare `__file__` — a file, not a directory — is left alone.
+
 Globs and directories resolve to the first matching file, and `key=value` directory
 segments are added as hive partition columns, the way polars adds them.
 

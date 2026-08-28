@@ -29,6 +29,14 @@ const CASES = [
   ['pathlib division', `${HEAD}from pathlib import Path\nD = Path("data")\ndf = pl.scan_parquet(D / "a.parquet")\ndf.select("|")`, 'data/a.parquet'],
   ['os.path.join', `${HEAD}import os\nD = "data"\ndf = pl.scan_parquet(os.path.join(D, "a.parquet"))\ndf.select("|")`, 'data/a.parquet'],
   ['Path constructor', `${HEAD}from pathlib import Path\ndf = pl.scan_parquet(Path("data", "a.parquet"))\ndf.select("|")`, 'data/a.parquet'],
+  // The shape a runnable script uses, because a bare relative path breaks the
+  // moment it is run from another directory. It folds to a path relative to the
+  // source file, which is where relative paths are resolved from anyway.
+  ['file-relative parent', `${HEAD}from pathlib import Path\ndf = pl.scan_parquet(Path(__file__).parent / "a.parquet")\ndf.select("|")`, 'a.parquet'],
+  ['file-relative parent twice', `${HEAD}from pathlib import Path\ndf = pl.scan_parquet(Path(__file__).parent.parent / "data/a.parquet")\ndf.select("|")`, '../data/a.parquet'],
+  ['file-relative through resolve()', `${HEAD}from pathlib import Path\ndf = pl.scan_parquet(Path(__file__).resolve().parent / "a.parquet")\ndf.select("|")`, 'a.parquet'],
+  ['file-relative through a constant', `${HEAD}from pathlib import Path\nHERE = Path(__file__).parent\ndf = pl.scan_parquet(HERE / "data" / "a.parquet")\ndf.select("|")`, 'data/a.parquet'],
+  ['os.path.dirname(__file__)', `${HEAD}import os\ndf = pl.scan_parquet(os.path.join(os.path.dirname(os.path.abspath(__file__)), "a.parquet"))\ndf.select("|")`, 'a.parquet'],
 
   // --- trigger sites ---
   ['with_columns', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.with_columns(pl.col("|"))`, 'a.parquet'],
@@ -88,6 +96,19 @@ for (const [name, snippet, expected] of CASES) {
     assert.equal(res.source?.path, expected, `failure was: ${res.failure ?? 'none'}`);
   });
 }
+
+/**
+ * `__file__` is a file, not the directory it sits in. Folding a bare one to a
+ * directory would answer with a path that was never written, so the fold gives
+ * up instead — the sentinel only survives a `.parent`.
+ */
+test('a bare __file__ is not a directory', async () => {
+  const res = await resolveMarked(
+    `${HEAD}df = pl.scan_parquet(__file__)\ndf.select("|")`,
+    ROOT
+  );
+  assert.ok(!res.source?.path, `unexpectedly resolved to ${res.source?.path}`);
+});
 
 /** Positions that must NOT offer column names. */
 const NEGATIVE = [

@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **`Path(__file__).parent / "data.parquet"` finds the file.** The one spelling
+  that makes a script runnable from any working directory was the one the path
+  fold gave up on: `__file__` was an unknown name and `.parent` an attribute
+  nothing looked at, so the frame had no file behind it and the completions, the
+  hover, the diagnostic and all three panels went quiet — the panels saying "no
+  frame at the cursor", which named the cursor for a problem that was in the
+  path. `__file__` now folds to the source file's own directory, which is where
+  a relative path is resolved from first, so the pathlib spelling and the bare
+  `"data.parquet"` reach the same file and only the pathlib one also runs.
+  `.parent.parent` climbs a level per step, `.resolve()` passes through, and
+  `os.path.dirname(os.path.abspath(__file__))` folds the same way.
+
+  A bare `__file__` stays unresolved on purpose: it is a file, not the directory
+  it sits in, and answering with a directory nobody wrote is the kind of guess
+  this extension does not make. `.parents[1]` is not read either — a subscript
+  is a different shape, and one level up is what scripts write.
+
 ## 1.10.1
 
 ### Changed
