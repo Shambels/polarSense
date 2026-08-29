@@ -18,6 +18,11 @@ import { shell } from './table.page.js';
  * The host owns the state. The webview draws what it is sent and posts what was
  * clicked; every decision about what to read is made here, where it can be
  * tested without a browser.
+ *
+ * The state lives in a `TableSession` rather than in this module because there
+ * is now more than one door onto the same grid: the command opens one panel and
+ * reuses it, while the parquet editor gets one per open file. Same page, same
+ * protocol, different owner.
  */
 
 /** Rows in a page. Also the unit that is read: no page, no read. */
@@ -37,9 +42,106 @@ interface View {
   filter: string;
 }
 
+/** What the webview can ask for: a page, a column window, a filter, or a redraw. */
+export interface Intent {
+  type?: string;
+  rowStart?: number;
+  columnStart?: number;
+  filter?: string;
+}
+
+/**
+ * One grid on one webview: what is being looked at, and the reads that answer.
+ *
+ * It owns no panel. Whoever created the webview keeps it alive, hands messages
+ * here and drops the session when the view goes — which is what lets the same
+ * grid live in a panel the command reuses and in an editor tab per file.
+ */
+export class TableSession {
+  private view: View;
+  /** The last payload sent, so a webview that was hidden can be restored without a read. */
+  private last: unknown;
+
+  constructor(
+    private readonly api: PolarSenseApi,
+    private readonly webview: vscode.Webview,
+    frame: ResolvedFrame,
+    /** Whether the page offers its own way into the details and graph panels. */
+    private readonly panels = false
+  ) {
+    this.view = {
+      frame,
+      columns: frame.columns.map((column) => column.name),
+      resolved: false,
+      rowStart: 0,
+      columnStart: 0,
+      filter: ''
+    };
+  }
+
+  async handle(message: Intent): Promise<void> {
+    // The webview is reloaded whenever it has been hidden, and it comes back with
+    // no state at all — so it asks, rather than the host guessing when to tell it.
+    if (message?.type === 'ready') {
+      if (this.last) { void this.webview.postMessage(this.last); return; }
+      await this.update();
+      return;
+    }
+
+    if (typeof message?.filter === 'string' && message.filter !== this.view.filter) {
+      this.view.filter = message.filter;
+      // A narrower list makes the old window meaningless.
+      this.view.columnStart = 0;
+    }
+    if (typeof message?.rowStart === 'number') {
+      this.view.rowStart = Math.max(0, message.rowStart);
+    }
+    if (typeof message?.columnStart === 'number') {
+      this.view.columnStart = Math.max(0, message.columnStart);
+    }
+    await this.update();
+  }
+
+  /** Read the page the current view describes, and send exactly that. */
+  private async update(): Promise<void> {
+    const current = this.view;
+    const matching = filtered(current);
+    const drawn = matching.slice(current.columnStart, current.columnStart + COLUMN_WINDOW);
+
+    let result = await this.api.readRows(current.frame, {
+      columns: drawn,
+      rowStart: current.rowStart,
+      limit: PAGE
+    });
+
+    // First answer back also carries the file's own column list. A frame whose
+    // columns were computed or renamed asks for names the file has never heard
+    // of, and the honest correction is to offer what is actually there.
+    const all = result.page?.allColumns ?? [];
+    if (!current.resolved && all.length) {
+      current.resolved = true;
+      const known = new Set(all);
+      const kept = current.columns.filter((name) => known.has(name));
+      if (kept.length !== current.columns.length) {
+        current.columns = kept.length ? kept : all;
+        result = await this.api.readRows(current.frame, {
+          columns: filtered(current).slice(
+            current.columnStart, current.columnStart + COLUMN_WINDOW
+          ),
+          rowStart: current.rowStart,
+          limit: PAGE
+        });
+      }
+    }
+
+    this.last = payload(current, this.panels, result.page, result.error);
+    void this.webview.postMessage(this.last);
+  }
+}
+
+/** The command's panel: one at a time, reused, pointed at whatever resolved last. */
 let panel: vscode.WebviewPanel | undefined;
-let view: View | undefined;
-let last: unknown;
+let session: TableSession | undefined;
 
 export async function showData(api: PolarSenseApi, at?: FrameTarget): Promise<void> {
   const target = at ?? cursorTarget();
@@ -54,25 +156,16 @@ export async function showData(api: PolarSenseApi, at?: FrameTarget): Promise<vo
     return;
   }
 
-  view = {
-    frame,
-    columns: frame.columns.map((column) => column.name),
-    resolved: false,
-    rowStart: 0,
-    columnStart: 0,
-    filter: ''
-  };
-  last = undefined;
-
-  const current = ensurePanel(api);
+  const current = ensurePanel();
   current.title = path.basename(frame.uri) || 'PolarSense';
+  session = new TableSession(api, current.webview, frame);
   // A fresh document each time the command runs: a new frame is a new table, and
   // the webview asks for its first page as soon as it has loaded.
   current.webview.html = shell(current.webview.cspSource);
   current.reveal(vscode.ViewColumn.Beside, true);
 }
 
-function ensurePanel(api: PolarSenseApi): vscode.WebviewPanel {
+function ensurePanel(): vscode.WebviewPanel {
   if (panel) return panel;
   panel = vscode.window.createWebviewPanel(
     'polarsense.data',
@@ -84,76 +177,12 @@ function ensurePanel(api: PolarSenseApi): vscode.WebviewPanel {
     // than as markup.
     { enableScripts: true, localResourceRoots: [] }
   );
-  panel.onDidDispose(() => { panel = undefined; view = undefined; last = undefined; });
-  panel.webview.onDidReceiveMessage((message) => onMessage(api, message));
+  panel.onDidDispose(() => { panel = undefined; session = undefined; });
+  // The panel outlives the frame it was opened on, so it asks whichever session
+  // is current rather than closing over one. The promise goes back to a caller
+  // VS Code does not have and a test does.
+  panel.webview.onDidReceiveMessage((message) => session?.handle(message));
   return panel;
-}
-
-/** What the webview can ask for: a page, a column window, a filter, or a redraw. */
-interface Intent {
-  type?: string;
-  rowStart?: number;
-  columnStart?: number;
-  filter?: string;
-}
-
-async function onMessage(api: PolarSenseApi, message: Intent): Promise<void> {
-  if (!panel || !view) return;
-
-  // The webview is reloaded whenever it has been hidden, and it comes back with
-  // no state at all — so it asks, rather than the host guessing when to tell it.
-  if (message?.type === 'ready') {
-    if (last) { void panel.webview.postMessage(last); return; }
-    await update(api);
-    return;
-  }
-
-  if (typeof message?.filter === 'string' && message.filter !== view.filter) {
-    view.filter = message.filter;
-    // A narrower list makes the old window meaningless.
-    view.columnStart = 0;
-  }
-  if (typeof message?.rowStart === 'number') view.rowStart = Math.max(0, message.rowStart);
-  if (typeof message?.columnStart === 'number') {
-    view.columnStart = Math.max(0, message.columnStart);
-  }
-  await update(api);
-}
-
-/** Read the page the current view describes, and send exactly that. */
-async function update(api: PolarSenseApi): Promise<void> {
-  if (!panel || !view) return;
-  const current = view;
-
-  const matching = filtered(current);
-  const drawn = matching.slice(current.columnStart, current.columnStart + COLUMN_WINDOW);
-
-  let result = await api.readRows(current.frame, {
-    columns: drawn,
-    rowStart: current.rowStart,
-    limit: PAGE
-  });
-
-  // First answer back also carries the file's own column list. A frame whose
-  // columns were computed or renamed asks for names the file has never heard
-  // of, and the honest correction is to offer what is actually there.
-  const all = result.page?.allColumns ?? [];
-  if (!current.resolved && all.length) {
-    current.resolved = true;
-    const known = new Set(all);
-    const kept = current.columns.filter((name) => known.has(name));
-    if (kept.length !== current.columns.length) {
-      current.columns = kept.length ? kept : all;
-      result = await api.readRows(current.frame, {
-        columns: filtered(current).slice(current.columnStart, current.columnStart + COLUMN_WINDOW),
-        rowStart: current.rowStart,
-        limit: PAGE
-      });
-    }
-  }
-
-  last = payload(current, result.page, result.error);
-  void panel.webview.postMessage(last);
 }
 
 function filtered(current: View): string[] {
@@ -182,11 +211,14 @@ interface Payload {
   columnWindow: number;
   filter: string;
   hidden: number;
+  /** Show the details and graph buttons: true where this grid is the whole file's editor. */
+  panels: boolean;
   error?: string;
 }
 
 function payload(
   current: View,
+  panels: boolean,
   page: { columns: string[]; dtypes: string[]; rows: (string | null)[][]; rowStart: number;
           rowCount?: number; more: boolean; prefixBytes?: number } | undefined,
   error: RowsFailure | undefined
@@ -226,6 +258,7 @@ function payload(
     columnWindow: COLUMN_WINDOW,
     filter: current.filter,
     hidden: Math.max(0, hidden),
+    panels,
     error: error && explain(error, current.frame.kind)
   };
 }

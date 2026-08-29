@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'node:path';
-import type { PolarSenseApi } from '../api.js';
+import type { PolarSenseApi, ResolvedFrame } from '../api.js';
 import { cursorTarget, NO_PYTHON, type FrameTarget } from './target.js';
 import { renderDetails } from './details.page.js';
 
@@ -34,6 +34,14 @@ export async function showDetails(api: PolarSenseApi, at?: FrameTarget): Promise
     return;
   }
 
+  showDetailsFor(frame);
+}
+
+/**
+ * The same panel on a frame the caller already has — the Details button in the
+ * parquet editor, where there is no cursor to resolve and nothing to fail.
+ */
+export function showDetailsFor(frame: ResolvedFrame): void {
   if (!panel) {
     panel = vscode.window.createWebviewPanel(
       'polarsense.details',

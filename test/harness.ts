@@ -21,7 +21,9 @@ export { chartFetchSnippet, parseChartJson, MARKER } from '../src/schema/kernelS
 export { formatValue } from '../src/schema/format.js';
 export { SchemaService } from '../src/schema/index.js';
 export { localStorage } from '../src/storage/local.js';
-export { resolvePath, hiveColumns, hiveValues, completeDataPaths } from '../src/paths.js';
+export {
+  resolvePath, hiveColumns, hiveValues, completeDataPaths, kindForFile
+} from '../src/paths.js';
 export { EXPR_FUNCS, FRAME_METHODS, FRAGMENT_METHODS } from '../src/core/triggerSites.js';
 export {
   dataPathInSql, sqlSource, sqlTables, sqlColumnPosition, SQL_FUNCS

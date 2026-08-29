@@ -16,6 +16,7 @@ import { showDetails } from './preview/details.js';
 import { showData } from './preview/table.js';
 import { showGraph } from './preview/graph.js';
 import { registerNotebookButtons } from './preview/buttons.js';
+import { registerDataFileEditor } from './preview/fileEditor.js';
 
 const PYTHON: vscode.DocumentSelector = [
   { language: 'python', scheme: 'file' },
@@ -170,6 +171,11 @@ export async function activate(
   // command palette. No kernel: the renderer says which output was clicked and
   // the cell's own source says which frame that is.
   registerNotebookButtons(context, api);
+
+  // And the same table again, this time with no code around it at all: a
+  // .parquet file opened from the explorer is a frame with nothing done to it,
+  // so the viewer is the panel plus a uri.
+  registerDataFileEditor(context, api);
 
   context.subscriptions.push(
     vscode.commands.registerCommand('polarsense.showDetails', () => showDetails(api)),

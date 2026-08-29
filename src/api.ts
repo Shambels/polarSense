@@ -10,6 +10,7 @@ import { framesSources } from './core/frame.js';
 import { evaluateFrame } from './core/schemaEval.js';
 import { assemble } from './notebook.js';
 import { readSettings, workspaceDirs } from './config.js';
+import { kindForFile } from './paths.js';
 import { NO_MODULES, type ModuleService } from './modules.js';
 import type { PathContext } from './paths.js';
 
@@ -96,6 +97,17 @@ export interface PolarSenseApi {
    */
   resolveFrameAt(uri: vscode.Uri, position: vscode.Position): Promise<ResolvedFrame | undefined>;
   /**
+   * A data file as a frame, for a caller holding a file rather than a cursor —
+   * the parquet viewer opens on one of these. Same shape as `resolveFrameAt`
+   * returns, with `transformed` false and `certain` true, because the file's own
+   * schema is not a guess about anything.
+   *
+   * Undefined when the extension names no reader here, or when the schema
+   * cannot be read — a file that is not the format its name claims is the
+   * common case, and it is a miss rather than an error.
+   */
+  resolveFile(uri: vscode.Uri): Promise<ResolvedFrame | undefined>;
+  /**
    * A page of the file behind a frame `resolveFrameAt` returned: this row range,
    * these columns, nothing else. Rows are read only when this is called, and
    * only the cells asked for are read — so a caller that draws a hundred rows of
@@ -172,6 +184,36 @@ export function createApi(
         transformed: !!found.frame && found.frame.kind !== 'source',
         symbol: found.source.symbol,
         kwargs: found.source.kwargs
+      };
+    },
+
+    async resolveFile(uri) {
+      const file = uri.fsPath;
+      const kind = kindForFile(file);
+      if (!kind) return undefined;
+
+      // An absolute path needs no roots to be searched, but the schema service
+      // takes a context, and the file's own directory is the honest answer for
+      // the one thing it is used for.
+      const result = await schemas.get(
+        { kind, path: file, kwargs: {} },
+        { documentDir: path.dirname(file), workspaceDirs: [], extraRoots: [] }
+      );
+      if (!result.schema) return undefined;
+
+      return {
+        uri: result.uri ?? result.schema.origin,
+        kind,
+        columns: result.schema.columns,
+        sourceColumns: result.schema.columns,
+        rowCount: result.schema.rowCount,
+        sizeBytes: result.schema.sizeBytes,
+        rowGroups: result.schema.rowGroups,
+        compression: result.schema.compression,
+        // Nothing was inferred and nothing was applied: this is the file.
+        certain: true,
+        transformed: false,
+        kwargs: {}
       };
     },
 

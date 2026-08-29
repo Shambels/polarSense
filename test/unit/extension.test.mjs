@@ -1435,3 +1435,70 @@ test('a dtype is coloured by family, and an unknown one is not coloured at all',
   assert.equal(dtypeClass(undefined), 't-other');
   assert.equal(dtypeClass('polygon'), 't-other');
 });
+
+/**
+ * The parquet viewer, driven the way VS Code drives it: a custom editor over a
+ * file uri and a webview panel, with no Python document anywhere in sight.
+ */
+async function openFile(file) {
+  const entry = vscode._registered.customEditors.find(
+    (e) => e.viewType === 'polarsense.dataFile'
+  );
+  assert.ok(entry, 'no custom editor was registered');
+  const full = path.isAbsolute(file) ? file : path.join(DATA, file);
+  const document = entry.provider.openCustomDocument(vscode.Uri.file(full));
+  const panel = vscode.window.createWebviewPanel('polarsense.dataFile', file, {}, {});
+  await entry.provider.resolveCustomEditor(document, panel);
+  panel.messages.length = 0;
+  if (panel.receive) await panel.receive({ type: 'ready' });
+  return {
+    panel,
+    payload: panel.messages.at(-1),
+    nav: async (patch) => {
+      await panel.receive(patch);
+      return panel.messages.at(-1);
+    }
+  };
+}
+
+test('a parquet file opens as its own editor, with no code to resolve', async () => {
+  const { payload, panel } = await openFile('values.parquet');
+  assert.equal(payload.rowCount, 200);
+  assert.equal(payload.rows.length, payload.pageSize, 'a page is a page, not the file');
+  assert.equal(payload.rows[0][payload.columns.indexOf('order_id')], 'ord-0000');
+  // No variable, nothing applied, nothing inferred: the file is the frame.
+  assert.equal(payload.symbol, undefined);
+  assert.deepEqual(payload.notes, []);
+  assert.equal(payload.panels, true, 'the editor offers the other two panels');
+  // Same bargain as the panel: the rows arrive as data, never as markup.
+  assert.doesNotMatch(panel.webview.html, /ord-0000/);
+});
+
+test('the editor pages the file the same way the panel does', async () => {
+  const { nav } = await openFile('values.parquet');
+  const second = await nav({ rowStart: 100 });
+  assert.equal(second.rowStart, 100);
+  assert.equal(second.more, false, 'there is nothing after row 199');
+  assert.equal(second.rows[0][second.columns.indexOf('order_id')], 'ord-0100');
+});
+
+test('the editor’s two buttons open the panels on the file it is showing', async () => {
+  const { panel } = await openFile('structs.parquet');
+
+  await panel.receive({ type: 'details' });
+  const details = vscode._registered.webviews.find((p) => p.viewType === 'polarsense.details');
+  assert.equal(details.title, 'structs.parquet');
+
+  await panel.receive({ type: 'graph' });
+  const graph = vscode._registered.webviews.find((p) => p.viewType === 'polarsense.graph');
+  assert.equal(graph.title, 'structs.parquet');
+});
+
+test('a file that is not what its name claims opens as a sentence, not an empty grid', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'polarsense-viewer-'));
+  const fake = path.join(dir, 'not-really.parquet');
+  writeFileSync(fake, 'this is not a parquet file\n');
+  const { panel } = await openFile(fake);
+  assert.match(panel.webview.html, /could not read this file/);
+  assert.doesNotMatch(panel.webview.html, /acquireVsCodeApi/, 'nothing to script: there is no grid');
+});

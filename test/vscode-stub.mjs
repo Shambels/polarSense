@@ -88,6 +88,9 @@ export function makeVscode(settings = {}, workspaceFolders = []) {
   const registered = {
     providers: [], linkProviders: [], hoverProviders: [], codeActionProviders: [],
     diagnostics: null, commands: new Map(), configHandlers: [], webviews: [],
+    // Custom editors: the viewType and the provider, so a test can open a file
+    // the way VS Code opens one.
+    customEditors: [],
     // The notebook renderer's end of the wire: the handler the extension
     // registered, and everything it has posted back to a page.
     renderer: null,
@@ -131,6 +134,12 @@ export function makeVscode(settings = {}, workspaceFolders = []) {
     NotebookCellKind: { Markup: 1, Code: 2 },
     StatusBarAlignment: { Left: 1, Right: 2 },
     ViewColumn: { Active: -1, Beside: -2, One: 1 },
+    RelativePattern: class RelativePattern {
+      constructor(base, pattern) {
+        this.base = base;
+        this.pattern = pattern;
+      }
+    },
     Uri: {
       file: (p) => ({ scheme: 'file', fsPath: p, path: p, toString: () => `file://${p}` }),
       parse: (u) => ({ scheme: u.split(':')[0], fsPath: u, path: u, toString: () => u })
@@ -170,6 +179,10 @@ export function makeVscode(settings = {}, workspaceFolders = []) {
         };
         registered.webviews.push(panel);
         return panel;
+      },
+      registerCustomEditorProvider: (viewType, provider, options) => {
+        registered.customEditors.push({ viewType, provider, options });
+        return { dispose() {} };
       },
       onDidChangeActiveTextEditor: noopEvent
     },

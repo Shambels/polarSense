@@ -107,6 +107,10 @@ export function shell(cspSource: string): string {
       <button id="cnext" title="Next columns">&rsaquo;</button>
     </span>
     <input id="filter" type="text" placeholder="filter columns" autocomplete="off">
+    <span class="group" id="panels" hidden>
+      <button id="details" title="Every column's type and statistics, from the file's own metadata">Details</button>
+      <button id="graph" title="Draw the shape of a column (reads rows)">Graph</button>
+    </span>
   </div>
 </div>
 <div class="grid">
@@ -160,6 +164,9 @@ function draw() {
   $('cprev').disabled = state.columnStart <= 0;
   $('cnext').disabled = state.columnStart + shown >= state.columnCount;
   if ($('filter').value !== state.filter) $('filter').value = state.filter;
+  // Only the editor's own grid carries them: opened from the palette, the two
+  // panels are a keystroke away and would be answering about the cursor anyway.
+  $('panels').hidden = !state.panels;
 
   // Numbers line up under each other or they are not numbers, they are text
   // that happens to be digits. The host already said which family each is.
@@ -231,6 +238,8 @@ for (const [id, go] of [['prev', rowsBack], ['eup', rowsBack], ['next', rowsOn],
                         ['cnext', colsOn], ['eright', colsOn]]) {
   $(id).addEventListener('click', go);
 }
+$('details').addEventListener('click', () => send({ type: 'details' }));
+$('graph').addEventListener('click', () => send({ type: 'graph' }));
 $('scroller').addEventListener('scroll', edges);
 $('filter').addEventListener('input', (event) => {
   clearTimeout(timer);

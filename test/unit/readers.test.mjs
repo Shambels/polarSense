@@ -9,7 +9,7 @@ import {
   readJsonSchema, readExcelSchema,
   readParquetValues, readParquetRows, readCsvRows, formatValue,
   SchemaService, checkpointFiles, localStorage, resolvePath, hiveColumns,
-  hiveValues, completeDataPaths, SOURCE_FUNCS
+  hiveValues, completeDataPaths, kindForFile, SOURCE_FUNCS
 } from '../harness.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -752,4 +752,19 @@ test('a value formats by its dtype, and a struct keeps its shape', () => {
   assert.equal(formatValue({ a: 1n }, 'struct'), '{"a":"1"}');
   assert.equal(formatValue([1, 2], 'list[i64]'), '[1,2]');
   assert.equal(formatValue('x'.repeat(80), 'str', { maxLength: 10 }), 'xxxxxxxxxx…');
+});
+
+test('a file name says which reader opens it, or says nothing', () => {
+  assert.equal(kindForFile('/data/sales.parquet'), 'parquet');
+  assert.equal(kindForFile('/data/SALES.PQ'), 'parquet', 'the extension is not case');
+  assert.equal(kindForFile('/data/sales.csv'), 'csv');
+  assert.equal(kindForFile('/data/sales.arrow'), 'ipc');
+  assert.equal(kindForFile('/data/sales.xlsx'), 'excel');
+
+  // The viewer opens a file, so anything that is not one of these has no
+  // schema to show: a script, a table that is a directory of files rather than
+  // a file, a name carrying no extension at all.
+  assert.equal(kindForFile('/src/load.py'), undefined);
+  assert.equal(kindForFile('/data/delta_sales'), undefined);
+  assert.equal(kindForFile('/data/README'), undefined);
 });

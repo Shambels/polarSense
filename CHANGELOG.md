@@ -1,5 +1,54 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **A `.parquet` file opens as a table.** Click one in the explorer and you get
+  the data panel's grid — a hundred rows at a time, a forty-column window, the
+  row index and header pinned — instead of *"The file is not displayed because it
+  is either binary or uses an unsupported text encoding"*. It is registered as
+  the default editor for `*.parquet` and `*.pq`; `View: Reopen Editor With…`, or
+  a `workbench.editorAssociations` entry, gives VS Code's own editor back.
+
+  This is the smallest of the panels rather than a new one, because a file is a
+  frame with nothing done to it: no cursor to resolve, no transforms to warn
+  about, no certainty to lose. So the viewer resolves the uri to a frame and
+  hands it to the table session the palette command already uses, and the two
+  buttons its bar now carries open the details and graph panels on the same file.
+  The rule the panels are built on is unchanged: the page on screen is the read,
+  so a four-million-row file opens as fast as a small one, and nothing crosses to
+  the webview that is not being drawn.
+
+  Two things it does deliberately. It watches the file it is showing and redraws
+  when that file is written — running the script that produces the parquet you
+  are looking at is the ordinary case, and a row count read at open time is a
+  fact about a file that no longer exists. And it is a *read-only* custom editor,
+  which has no save path at all, so there is no code here that could write to a
+  data file by accident. A file that will not parse gets a sentence saying it is
+  either not that format or is written in a way this reader does not understand,
+  rather than an empty grid that reads as an empty file.
+
+  It views: it pages, steps columns and filters the column list. It does not
+  sort, filter rows or edit. Sorting a page means scanning the whole file, and a
+  page ordered by a tenth of a file is the kind of confident wrong answer this
+  extension exists not to give. Parquet only, because parquet and CSV are the
+  formats whose rows are read at all, and a CSV already has an editor that shows
+  it honestly.
+
+### Internal
+
+- **`resolveFile(uri)` on the exported API**, beside `resolveFrameAt`. Same
+  `ResolvedFrame` shape, from a data file rather than a cursor, with `certain`
+  true and `transformed` false because neither can be otherwise. `version` stays
+  1: nothing that existed changed shape.
+- **The table panel's state moved into a `TableSession`.** It used to be module
+  variables next to the single reused panel, which is one grid; the viewer needs
+  one per open file. The session owns the view and the reads and holds no panel,
+  so the palette's panel and each editor tab drive the same code down the same
+  message protocol. `showDetailsFor` and `showGraphFor` split out of the two
+  commands for the same reason — a caller with a frame in hand and no cursor.
+
 ## 1.10.2
 
 ### Changed

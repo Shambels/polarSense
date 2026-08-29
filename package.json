@@ -1,7 +1,7 @@
 {
   "name": "polarsense",
   "displayName": "PolarSense",
-  "description": "Column completion, typo checks and hover statistics for polars, pandas and duckdb, plus schema, data and chart panels — all read from the parquet, CSV, Arrow, Delta, Iceberg, JSON or Excel file behind your DataFrame. No Python interpreter, no code execution.",
+  "description": "Open a parquet file and see it: rows, column statistics and charts. Plus column completion, typo checks and hover statistics for polars, pandas and duckdb — all read from the parquet, CSV, Arrow, Delta, Iceberg, JSON or Excel file behind your DataFrame. No Python interpreter, no code execution.",
   "version": "1.10.2",
   "license": "MIT",
   "publisher": "Pinch",
@@ -82,6 +82,21 @@
       {
         "command": "polarsense.showGraph",
         "title": "PolarSense: Show graph (reads rows)"
+      }
+    ],
+    "customEditors": [
+      {
+        "viewType": "polarsense.dataFile",
+        "displayName": "PolarSense data viewer",
+        "selector": [
+          {
+            "filenamePattern": "*.parquet"
+          },
+          {
+            "filenamePattern": "*.pq"
+          }
+        ],
+        "priority": "default"
       }
     ],
     "notebookRenderer": [

@@ -210,6 +210,34 @@ so its rows are read out of the same bounded prefix the header comes from and th
 panel says that is what you are looking at. Arrow IPC, Delta and Iceberg show their
 schema and say plainly that their rows are not read yet.
 
+### Opening a `.parquet` file
+
+Click one in the explorer and you get that table, instead of *"The file is not
+displayed because it is either binary or uses an unsupported text encoding"*:
+
+```
+sales.parquet
+1,048,576 rows · 9 columns · 24.1 MB · 8 row groups · zstd
+
+‹ rows  rows ›   rows 0–99 of 1,048,576   ‹ columns  columns ›   [filter]  [Details] [Graph]
+```
+
+It is the same grid with no code behind it, which makes it the simplest thing in
+the extension: a file has no transforms applied and nothing inferred about it, so
+there is nothing for the header to warn about and no cursor to resolve. The two
+buttons at the end of the bar open the details panel and the graph on that same
+file. Rewrite the file from a script while the tab is open and it redraws itself,
+because a row count read when you opened it is a fact about a file that is no
+longer there.
+
+The tab is read-only in the strong sense — it is registered as a read-only custom
+editor, so there is no save path to reach. To get VS Code's own editor back for one
+file use *View: Reopen Editor With…*; for all of them, set:
+
+```jsonc
+"workbench.editorAssociations": { "*.parquet": "default" }
+```
+
 **PolarSense: Show graph (reads rows)** draws the shape of a column instead of
 listing it:
 
@@ -391,7 +419,9 @@ segments are added as hive partition columns, the way polars adds them.
 | Excel | The header row, out of the `.xlsx` zip — `sheet_name=`/`sheet_id=` resolved through `workbook.xml`, shared strings resolved, skipped cells named rather than closed up |
 
 Values — when `values.enable` is on — come from parquet only, plus hive partition
-directory names. Rows and graphs come from parquet and CSV.
+directory names. Rows and graphs come from parquet and CSV. Opening a data file as a
+table is offered for `.parquet` and `.pq` alone — the two extensions where rows
+are fully readable and where VS Code has nothing of its own to show.
 
 Schemas are read when a file opens rather than when you first ask for a column, so
 the first completion is a cache hit. They are cached on the file's mtime and size,
@@ -461,6 +491,11 @@ reshapes are beyond what static reading can predict.
   positions are never typo-checked for the same reason.
 - **pyarrow is not supported.** Its `read_table` means parquet where pandas' means
   CSV, and telling those apart needs to know which module the call came from.
+- **The parquet viewer views.** It pages, it steps columns and it filters the
+  column *list* — it does not sort, filter rows, or edit. Sorting a page would
+  mean sorting a file, which is a scan of every row group and a different product;
+  the panel would rather show you the file's own order than a page ordered by a
+  tenth of it.
 - **Some selectors are still opaque.** `cs.by_dtype(pl.Int64)`, a selector method
   we do not model, and a dtype selector over a source whose dtypes were never read
   — a CSV with `inferDtypes` off — all widen rather than narrow, and are marked
