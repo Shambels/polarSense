@@ -163,6 +163,24 @@ async function hasInterestingDescendant(dir: string, kind: SourceRef['kind']): P
   return false;
 }
 
+/** Every kind that lives in a file of its own, so an extension can name it. */
+const FILE_KINDS: SourceRef['kind'][] = ['parquet', 'csv', 'ipc', 'json', 'excel'];
+
+/**
+ * The kind of data file a path names, from its extension alone.
+ *
+ * The same table the path resolver uses to turn a kind into extensions, read
+ * from the other end: a file someone opened is a path looking for its reader.
+ * Undefined for anything else — a `.py` file has no schema, and a delta or
+ * iceberg table is a directory rather than a file, so neither is answerable
+ * here.
+ */
+export function kindForFile(file: string): SourceRef['kind'] | undefined {
+  const ext = path.extname(file).toLowerCase();
+  if (!ext) return undefined;
+  return FILE_KINDS.find((kind) => extensionFor(kind).includes(ext));
+}
+
 function extensionFor(kind: SourceRef['kind']): string[] {
   switch (kind) {
     case 'parquet': return ['.parquet', '.pq'];

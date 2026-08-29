@@ -89,6 +89,19 @@ export async function showGraph(api: PolarSenseApi, at?: FrameTarget): Promise<v
       }
     : undefined;
 
+  await showGraphFor(api, frame, kernel);
+}
+
+/**
+ * The same panel on a frame the caller already has, and optionally a kernel to
+ * read it from. The parquet editor's Graph button comes through here with
+ * neither a cursor nor a kernel: a file is a frame with nothing done to it.
+ */
+export async function showGraphFor(
+  api: PolarSenseApi,
+  frame: ResolvedFrame,
+  kernel?: { notebookUri: vscode.Uri; target: KernelTarget }
+): Promise<void> {
   // Kernel-backed, the real computed columns are all readable, so they are what
   // is offered. On the file path a transformed frame can draw only the columns
   // the file actually holds — offering its computed columns would be offering

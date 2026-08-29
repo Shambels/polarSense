@@ -24,6 +24,9 @@ It never imports polars, never spawns a Python interpreter, and never runs your
 code. It reads bytes out of your data files and nothing else — and by default only
 the metadata part of them.
 
+Open a `.parquet` file and you see the data rather than a binary-file notice — the
+same viewer, with no code around it.
+
 ## Completion, wherever a column name goes
 
 Inside the string literals polars, pandas and duckdb expect a column in:
@@ -139,6 +142,23 @@ In a notebook, all three are a click away from the output itself:
 No kernel needed to find the frame — the buttons work on a notebook you've opened
 but never run, on a frame defined eight cells earlier.
 
+## Or just open the file
+
+A `.parquet` file opens as its own tab: the same paginated grid, no Python
+anywhere near it, and *Details* and *Graph* buttons in its bar.
+
+```
+sales.parquet
+1,048,576 rows · 9 columns · 24.1 MB · 8 row groups · zstd
+
+‹ rows  rows ›   rows 0–99 of 1,048,576   ‹ columns  columns ›   [filter]  [Details] [Graph]
+```
+
+The page on screen is still the whole read — a four-million-row file opens as fast
+as a small one — and the tab redraws itself when a script rewrites the file under
+it. It is a read-only editor with no save path at all. `View: Reopen Editor With…`
+gets VS Code's own editor back.
+
 ## Values, if you ask for them
 
 Everything above reads *metadata*. Turn on `polarsense.values.enable` and the
@@ -222,6 +242,9 @@ switches the typo warning off entirely.
 - **`s3://` and `gs://` resolve to nothing**; `https://` works when enabled.
 - **`.xls` and Feather V1 are not read** — different binary formats wearing
   familiar extensions. They report nothing rather than guessing at their bytes.
+- **The parquet viewer views** — it pages, steps columns and filters the column
+  list. No sorting, no row filter, no editing: sorting a page means scanning the
+  file, which is a different product.
 - **pyarrow is not supported.**
 
 ## Privacy
