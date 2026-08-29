@@ -2,7 +2,7 @@
   "name": "polarsense",
   "displayName": "PolarSense",
   "description": "Open a parquet file and see it: rows, column statistics and charts. Plus column completion, typo checks and hover statistics for polars, pandas and duckdb — all read from the parquet, CSV, Arrow, Delta, Iceberg, JSON or Excel file behind your DataFrame. No Python interpreter, no code execution.",
-  "version": "1.10.2",
+  "version": "1.11.0",
   "license": "MIT",
   "publisher": "Pinch",
   "repository": {
