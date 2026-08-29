@@ -1502,3 +1502,36 @@ test('a file that is not what its name claims opens as a sentence, not an empty 
   assert.match(panel.webview.html, /could not read this file/);
   assert.doesNotMatch(panel.webview.html, /acquireVsCodeApi/, 'nothing to script: there is no grid');
 });
+
+test('a header click orders the rows, twice reverses, three times gives the file back', async () => {
+  const { payload, nav } = await openData(VALUES_PARQUET);
+  const revenue = payload.columns.indexOf('revenue');
+  assert.equal(payload.rows[0][revenue], '0');
+
+  const asc = await nav({ sort: 'revenue' });
+  assert.deepEqual(asc.sort, { column: 'revenue', desc: false });
+  assert.equal(asc.rows[0][revenue], '0');
+
+  const desc = await nav({ sort: 'revenue' });
+  assert.deepEqual(desc.sort, { column: 'revenue', desc: true });
+  assert.equal(desc.rows[0][revenue], '199');
+  assert.equal(desc.rowStart, 0, 'a new order starts at the top');
+
+  const off = await nav({ sort: 'revenue' });
+  assert.equal(off.sort, undefined, 'the third click is the file back');
+  assert.equal(off.rows[0][revenue], '0');
+});
+
+test('a sort past the cap says on the panel that it saw a window', async () => {
+  setSetting(vscode, 'sort.maxRows', 50);
+  try {
+    const { nav } = await openData(VALUES_PARQUET);
+    const sorted = await nav({ sort: 'revenue' });
+    assert.ok(
+      sorted.notes.some((note) => /Sorted over the first 50 of 200 rows/.test(note)),
+      'the panel showed a window as if it were the file'
+    );
+  } finally {
+    setSetting(vscode, 'sort.maxRows', 100_000);
+  }
+});

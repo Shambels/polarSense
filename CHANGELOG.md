@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Click a column header to sort by it.** Once for ascending, again for
+  descending, a third time for the file's own order back — which is a real answer
+  here rather than a null state, because the order the rows are written in is a
+  fact about the file. The arrow on the header says which way, empty cells go last
+  in both directions, and values sort as what they are: `199` above `99`, a date
+  as a date, a struct by its printed form. A CSV has no dtypes at all, so there a
+  pair of values that both parse as numbers is compared as numbers — otherwise
+  `"10"` above `"9"` reads as a broken sort rather than as a missing dtype.
+
+  This is the first request in the panel that reads past the page it draws, and
+  it has to: row 0 of a sorted file is not a row you can seek to, so the rows have
+  to be in hand before the first one is known. It reads up to the new
+  `polarsense.sort.maxRows` (100,000) rows of the columns on screen plus the one
+  being sorted by — still not the whole file, and still not the columns that are
+  not drawn — orders them, and pages that. When the file holds more rows than the
+  cap, the panel says *sorted over the first 100,000 of 4,000,000 rows — the top
+  of that window, not of the file*, because a sorted page that quietly describes a
+  tenth of a file is exactly the confident wrong answer this extension exists not
+  to give. On a CSV the window is the prefix that was already read, and it says
+  that instead.
+
+  What it still does not do: filter rows, group, or edit. Sorting is one column
+  and one comparison; a filter is a query, and the query engine is polars, in
+  your code.
+
+### Internal
+
+- `RowRequest.sort` carries the column, the direction and the cap, and `RowPage`
+  answers with `sortedRows` — how many rows the order was computed over. Both
+  readers implement it against the values they already decode, so the comparison
+  sees raw numbers and dates rather than the strings the page is formatted into.
+
 ## 1.11.0
 
 ### Added

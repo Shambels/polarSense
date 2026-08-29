@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as path from 'node:path';
-import { readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, rmSync, mkdtempSync } from 'node:fs';
 import * as os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import {
@@ -767,4 +767,73 @@ test('a file name says which reader opens it, or says nothing', () => {
   assert.equal(kindForFile('/src/load.py'), undefined);
   assert.equal(kindForFile('/data/delta_sales'), undefined);
   assert.equal(kindForFile('/data/README'), undefined);
+});
+
+test('rows: a page can be ordered by one column, ascending or descending', async () => {
+  const by = (desc, extra = {}) => readParquetRows(localStorage, PAGES, {
+    rowStart: 0, limit: 3, columns: ['revenue'],
+    sort: { column: 'revenue', desc, maxRows: 1000 }, ...extra
+  });
+
+  const asc = await by(false);
+  assert.deepEqual(asc.rows, [['0'], ['1'], ['2']]);
+  assert.equal(asc.sortedRows, 200, 'the whole file was ordered');
+
+  // Values compare as what they are: ordered as text, "99" would be the top.
+  const desc = await by(true);
+  assert.deepEqual(desc.rows, [['199'], ['198'], ['197']]);
+
+  // Paging walks the order rather than the file.
+  const second = await readParquetRows(localStorage, PAGES, {
+    rowStart: 3, limit: 2, columns: ['revenue'],
+    sort: { column: 'revenue', desc: true, maxRows: 1000 }
+  });
+  assert.deepEqual(second.rows, [['196'], ['195']]);
+  assert.equal(second.more, true);
+
+  // The column being sorted by is read whether or not it is being drawn.
+  const hidden = await readParquetRows(localStorage, PAGES, {
+    rowStart: 0, limit: 1, columns: ['region'],
+    sort: { column: 'revenue', desc: true, maxRows: 1000 }
+  });
+  assert.deepEqual(hidden.columns, ['region']);
+  assert.deepEqual(hidden.rows, [['US']]);
+});
+
+test('rows: a sort stops at its cap and says how much of the file it saw', async () => {
+  const page = await readParquetRows(localStorage, PAGES, {
+    rowStart: 0, limit: 2, columns: ['revenue'],
+    sort: { column: 'revenue', desc: true, maxRows: 50 }
+  });
+  assert.equal(page.sortedRows, 50);
+  assert.equal(page.rowCount, 200, 'the file is still 200 rows');
+  // The top of the window, which is not the top of the file — and the number
+  // above is what lets the panel say so.
+  assert.deepEqual(page.rows, [['49'], ['48']]);
+});
+
+test('rows: nulls sort last whichever way the column is ordered', async () => {
+  const notes = (desc) => readParquetRows(localStorage, path.join(DATA, 'sales.parquet'), {
+    rowStart: 0, limit: 3, columns: ['notes'],
+    sort: { column: 'notes', desc, maxRows: 1000 }
+  });
+  assert.deepEqual((await notes(false)).rows, [['a'], ['c'], [null]]);
+  assert.deepEqual((await notes(true)).rows, [['c'], ['a'], [null]]);
+});
+
+test('rows: a CSV sorts the prefix it can reach, and its numbers are numbers', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'polarsense-sort-'));
+  const file = path.join(dir, 'n.csv');
+  writeFileSync(file, 'label,n\na,9\nb,10\nc,100\n');
+  try {
+    const page = await readCsvRows(file, {}, { sniffBytes: 262_144 }, {
+      rowStart: 0, limit: 5, columns: ['n'], sort: { column: 'n', desc: false, maxRows: 1000 }
+    });
+    // A CSV has no dtypes, so this is the one place the values themselves have
+    // to say they are numbers.
+    assert.deepEqual(page.rows, [['9'], ['10'], ['100']]);
+    assert.equal(page.sortedRows, 3);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

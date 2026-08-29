@@ -48,6 +48,11 @@ export function shell(cspSource: string): string {
     text-transform:none;letter-spacing:0;font-weight:400;opacity:.7;
   }
   thead th.num{text-align:right}
+  /* A header is a control now: clicking it orders the rows by that column. */
+  thead th.sortable{cursor:pointer;user-select:none}
+  thead th.sortable:hover{color:var(--vscode-textLink-foreground)}
+  thead th.sortable:focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:-2px}
+  thead th .arrow{margin-left:.3rem;opacity:.9}
   tbody td{font-family:var(--vscode-editor-font-family)}
   .index{
     position:sticky;left:0;z-index:1;
@@ -176,8 +181,20 @@ function draw() {
   const header = document.createElement('tr');
   header.appendChild(text('th', '#', 'index'));
   state.columns.forEach((name, i) => {
-    const cell = text('th', name, numeric[i] ? 'num' : undefined);
+    const cell = text('th', name, 'sortable' + (numeric[i] ? ' num' : ''));
+    const sorted = state.sort && state.sort.column === name;
+    if (sorted) cell.appendChild(text('span', state.sort.desc ? '▼' : '▲', 'arrow'));
     if (state.dtypes[i]) cell.appendChild(text('span', state.dtypes[i], 'dtype ' + kinds[i]));
+    // Ascending, descending, then back to the file's own order.
+    cell.title = sorted && state.sort.desc
+      ? 'Back to the order the file is written in'
+      : 'Sort by ' + name + (sorted ? ', descending' : '');
+    cell.tabIndex = 0;
+    const sort = () => send({ sort: name });
+    cell.addEventListener('click', sort);
+    cell.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); sort(); }
+    });
     header.appendChild(cell);
   });
   $('head').replaceChildren(header);
