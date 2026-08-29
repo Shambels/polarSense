@@ -166,9 +166,14 @@ function draw() {
   // the sentence and the thing that changes it are the same box.
   if (state.sortNote) {
     const note = text('p', state.sortNote.text, 'note');
-    const button = text('button', state.sortNote.button);
-    button.addEventListener('click', () => send({ type: 'sortAll' }));
-    note.appendChild(button);
+    // No button where there is nothing that could be pressed: ordering that file
+    // is past what the panel can hold, and a button that cannot deliver is worse
+    // than the sentence saying so.
+    if (state.sortNote.button) {
+      const button = text('button', state.sortNote.button);
+      button.addEventListener('click', () => send({ type: 'sortAll' }));
+      note.appendChild(button);
+    }
     $('notes').appendChild(note);
   }
 

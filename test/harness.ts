@@ -35,7 +35,7 @@ export { evaluateFrame, structFields } from '../src/core/schemaEval.js';
 export { exprNames } from '../src/core/exprNames.js';
 export { nearest } from '../src/core/nearest.js';
 export { looksLikeFrame, lastStatementOffset } from '../src/preview/cells.js';
-export { dtypeClass } from '../src/preview/facts.js';
+export { dtypeClass, sortNote } from '../src/preview/facts.js';
 
 import { initParser } from '../src/core/parser.js';
 import { parse, repairAtCursor } from '../src/core/parser.js';

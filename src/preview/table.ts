@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'node:path';
 import type { PolarSenseApi, ResolvedFrame, RowsFailure } from '../api.js';
 import { readSettings } from '../config.js';
-import { dtypeClass, fmt, frameFacts, frameNotes } from './facts.js';
+import { dtypeClass, fmt, frameFacts, frameNotes, sortNote } from './facts.js';
 import { cursorTarget, NO_PYTHON, type FrameTarget } from './target.js';
 import { shell } from './table.page.js';
 
@@ -31,6 +31,22 @@ const PAGE = 100;
 
 /** Columns drawn at once. A 200-column frame is navigated, not rendered. */
 const COLUMN_WINDOW = 40;
+
+/**
+ * The most cells a sort may hold in memory at once, whatever the row cap says.
+ *
+ * Sorting is the one read that materialises rows rather than streaming them, and
+ * what it costs is rows × *columns*, not rows: measured against hyparquet, a
+ * decoded cell costs around 65 bytes once it is a JavaScript value, so four
+ * million of them is roughly a quarter of a gigabyte and eight million rows of a
+ * forty-column window would be some twenty — which is not a slow sort, it is an
+ * extension host that stops existing, taking every other extension's error
+ * message down with it.
+ *
+ * So the row cap is a preference and this is a ceiling. It also means the two
+ * knobs point the same way: fewer columns on screen, more rows sortable.
+ */
+const SORT_CELL_BUDGET = 4_000_000;
 
 interface View {
   frame: ResolvedFrame;
@@ -143,9 +159,14 @@ export class TableSession {
     // The cap is read here rather than held, so changing it applies to the next
     // click instead of to the next window.
     const cap = readSettings().sortMaxRows;
+    // The columns the sort will decode: the ones on screen, plus the one being
+    // ordered by when it is not among them.
+    const width = Math.max(1, drawn.length + (current.sort
+      && !drawn.includes(current.sort.column) ? 1 : 0));
+    const ceiling = Math.max(PAGE, Math.floor(SORT_CELL_BUDGET / width));
     const sort = current.sort && {
       ...current.sort,
-      maxRows: current.sortAll ? Number.MAX_SAFE_INTEGER : cap
+      maxRows: Math.min(current.sortAll ? Number.MAX_SAFE_INTEGER : cap, ceiling)
     };
     const ask = (columns: string[]) =>
       this.api.readRows(current.frame, { columns, rowStart: current.rowStart, limit: PAGE, sort });
@@ -168,7 +189,7 @@ export class TableSession {
       }
     }
 
-    this.last = payload(current, this.panels, cap, result.page, result.error);
+    this.last = payload(current, this.panels, cap, width, result.page, result.error);
     void this.webview.postMessage(this.last);
   }
 }
@@ -252,7 +273,7 @@ interface Payload {
    * changes it. Separate from `notes` because it is the one of them you can
    * press: everything else on this panel is a statement.
    */
-  sortNote?: { text: string; button: string };
+  sortNote?: { text: string; button?: string };
   /** Show the details and graph buttons: true where this grid is the whole file's editor. */
   panels: boolean;
   error?: string;
@@ -262,6 +283,8 @@ function payload(
   current: View,
   panels: boolean,
   cap: number,
+  /** Columns the sort has to decode per row — what turns a row cap into a cell cost. */
+  width: number,
   page: { columns: string[]; dtypes: string[]; rows: (string | null)[][]; rowStart: number;
           rowCount?: number; more: boolean; prefixBytes?: number; sortedRows?: number }
           | undefined,
@@ -277,31 +300,17 @@ function payload(
   }
   // Sorting reads a window, and the top of a window is not the top of a file.
   // Saying which is which is the whole difference between a sort and a lie.
-  let sortNote: Payload['sortNote'];
-  if (page?.sortedRows !== undefined && current.sort) {
-    const total = page.rowCount;
-    if (total !== undefined && page.sortedRows < total) {
-      sortNote = {
-        text: `Sorted over the first ${fmt(page.sortedRows)} of ${fmt(total)} rows — ` +
-          'the top of that window, not of the file. Ordering all of them reads every ' +
-          'row of the columns on screen.',
-        button: `Sort all ${fmt(total)} rows`
-      };
-    } else if (total !== undefined && current.sortAll && total > cap) {
-      // The cap is off for this panel, and the way back to it has to be as
-      // visible as the way out was.
-      sortNote = {
-        text: `Sorted over all ${fmt(total)} rows: every one of them was read to ` +
-          'order this page.',
-        button: `Back to the first ${fmt(cap)}`
-      };
-    } else if (page.prefixBytes !== undefined) {
-      notes.push(
-        `Sorted over the ${fmt(page.sortedRows)} rows inside that prefix, which is ` +
-        'all of the file this reader can reach.'
-      );
-    }
-  }
+  const note = page?.sortedRows !== undefined && current.sort
+    ? sortNote({
+        sortedRows: page.sortedRows,
+        total: page.rowCount,
+        width,
+        ceiling: Math.max(PAGE, Math.floor(SORT_CELL_BUDGET / width)),
+        cap,
+        all: current.sortAll,
+        prefix: page.prefixBytes !== undefined
+      })
+    : undefined;
 
   const hidden = current.frame.columns.length - current.columns.length;
   if (hidden > 0) {
@@ -331,7 +340,7 @@ function payload(
     filter: current.filter,
     hidden: Math.max(0, hidden),
     sort: current.sort,
-    sortNote,
+    sortNote: note,
     panels,
     error: error && explain(error, current.frame.kind)
   };

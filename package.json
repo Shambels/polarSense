@@ -182,7 +182,7 @@
         "polarsense.sort.maxRows": {
           "type": "number",
           "default": 100000,
-          "description": "How many rows to read when a column header is clicked to sort the data panel. Sorting is the one thing a page cannot answer on its own — row 0 of a sorted file is not a row you can seek to — so it reads this many rows of the columns on screen, orders them and pages that. A file with more rows than this is sorted over its first sort.maxRows rows, and the panel says so above the grid rather than presenting the top of a window as the top of the file."
+          "description": "How many rows to read when a column header is clicked to sort the data panel. Sorting is the one thing a page cannot answer on its own — row 0 of a sorted file is not a row you can seek to — so it reads this many rows of the columns on screen, orders them and pages that. A file with more rows than this is sorted over its first sort.maxRows rows, and the panel says so above the grid rather than presenting the top of a window as the top of the file. Whatever this is set to, a sort never holds more than about four million cells — rows times the columns on screen — at once, because a decoded cell costs roughly 65 bytes and a forty-column window over a few million rows is not a slow sort but an extension host that runs out of memory. Fewer columns on screen therefore means more rows it can order."
         },
         "polarsense.graph.maxRows": {
           "type": "number",

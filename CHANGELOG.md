@@ -33,6 +33,18 @@
   governs the next file you open, and the button is only ever offered where the
   cap actually changed the answer.
 
+  The button is offered only where it could be honoured, which is the part worth
+  knowing. What a sort costs is rows × *columns on screen*, not rows: measured
+  against hyparquet, a decoded cell is around 65 bytes once it is a JavaScript
+  value, so four million cells is roughly a quarter of a gigabyte, and eight
+  million rows of a forty-column window is some twenty gigabytes — which is not a
+  slow sort but an extension host that stops existing, taking every other
+  extension's error message down with it. So the row cap is a preference and four
+  million cells is a ceiling: a sort never holds more than that, the note says
+  when ordering the whole file would cost more, and it offers no button there.
+  Fewer columns on screen means more rows it can order, which is the one thing
+  under the reader's control and so the one thing the note names.
+
   What it still does not do: filter rows, group, or edit. Sorting is one column
   and one comparison; a filter is a query, and the query engine is polars, in
   your code.

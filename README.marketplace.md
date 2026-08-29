@@ -122,7 +122,10 @@ and only the columns being drawn are fetched. Click a column header to sort by
 it — ascending, descending, then the file's own order back. Sorting is the one
 thing that reads past the page: up to `polarsense.sort.maxRows` rows, and the
 panel says when that was a window rather than the file — with a button in that
-note to order the whole file, and one to put the cap back.
+note to order the whole file, and one to put the cap back. A sort holds rows ×
+columns-on-screen in memory, so the button appears only where the whole file
+would fit; past that the note says so rather than offering something that cannot
+be done.
 
 **PolarSense: Show graph (reads rows)** draws the shape of a column instead of
 listing it — a histogram, a bar of counts, a line over a date, a scatter — picked

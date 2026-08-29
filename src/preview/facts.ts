@@ -45,6 +45,79 @@ export function frameNotes(frame: ResolvedFrame): string[] {
   ].filter((note): note is string => !!note);
 }
 
+/** What a sorted page knows about how much of the file its order covers. */
+export interface SortWindow {
+  /** Rows the order was actually computed over. */
+  sortedRows: number;
+  /** Rows in the file, when the format records one. CSV records none. */
+  total?: number;
+  /** Columns the sort had to decode per row — rows × this is what it held. */
+  width: number;
+  /** The most rows it could hold at that width, whatever the cap says. */
+  ceiling: number;
+  /** The row cap from settings, which is the way back from having lifted it. */
+  cap: number;
+  /** Whether the cap is currently lifted for this panel. */
+  all: boolean;
+  /** The rows came out of a bounded prefix rather than the whole file. */
+  prefix: boolean;
+}
+
+/**
+ * The sentence about a sorted page, and the button that changes it.
+ *
+ * Sorting is the one thing here that reads past the page it draws, so it is the
+ * one place a panel can quietly describe a tenth of a file as if it were the
+ * file. This decides which of the three true things to say — you are seeing a
+ * window, you are seeing the whole file, or the window is all this reader can
+ * reach — and offers the button only where it could actually be honoured.
+ *
+ * Pure, because which of those is true is arithmetic and the wording is the
+ * feature: both are worth testing without a webview.
+ */
+export function sortNote(w: SortWindow): { text: string; button?: string } | undefined {
+  const seen = `Sorted over the first ${fmt(w.sortedRows)} of ${fmt(w.total ?? 0)} rows — ` +
+    'the top of that window, not of the file.';
+
+  if (w.total === undefined) {
+    // A CSV: the prefix is not a cap that can be lifted, it is the end of what
+    // this reader can reach, so there is nothing to offer.
+    return w.prefix
+      ? {
+          text: `Sorted over the ${fmt(w.sortedRows)} rows inside that prefix, which is ` +
+            'all of the file this reader can reach.'
+        }
+      : undefined;
+  }
+
+  if (w.sortedRows < w.total) {
+    // Ordering the file means holding every drawn cell of it at once. Past a few
+    // million of those the read does not get slow, it dies — so where that is
+    // the answer, say it, and say the one thing that changes it.
+    return w.ceiling >= w.total
+      ? {
+          text: `${seen} Ordering all of them reads every row of the columns on screen.`,
+          button: `Sort all ${fmt(w.total)} rows`
+        }
+      : {
+          text: `${seen} All ${fmt(w.total)} would mean holding ` +
+            `${fmt(w.total * w.width)} cells at once, which is past what this panel ` +
+            'can hold — stepping the column window narrower is what raises the rows ' +
+            'it can order.'
+        };
+  }
+
+  // The whole file was ordered. Worth saying only where the cap would otherwise
+  // have stopped it, because that is the state you can leave.
+  return w.all && w.total > w.cap
+    ? {
+        text: `Sorted over all ${fmt(w.total)} rows: every one of them was read to ` +
+          'order this page.',
+        button: `Back to the first ${fmt(w.cap)}`
+      }
+    : undefined;
+}
+
 /**
  * A dtype reduced to the handful of families worth colouring differently.
  *

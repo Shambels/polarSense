@@ -9,7 +9,7 @@ import {
   makeVscode, installVscodeStub, makeDocument, makeNotebook, noCancel, setSetting,
   unregisterSetting
 } from '../vscode-stub.mjs';
-import { looksLikeFrame, lastStatementOffset, dtypeClass } from '../harness.mjs';
+import { looksLikeFrame, lastStatementOffset, dtypeClass, sortNote } from '../harness.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const DATA = path.join(ROOT, 'test', 'fixtures', 'data');
@@ -1565,4 +1565,45 @@ test('a file smaller than the cap gets no note and no button to press', async ()
   const { nav } = await openData(VALUES_PARQUET);
   const sorted = await nav({ sort: 'revenue' });
   assert.equal(sorted.sortNote, undefined, 'nothing was capped, so there is nothing to say');
+});
+
+test('the sorted-window note offers the file only when the file would fit', () => {
+  // 8,000,000 rows and forty columns on screen: 320 million cells, which is not
+  // a slow sort but a dead extension host. No button, and the note says what
+  // changes the answer.
+  const huge = sortNote({
+    sortedRows: 100_000, total: 8_000_000, width: 40, ceiling: 100_000,
+    cap: 100_000, all: false, prefix: false
+  });
+  assert.equal(huge.button, undefined);
+  assert.match(huge.text, /320,000,000 cells/);
+  assert.match(huge.text, /column window narrower/);
+
+  // A smaller file, narrow enough to fit: three million cells, so it is offered.
+  const fits = sortNote({
+    sortedRows: 100_000, total: 3_000_000, width: 1, ceiling: 4_000_000,
+    cap: 100_000, all: false, prefix: false
+  });
+  assert.equal(fits.button, 'Sort all 3,000,000 rows');
+
+  // Ordered end to end, with the cap lifted: the way back is the button.
+  const all = sortNote({
+    sortedRows: 3_000_000, total: 3_000_000, width: 1, ceiling: 4_000_000,
+    cap: 100_000, all: true, prefix: false
+  });
+  assert.equal(all.button, 'Back to the first 100,000');
+
+  // A file smaller than the cap was never windowed: nothing to say.
+  assert.equal(sortNote({
+    sortedRows: 200, total: 200, width: 4, ceiling: 1_000_000,
+    cap: 100_000, all: false, prefix: false
+  }), undefined);
+
+  // A CSV prefix is not a cap, it is the end of what this reader can reach.
+  const csv = sortNote({
+    sortedRows: 3, total: undefined, width: 4, ceiling: 1_000_000,
+    cap: 100_000, all: false, prefix: true
+  });
+  assert.match(csv.text, /all of the file this reader can reach/);
+  assert.equal(csv.button, undefined);
 });

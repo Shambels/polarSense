@@ -209,7 +209,18 @@ that, the panel says *sorted over the first 100,000 of 4,000,000 rows* rather th
 letting the top of a window read as the top of the file. That note carries a **Sort
 all 4,000,000 rows** button which lifts the cap for that panel, and turns into
 **Back to the first 100,000** once it has — the setting is untouched, so the cap
-is still the default for the next file. Values sort as what they
+is still the default for the next file.
+
+The button is offered only where it could be honoured. What a sort costs is rows
+× *columns on screen*, not rows: a decoded cell is roughly 65 bytes as a
+JavaScript value, so four million cells is about a quarter of a gigabyte and an
+eight-million-row file with a forty-column window would be some twenty — which is
+not a slow sort but an extension host that stops existing. So a sort never holds
+more than about four million cells whatever `sort.maxRows` says, and where
+ordering the whole file would cost more than that the note says so and offers
+nothing to press. Narrowing the column window is what raises the rows it can
+order; ordering a file that large end to end wants a database, and duckdb is one
+import away. Values sort as what they
 are, so `199` lands above `99`, and empty cells go last in both directions.
 
 The page on screen is the read. Only the rows of that page and only the columns
