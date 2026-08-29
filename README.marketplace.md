@@ -121,7 +121,8 @@ time, header and row index pinned. The page on screen is the read: only those ro
 and only the columns being drawn are fetched. Click a column header to sort by
 it — ascending, descending, then the file's own order back. Sorting is the one
 thing that reads past the page: up to `polarsense.sort.maxRows` rows, and the
-panel says when that was a window rather than the file.
+panel says when that was a window rather than the file — with a button in that
+note to order the whole file, and one to put the cap back.
 
 **PolarSense: Show graph (reads rows)** draws the shape of a column instead of
 listing it — a histogram, a bar of counts, a line over a date, a scatter — picked

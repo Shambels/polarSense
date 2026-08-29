@@ -43,6 +43,13 @@ interface View {
   filter: string;
   /** The column the rows are ordered by, when a header has been clicked. */
   sort?: { column: string; desc: boolean };
+  /**
+   * Sort the whole file rather than the first `sort.maxRows` of it, because the
+   * note said the cap had been reached and someone pressed the button under it.
+   * A panel decision, not a setting: the cap is the default for every file, and
+   * this is one file where you asked for all of it.
+   */
+  sortAll: boolean;
 }
 
 /** What the webview can ask for: a page, a column window, a filter, or a redraw. */
@@ -80,7 +87,8 @@ export class TableSession {
       resolved: false,
       rowStart: 0,
       columnStart: 0,
-      filter: ''
+      filter: '',
+      sortAll: false
     };
   }
 
@@ -91,6 +99,13 @@ export class TableSession {
       if (this.last) { void this.webview.postMessage(this.last); return; }
       await this.update();
       return;
+    }
+
+    if (message?.type === 'sortAll') {
+      this.view.sortAll = !this.view.sortAll;
+      // A different set of rows was ordered, so the page numbers mean something
+      // else than they did a moment ago.
+      this.view.rowStart = 0;
     }
 
     if (typeof message?.sort === 'string') {
@@ -127,7 +142,11 @@ export class TableSession {
     const drawn = matching.slice(current.columnStart, current.columnStart + COLUMN_WINDOW);
     // The cap is read here rather than held, so changing it applies to the next
     // click instead of to the next window.
-    const sort = current.sort && { ...current.sort, maxRows: readSettings().sortMaxRows };
+    const cap = readSettings().sortMaxRows;
+    const sort = current.sort && {
+      ...current.sort,
+      maxRows: current.sortAll ? Number.MAX_SAFE_INTEGER : cap
+    };
     const ask = (columns: string[]) =>
       this.api.readRows(current.frame, { columns, rowStart: current.rowStart, limit: PAGE, sort });
 
@@ -149,7 +168,7 @@ export class TableSession {
       }
     }
 
-    this.last = payload(current, this.panels, result.page, result.error);
+    this.last = payload(current, this.panels, cap, result.page, result.error);
     void this.webview.postMessage(this.last);
   }
 }
@@ -228,6 +247,12 @@ interface Payload {
   hidden: number;
   /** Which column the rows are ordered by, for the arrow on its header. */
   sort?: { column: string; desc: boolean };
+  /**
+   * The note about how much of the file the order covers, and the button that
+   * changes it. Separate from `notes` because it is the one of them you can
+   * press: everything else on this panel is a statement.
+   */
+  sortNote?: { text: string; button: string };
   /** Show the details and graph buttons: true where this grid is the whole file's editor. */
   panels: boolean;
   error?: string;
@@ -236,6 +261,7 @@ interface Payload {
 function payload(
   current: View,
   panels: boolean,
+  cap: number,
   page: { columns: string[]; dtypes: string[]; rows: (string | null)[][]; rowStart: number;
           rowCount?: number; more: boolean; prefixBytes?: number; sortedRows?: number }
           | undefined,
@@ -251,13 +277,24 @@ function payload(
   }
   // Sorting reads a window, and the top of a window is not the top of a file.
   // Saying which is which is the whole difference between a sort and a lie.
+  let sortNote: Payload['sortNote'];
   if (page?.sortedRows !== undefined && current.sort) {
     const total = page.rowCount;
     if (total !== undefined && page.sortedRows < total) {
-      notes.push(
-        `Sorted over the first ${fmt(page.sortedRows)} of ${fmt(total)} rows — ` +
-        'the top of that window, not of the file. `polarsense.sort.maxRows` is the cap.'
-      );
+      sortNote = {
+        text: `Sorted over the first ${fmt(page.sortedRows)} of ${fmt(total)} rows — ` +
+          'the top of that window, not of the file. Ordering all of them reads every ' +
+          'row of the columns on screen.',
+        button: `Sort all ${fmt(total)} rows`
+      };
+    } else if (total !== undefined && current.sortAll && total > cap) {
+      // The cap is off for this panel, and the way back to it has to be as
+      // visible as the way out was.
+      sortNote = {
+        text: `Sorted over all ${fmt(total)} rows: every one of them was read to ` +
+          'order this page.',
+        button: `Back to the first ${fmt(cap)}`
+      };
     } else if (page.prefixBytes !== undefined) {
       notes.push(
         `Sorted over the ${fmt(page.sortedRows)} rows inside that prefix, which is ` +
@@ -294,6 +331,7 @@ function payload(
     filter: current.filter,
     hidden: Math.max(0, hidden),
     sort: current.sort,
+    sortNote,
     panels,
     error: error && explain(error, current.frame.kind)
   };

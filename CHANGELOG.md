@@ -25,6 +25,14 @@
   to give. On a CSV the window is the prefix that was already read, and it says
   that instead.
 
+  That note is the one thing on the panel you can press. It carries a **Sort all
+  4,000,000 rows** button, which orders the whole file for this panel and swaps
+  itself for **Back to the first 100,000** — so the honest limit is the default
+  and lifting it is a decision you make in front of the sentence explaining what
+  it costs. It is a panel mode rather than a setting write: `sort.maxRows` still
+  governs the next file you open, and the button is only ever offered where the
+  cap actually changed the answer.
+
   What it still does not do: filter rows, group, or edit. Sorting is one column
   and one comparison; a filter is a query, and the query engine is polars, in
   your code.

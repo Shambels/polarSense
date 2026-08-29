@@ -90,6 +90,14 @@ export function shell(cspSource: string): string {
   .edge.down{bottom:.6rem;left:50%;margin-left:-.85rem}
   .edge.left{left:.6rem;top:50%;margin-top:-.85rem}
   .edge.right{right:.6rem;top:50%;margin-top:-.85rem}
+  /* The one note you can press. It sits inside the note it belongs to, because
+     the sentence is what says what the button will do. */
+  .note button{
+    display:inline-block;margin-left:.5rem;padding:.2rem .5rem;
+    border:1px solid var(--vscode-widget-border,var(--vscode-panel-border));
+    border-radius:4px;font-size:.78rem;
+    background:var(--vscode-editorWidget-background);
+  }
   .null{opacity:.4;font-style:italic}
   .empty{padding:1.5rem 1.05rem;color:var(--vscode-descriptionForeground)}
 </style>
@@ -154,6 +162,15 @@ function draw() {
 
   const notes = state.error ? [state.error, ...state.notes] : state.notes;
   $('notes').replaceChildren(...notes.map((note) => text('p', note, 'note')));
+  // The sort's note carries the button that widens or re-caps what it read, so
+  // the sentence and the thing that changes it are the same box.
+  if (state.sortNote) {
+    const note = text('p', state.sortNote.text, 'note');
+    const button = text('button', state.sortNote.button);
+    button.addEventListener('click', () => send({ type: 'sortAll' }));
+    note.appendChild(button);
+    $('notes').appendChild(note);
+  }
 
   // The range you are looking at, and nothing else: how many rows and columns
   // the file has is a fact about the file, and the header already said it.

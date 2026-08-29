@@ -1527,11 +1527,42 @@ test('a sort past the cap says on the panel that it saw a window', async () => {
   try {
     const { nav } = await openData(VALUES_PARQUET);
     const sorted = await nav({ sort: 'revenue' });
-    assert.ok(
-      sorted.notes.some((note) => /Sorted over the first 50 of 200 rows/.test(note)),
+    assert.match(
+      sorted.sortNote.text, /Sorted over the first 50 of 200 rows/,
       'the panel showed a window as if it were the file'
     );
   } finally {
     setSetting(vscode, 'sort.maxRows', 100_000);
   }
+});
+
+test('the button under that note lifts the cap, and puts it back', async () => {
+  setSetting(vscode, 'sort.maxRows', 50);
+  try {
+    const { nav } = await openData(VALUES_PARQUET);
+    const capped = await nav({ sort: 'revenue' });
+    const revenue = capped.columns.indexOf('revenue');
+    // Descending over the first fifty rows: the biggest revenue in the window.
+    const top = await nav({ sort: 'revenue' });
+    assert.equal(top.rows[0][revenue], '49');
+    assert.equal(top.sortNote.button, 'Sort all 200 rows');
+
+    const all = await nav({ type: 'sortAll' });
+    assert.equal(all.rows[0][revenue], '199', 'the whole file was ordered');
+    assert.equal(all.rowStart, 0);
+    assert.equal(all.sortNote.button, 'Back to the first 50');
+    assert.match(all.sortNote.text, /all 200 rows/);
+
+    const back = await nav({ type: 'sortAll' });
+    assert.equal(back.rows[0][revenue], '49', 'the cap is back');
+    assert.equal(back.sortNote.button, 'Sort all 200 rows');
+  } finally {
+    setSetting(vscode, 'sort.maxRows', 100_000);
+  }
+});
+
+test('a file smaller than the cap gets no note and no button to press', async () => {
+  const { nav } = await openData(VALUES_PARQUET);
+  const sorted = await nav({ sort: 'revenue' });
+  assert.equal(sorted.sortNote, undefined, 'nothing was capped, so there is nothing to say');
 });

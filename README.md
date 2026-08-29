@@ -206,7 +206,10 @@ to, so the rows have to be in hand before the first one is known. It reads up to
 `polarsense.sort.maxRows` (100,000) rows of the columns on screen plus the one
 being sorted by, orders them and pages that — and when the file has more rows than
 that, the panel says *sorted over the first 100,000 of 4,000,000 rows* rather than
-letting the top of a window read as the top of the file. Values sort as what they
+letting the top of a window read as the top of the file. That note carries a **Sort
+all 4,000,000 rows** button which lifts the cap for that panel, and turns into
+**Back to the first 100,000** once it has — the setting is untouched, so the cap
+is still the default for the next file. Values sort as what they
 are, so `199` lands above `99`, and empty cells go last in both directions.
 
 The page on screen is the read. Only the rows of that page and only the columns
