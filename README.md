@@ -199,6 +199,16 @@ values.parquet · df
  1   APAC    ord-0001   1        null
 ```
 
+**Click a column header to sort by it** — once for ascending, again for
+descending, a third time for the file's own order back. That is the one thing a
+page cannot answer on its own: row 0 of a sorted file is not a row you can seek
+to, so the rows have to be in hand before the first one is known. It reads up to
+`polarsense.sort.maxRows` (100,000) rows of the columns on screen plus the one
+being sorted by, orders them and pages that — and when the file has more rows than
+that, the panel says *sorted over the first 100,000 of 4,000,000 rows* rather than
+letting the top of a window read as the top of the file. Values sort as what they
+are, so `199` lands above `99`, and empty cells go last in both directions.
+
 The page on screen is the read. Only the rows of that page and only the columns
 being drawn are fetched — parquet keeps columns apart, so forty of five thousand
 costs forty — and nothing is cached afterwards. A wide frame is navigated rather
@@ -446,6 +456,7 @@ so a frame defined in cell 1 completes in cell 8.
 | `polarsense.values.enable` | `false` | Offer real values from your data. **Reads rows, not just metadata** |
 | `polarsense.values.maxRows` | `10000` | Rows of one column to read when offering values |
 | `polarsense.values.maxDistinct` | `50` | Above this many distinct values, offer none |
+| `polarsense.sort.maxRows` | `100000` | Rows to read when a column header is clicked to sort. A bigger file is sorted over its first `sort.maxRows` rows, and the panel says so |
 | `polarsense.graph.maxRows` | `100000` | Rows to read when drawing a graph. Only the columns drawn are read, and only the bins cross to the panel |
 | `polarsense.graph.useKernel` | `true` | In a notebook, read a computed frame's real values from the running kernel so a graph shows the transform's result. Read-only; falls back to the source file when off or no kernel |
 | `polarsense.diagnostics.enable` | `true` | Warn about column names that don't exist |
@@ -491,11 +502,11 @@ reshapes are beyond what static reading can predict.
   positions are never typo-checked for the same reason.
 - **pyarrow is not supported.** Its `read_table` means parquet where pandas' means
   CSV, and telling those apart needs to know which module the call came from.
-- **The parquet viewer views.** It pages, it steps columns and it filters the
-  column *list* — it does not sort, filter rows, or edit. Sorting a page would
-  mean sorting a file, which is a scan of every row group and a different product;
-  the panel would rather show you the file's own order than a page ordered by a
-  tenth of it.
+- **The data panel views.** It pages, steps columns, filters the column *list*
+  and sorts by one column — it does not filter rows, group, or edit. Sorting is
+  the one operation that reads past the page it draws, which is why it is capped
+  by `sort.maxRows` and says when the cap was reached; a filter or a group_by
+  would be a query engine, and the query engine is polars, in your code.
 - **Some selectors are still opaque.** `cs.by_dtype(pl.Int64)`, a selector method
   we do not model, and a dtype selector over a source whose dtypes were never read
   — a CSV with `inferDtypes` off — all widen rather than narrow, and are marked

@@ -33,6 +33,13 @@ export interface RowPage {
    * and a panel must not call a prefix the file.
    */
   prefixBytes?: number;
+  /**
+   * How many rows the ordering was computed over, when the page was sorted.
+   * Below the file's own row count it means the sort saw a window rather than
+   * the file, and the top of that window is not the top of the file — which is
+   * the one thing a sorted page must not let anyone assume.
+   */
+  sortedRows?: number;
 }
 
 export interface RowRequest {
@@ -41,6 +48,15 @@ export interface RowRequest {
   rowStart: number;
   /** How many rows to return. The page is the unit of both reading and drawing. */
   limit: number;
+  /**
+   * Order the rows by one column before paging them.
+   *
+   * This is the one request that breaks the page-is-the-read rule, and it has to:
+   * row 0 of a sorted file is not a row you can seek to, so the rows have to be
+   * in hand before the first one is known. `maxRows` is the ceiling on how many
+   * are read to find them, and `RowPage.sortedRows` says how many that was.
+   */
+  sort?: { column: string; desc: boolean; maxRows: number };
 }
 
 /** Columns drawn when the caller does not say — a wide file is not a wall of text. */
@@ -76,6 +92,39 @@ export async function readParquetRows(
   };
   if (!wanted.length || rowEnd <= rowStart) return { ...page, rows: [] };
 
+  const format = (object: Record<string, unknown>) =>
+    wanted.map((name, i) => formatValue(object[name], dtypes[i], { maxLength: 60 }));
+
+  const sort = request.sort && all.some((c) => c.name === request.sort?.column)
+    ? request.sort
+    : undefined;
+  if (sort) {
+    // Sorting is a window read, not a page read. The rows have to exist before
+    // the order does, so this reads up to `maxRows` of them — still only the
+    // columns being drawn, plus the one being sorted by.
+    const window = Math.min(rowCount, Math.max(1, sort.maxRows));
+    const columns = wanted.includes(sort.column) ? wanted : [...wanted, sort.column];
+    const objects = await parquetReadObjects({
+      file: buffer,
+      metadata,
+      columns,
+      compressors: COMPRESSORS,
+      rowStart: 0,
+      rowEnd: window
+    });
+    objects.sort(byKey((object) => object[sort.column], sort.desc));
+
+    const start = Math.min(rowStart, Math.max(0, objects.length - 1));
+    const rows = objects.slice(start, start + Math.max(1, request.limit));
+    return {
+      ...page,
+      rowStart: start,
+      more: start + rows.length < objects.length,
+      sortedRows: objects.length,
+      rows: rows.map(format)
+    };
+  }
+
   // Only the columns being drawn are decoded. On a 200-column file that is the
   // difference between reading four column chunks and reading the file.
   const objects = await parquetReadObjects({
@@ -87,12 +136,7 @@ export async function readParquetRows(
     rowEnd
   });
 
-  return {
-    ...page,
-    rows: objects.map((object) =>
-      wanted.map((name, i) => formatValue(object[name], dtypes[i], { maxLength: 60 }))
-    )
-  };
+  return { ...page, rows: objects.map(format) };
 }
 
 /**
@@ -110,7 +154,13 @@ export async function readCsvRows(
 ): Promise<RowPage> {
   const { text, truncated } = await readCsvPrefix(uri, options.sniffBytes);
   const rowStart = Math.max(0, request.rowStart);
-  const table = csvTable(text, kwargs, { start: rowStart, limit: Math.max(1, request.limit) });
+  const limit = Math.max(1, request.limit);
+  // Sorted, the page is a slice of an order, so every row the prefix holds has
+  // to be parsed before the first one is known.
+  const sort = request.sort;
+  const table = csvTable(text, kwargs, sort
+    ? { start: 0, limit: Math.max(1, sort.maxRows) }
+    : { start: rowStart, limit });
 
   const records = [...table.records];
   let more = table.more;
@@ -120,16 +170,68 @@ export async function readCsvRows(
 
   const wanted = pick(table.names, request.columns);
   const indices = wanted.map((name) => table.names.indexOf(name));
-
-  return {
+  const cells = (record: string[]) => indices.map((i) => record[i] ?? '');
+  const page = {
     columns: wanted,
     dtypes: wanted.map(() => ''),
     allColumns: table.names,
-    rowStart,
     rowCount: undefined,
-    more,
-    prefixBytes: truncated ? options.sniffBytes : undefined,
-    rows: records.map((record) => indices.map((i) => record[i] ?? ''))
+    prefixBytes: truncated ? options.sniffBytes : undefined
+  };
+
+  const key = sort ? table.names.indexOf(sort.column) : -1;
+  if (sort && key !== -1) {
+    records.sort(byKey((record) => record[key], sort.desc));
+    const start = Math.min(rowStart, Math.max(0, records.length - 1));
+    const rows = records.slice(start, start + limit);
+    return {
+      ...page,
+      rowStart: start,
+      more: start + rows.length < records.length,
+      sortedRows: records.length,
+      rows: rows.map(cells)
+    };
+  }
+
+  return { ...page, rowStart, more, rows: records.map(cells) };
+}
+
+const empty = (value: unknown): boolean =>
+  value === null || value === undefined || value === '';
+
+/** `<` and `>` on two values of the same kind, whatever kind that turns out to be. */
+function order(x: unknown, y: unknown): number {
+  const a = x as number;
+  const b = y as number;
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/** Order rows by one of their values. */
+function byKey<T>(get: (row: T) => unknown, desc: boolean): (a: T, b: T) => number {
+  const dir = desc ? -1 : 1;
+  return (a, b) => {
+    const x = get(a);
+    const y = get(b);
+    // Nulls last in both directions. An empty cell is not the smallest value,
+    // it is the absence of one — and sorting by a column is asking to see the
+    // values in it, not the rows that have none.
+    if (empty(x)) return empty(y) ? 0 : 1;
+    if (empty(y)) return -1;
+
+    // A CSV has no dtypes, so a column of numbers arrives as strings and would
+    // put "10" above "9" — which reads as a broken sort rather than as a
+    // missing dtype.
+    if (typeof x === 'string' && typeof y === 'string') {
+      const nx = Number(x);
+      const ny = Number(y);
+      if (Number.isFinite(nx) && Number.isFinite(ny)) return dir * order(nx, ny);
+    }
+
+    // Numbers, bigints and dates compare as themselves. A list or a struct has
+    // no order of its own, so its printed form is the only one there is.
+    const comparable = typeof x === typeof y
+      && (typeof x !== 'object' || (x instanceof Date && y instanceof Date));
+    return dir * (comparable ? order(x, y) : order(String(x), String(y)));
   };
 }
 

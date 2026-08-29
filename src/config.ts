@@ -15,6 +15,7 @@ export interface Settings {
   valuesEnabled: boolean;
   valueMaxRows: number;
   valueMaxDistinct: number;
+  sortMaxRows: number;
   graphMaxRows: number;
   graphUseKernel: boolean;
   trace: boolean;
@@ -37,6 +38,7 @@ export function readSettings(): Settings {
     valuesEnabled: config.get('values.enable', false),
     valueMaxRows: config.get('values.maxRows', 10_000),
     valueMaxDistinct: config.get('values.maxDistinct', 50),
+    sortMaxRows: config.get('sort.maxRows', 100_000),
     graphMaxRows: config.get('graph.maxRows', 100_000),
     graphUseKernel: config.get('graph.useKernel', true),
     trace: config.get('trace', false)

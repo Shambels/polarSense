@@ -118,7 +118,10 @@ four-million-row file as fast as on a small one.
 
 **PolarSense: Show data (reads rows)** opens the file itself, a hundred rows at a
 time, header and row index pinned. The page on screen is the read: only those rows
-and only the columns being drawn are fetched.
+and only the columns being drawn are fetched. Click a column header to sort by
+it — ascending, descending, then the file's own order back. Sorting is the one
+thing that reads past the page: up to `polarsense.sort.maxRows` rows, and the
+panel says when that was a window rather than the file.
 
 **PolarSense: Show graph (reads rows)** draws the shape of a column instead of
 listing it — a histogram, a bar of counts, a line over a date, a scatter — picked
@@ -202,6 +205,7 @@ so the first completion is a cache hit, and a rewritten file invalidates itself.
 | `polarsense.csv.inferDtypes` | `false` | Guess CSV dtypes from the first rows |
 | `polarsense.https.enabled` | `false` | Allow reading schemas over `https://` |
 | `polarsense.values.enable` | `false` | Offer real values from your data. **Reads rows, not just metadata** |
+| `polarsense.sort.maxRows` | `100000` | Rows read when a header is clicked to sort |
 | `polarsense.graph.maxRows` | `100000` | Rows to read when drawing a graph |
 | `polarsense.diagnostics.enable` | `true` | Warn about column names that don't exist |
 | `polarsense.notebook.buttons` | `true` | Show the Details / Data / Graph buttons under a frame |
@@ -242,9 +246,9 @@ switches the typo warning off entirely.
 - **`s3://` and `gs://` resolve to nothing**; `https://` works when enabled.
 - **`.xls` and Feather V1 are not read** — different binary formats wearing
   familiar extensions. They report nothing rather than guessing at their bytes.
-- **The parquet viewer views** — it pages, steps columns and filters the column
-  list. No sorting, no row filter, no editing: sorting a page means scanning the
-  file, which is a different product.
+- **The data panel views** — it pages, steps columns, filters the column list and
+  sorts by one column, capped at `sort.maxRows` and honest when it hits the cap.
+  No row filter, no grouping, no editing: the query engine is polars, in your code.
 - **pyarrow is not supported.**
 
 ## Privacy

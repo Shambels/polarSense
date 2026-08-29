@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'node:path';
 import type { PolarSenseApi, ResolvedFrame, RowsFailure } from '../api.js';
+import { readSettings } from '../config.js';
 import { dtypeClass, fmt, frameFacts, frameNotes } from './facts.js';
 import { cursorTarget, NO_PYTHON, type FrameTarget } from './target.js';
 import { shell } from './table.page.js';
@@ -40,6 +41,8 @@ interface View {
   rowStart: number;
   columnStart: number;
   filter: string;
+  /** The column the rows are ordered by, when a header has been clicked. */
+  sort?: { column: string; desc: boolean };
 }
 
 /** What the webview can ask for: a page, a column window, a filter, or a redraw. */
@@ -48,6 +51,8 @@ export interface Intent {
   rowStart?: number;
   columnStart?: number;
   filter?: string;
+  /** A header was clicked: this column name. */
+  sort?: string;
 }
 
 /**
@@ -88,6 +93,19 @@ export class TableSession {
       return;
     }
 
+    if (typeof message?.sort === 'string') {
+      // Ascending, then descending, then the file's own order back — which is a
+      // real answer here rather than a null state, because the order rows are
+      // written in is a fact about the file.
+      const column = message.sort;
+      const was = this.view.sort;
+      this.view.sort = was?.column !== column
+        ? { column, desc: false }
+        : was.desc ? undefined : { column, desc: true };
+      // A new order makes the old offset meaningless.
+      this.view.rowStart = 0;
+    }
+
     if (typeof message?.filter === 'string' && message.filter !== this.view.filter) {
       this.view.filter = message.filter;
       // A narrower list makes the old window meaningless.
@@ -107,12 +125,13 @@ export class TableSession {
     const current = this.view;
     const matching = filtered(current);
     const drawn = matching.slice(current.columnStart, current.columnStart + COLUMN_WINDOW);
+    // The cap is read here rather than held, so changing it applies to the next
+    // click instead of to the next window.
+    const sort = current.sort && { ...current.sort, maxRows: readSettings().sortMaxRows };
+    const ask = (columns: string[]) =>
+      this.api.readRows(current.frame, { columns, rowStart: current.rowStart, limit: PAGE, sort });
 
-    let result = await this.api.readRows(current.frame, {
-      columns: drawn,
-      rowStart: current.rowStart,
-      limit: PAGE
-    });
+    let result = await ask(drawn);
 
     // First answer back also carries the file's own column list. A frame whose
     // columns were computed or renamed asks for names the file has never heard
@@ -124,13 +143,9 @@ export class TableSession {
       const kept = current.columns.filter((name) => known.has(name));
       if (kept.length !== current.columns.length) {
         current.columns = kept.length ? kept : all;
-        result = await this.api.readRows(current.frame, {
-          columns: filtered(current).slice(
-            current.columnStart, current.columnStart + COLUMN_WINDOW
-          ),
-          rowStart: current.rowStart,
-          limit: PAGE
-        });
+        result = await ask(
+          filtered(current).slice(current.columnStart, current.columnStart + COLUMN_WINDOW)
+        );
       }
     }
 
@@ -211,6 +226,8 @@ interface Payload {
   columnWindow: number;
   filter: string;
   hidden: number;
+  /** Which column the rows are ordered by, for the arrow on its header. */
+  sort?: { column: string; desc: boolean };
   /** Show the details and graph buttons: true where this grid is the whole file's editor. */
   panels: boolean;
   error?: string;
@@ -220,7 +237,8 @@ function payload(
   current: View,
   panels: boolean,
   page: { columns: string[]; dtypes: string[]; rows: (string | null)[][]; rowStart: number;
-          rowCount?: number; more: boolean; prefixBytes?: number } | undefined,
+          rowCount?: number; more: boolean; prefixBytes?: number; sortedRows?: number }
+          | undefined,
   error: RowsFailure | undefined
 ): Payload {
   const notes = frameNotes(current.frame);
@@ -231,6 +249,23 @@ function payload(
       'file — a prefix, not the file. Reaching further means walking every row before it.'
     );
   }
+  // Sorting reads a window, and the top of a window is not the top of a file.
+  // Saying which is which is the whole difference between a sort and a lie.
+  if (page?.sortedRows !== undefined && current.sort) {
+    const total = page.rowCount;
+    if (total !== undefined && page.sortedRows < total) {
+      notes.push(
+        `Sorted over the first ${fmt(page.sortedRows)} of ${fmt(total)} rows — ` +
+        'the top of that window, not of the file. `polarsense.sort.maxRows` is the cap.'
+      );
+    } else if (page.prefixBytes !== undefined) {
+      notes.push(
+        `Sorted over the ${fmt(page.sortedRows)} rows inside that prefix, which is ` +
+        'all of the file this reader can reach.'
+      );
+    }
+  }
+
   const hidden = current.frame.columns.length - current.columns.length;
   if (hidden > 0) {
     notes.push(
@@ -258,6 +293,7 @@ function payload(
     columnWindow: COLUMN_WINDOW,
     filter: current.filter,
     hidden: Math.max(0, hidden),
+    sort: current.sort,
     panels,
     error: error && explain(error, current.frame.kind)
   };
