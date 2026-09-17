@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Updated logo.** Added a transparent background 
+  
 ## 1.11.2
 
 ### Changed
