@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Updated Store description and logo.** 
+
 ## 1.11.1
 
 ### Added
