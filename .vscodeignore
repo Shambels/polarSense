@@ -15,7 +15,9 @@ tsconfig.json
 esbuild*.mjs
 **/*.map
 assets/demo.gif
-
+# only the 128px icon.png ships; the full-size sources are for the repo
+assets/icon-hq.png
+assets/polarsense-logo-2048.png
 # --- editor and CI config ---
 .vscode/**
 .vscode-test/**

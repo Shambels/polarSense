@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **New logo.** The iceberg is now drawn only with data bars: a few short bars
+  stand above a thin waterline as the tip, and a longer block of bars hangs below
+  it as the part you can't see. That is the extension's point in one picture: the
+  column names you type are the tip, and the file's schema underneath is what
+  PolarSense reads. The old glow, floating island and network lines are gone, so
+  the mark still reads at the Marketplace's small sizes. `assets/icon.png` is the
+  128px version that ships. The full-size `assets/icon-hq.png` stays in the repo
+  and is excluded from the VSIX.
+
 ## 1.11.3
 
 ### Changed
