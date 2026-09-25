@@ -99,7 +99,11 @@ export function makeVscode(settings = {}, workspaceFolders = []) {
     // otherwise — see unregisterSetting.
     unregistered: new Set(), executed: [],
     // The save dialog's answer, and what was written after it.
-    saveTo: undefined, saveDialog: undefined, written: undefined
+    saveTo: undefined, saveDialog: undefined, written: undefined,
+    // A running Jupyter kernel, when a test parks one here: `{ executeCode }`.
+    // Undefined is the Jupyter extension not being installed at all. Every
+    // snippet it is handed is kept, so a test can say nothing was run.
+    kernel: undefined, kernelRuns: []
   };
   const defaults = {
     enable: true,
@@ -139,6 +143,34 @@ export function makeVscode(settings = {}, workspaceFolders = []) {
         this.base = base;
         this.pattern = pattern;
       }
+    },
+    CancellationTokenSource: class CancellationTokenSource {
+      constructor() {
+        this.token = { isCancellationRequested: false, onCancellationRequested: noopEvent };
+      }
+      cancel() { this.token.isCancellationRequested = true; }
+      dispose() {}
+    },
+    // The Jupyter extension, reached by id the way kernel.ts reaches it.
+    extensions: {
+      getExtension: (id) => id === 'ms-toolsai.jupyter' && registered.kernel
+        ? {
+            isActive: true,
+            exports: {
+              kernels: {
+                getKernel: async () => {
+                  const kernel = registered.kernel;
+                  return {
+                    executeCode: (code, token) => {
+                      registered.kernelRuns.push(code);
+                      return kernel.executeCode(code, token);
+                    }
+                  };
+                }
+              }
+            }
+          }
+        : undefined
     },
     Uri: {
       file: (p) => ({ scheme: 'file', fsPath: p, path: p, toString: () => `file://${p}` }),

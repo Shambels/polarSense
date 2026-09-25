@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chartFetchSnippet, parseChartJson, MARKER, buildChart } from '../harness.mjs';
+import {
+  chartFetchSnippet, parseChartJson, schemaFetchSnippet, parseSchemaJson, MARKER, buildChart
+} from '../harness.mjs';
 
 /**
  * The two halves of the kernel read that can be tested without a kernel: the
@@ -103,4 +105,53 @@ test('anything that is not the frame we asked for is a miss, not a throw', () =>
     parseChartJson(`${MARKER}{"columns":[{"name":"a","family":"number"}]}${MARKER}`),
     { error: 'bad-column' }
   );
+});
+
+/**
+ * The schema read: what a graph offers in its pickers when the frame has no file
+ * behind it to take a column list from.
+ */
+
+test('the schema snippet finds the frame the same way, and reads no values', () => {
+  const code = schemaFetchSnippet({ outputRef: 7, symbol: 'df' });
+  assert.match(code, /_ref = 7/);
+  assert.match(code, /_oh\.get\(_ref\)/);
+  assert.match(code, /_sym = "df"/);
+  // A lazy frame answers through its schema; collecting it just to name its
+  // columns would pay for the whole query before anything is drawn.
+  assert.match(code, /collect_schema\(\)/);
+  assert.ok(!code.includes('.collect()'), 'the schema read collects the frame');
+  assert.ok(!code.includes('to_list'), 'the schema read serializes values');
+  assert.ok(code.includes(MARKER));
+});
+
+test('the schema snippet refuses a symbol that is not a plain name too', () => {
+  const code = schemaFetchSnippet({ symbol: 'df; import os' });
+  assert.match(code, /_sym = None/);
+  assert.ok(!code.includes('import os'));
+});
+
+test('the kernel schema comes back as names and polars dtypes', () => {
+  const parsed = parseSchemaJson(wrap({
+    schema: [{ name: 'city', dtype: 'str' }, { name: 'sales', dtype: 'i64' }],
+    rowCount: 3
+  }));
+  assert.ok('schema' in parsed, 'expected a schema');
+  assert.deepEqual(parsed.schema.columns, [
+    { name: 'city', dtype: 'str' }, { name: 'sales', dtype: 'i64' }
+  ]);
+  assert.equal(parsed.schema.rowCount, 3);
+
+  // A lazy frame's height is not known without collecting it: null, not zero.
+  const lazy = parseSchemaJson(wrap({ schema: [{ name: 'a', dtype: 'f64' }], rowCount: null }));
+  assert.ok('schema' in lazy);
+  assert.equal(lazy.schema.rowCount, undefined);
+});
+
+test('a schema that is not the shape asked for is a miss, not a throw', () => {
+  assert.deepEqual(parseSchemaJson(wrap({ error: 'not-a-frame' })), { error: 'not-a-frame' });
+  assert.deepEqual(parseSchemaJson('Traceback …'), { error: 'no-output' });
+  assert.deepEqual(parseSchemaJson(`${MARKER}[1,2]${MARKER}`), { error: 'bad-json' });
+  assert.deepEqual(parseSchemaJson(wrap({ rowCount: 3 })), { error: 'no-columns' });
+  assert.deepEqual(parseSchemaJson(wrap({ schema: [{ dtype: 'i64' }] })), { error: 'bad-column' });
 });

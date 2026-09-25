@@ -308,6 +308,17 @@ setting off, no kernel running, or a plain `.py` file, the graph falls back to
 the source file and says the transforms were not applied — the file path is
 never taken away.
 
+A frame with **no file behind it at all** — built in memory with
+`pl.DataFrame({...})`, or read from a path that only exists once the code runs —
+gets a graph the same way, from the Graph button under its output. The kernel is
+asked for the frame's schema first, so the pickers have columns to offer, and
+then for the one or two columns being drawn. It finds the frame by the cell's
+printed output, or by the variable when the cell's last line is a bare name; a
+cell ending in `df.head()` that has not been run is not guessed at, because
+`df` is not what it printed. With no kernel running, or `graph.useKernel` off,
+the button says which rather than drawing nothing. The Details and Data panels
+still need a file.
+
 In a notebook, all three panels are a click away from the output itself. A cell
 ending in a frame gets a small bar under what it printed:
 
@@ -325,7 +336,9 @@ computed frame, above, which reads the kernel for its values. The button says
 which output was clicked; the cell's own source says which frame that is, and PolarSense already
 knows which file is behind it — so the buttons work on a notebook you have opened
 but never run, on a frame defined eight cells earlier. A cell whose frame is built
-in memory rather than read from a file says so instead of opening a panel.
+in memory rather than read from a file has no file to describe, so Details and
+Data say so instead of opening a panel; Graph reads it from the running kernel,
+above.
 
 Carrying a button under an output means registering a renderer for `text/html`,
 and VS Code has no supported way to *add* to the built-in HTML renderer — so
@@ -458,7 +471,7 @@ so a frame defined in cell 1 completes in cell 8.
 | `polarsense.values.maxDistinct` | `50` | Above this many distinct values, offer none |
 | `polarsense.sort.maxRows` | `100000` | Rows to read when a column header is clicked to sort. A bigger file is sorted over its first `sort.maxRows` rows, and the panel says so |
 | `polarsense.graph.maxRows` | `100000` | Rows to read when drawing a graph. Only the columns drawn are read, and only the bins cross to the panel |
-| `polarsense.graph.useKernel` | `true` | In a notebook, read a computed frame's real values from the running kernel so a graph shows the transform's result. Read-only; falls back to the source file when off or no kernel |
+| `polarsense.graph.useKernel` | `true` | In a notebook, read a computed frame's real values from the running kernel so a graph shows the transform's result — and graph a frame built in memory, which has no file to read. Read-only; falls back to the source file when off or no kernel |
 | `polarsense.diagnostics.enable` | `true` | Warn about column names that don't exist |
 | `polarsense.notebook.buttons` | `true` | Show the Details / Data / Graph buttons under a frame printed in a notebook |
 | `polarsense.trace` | `false` | Log every resolution to the PolarSense output channel |
@@ -528,7 +541,8 @@ reshapes are beyond what static reading can predict.
   your code — which the **graph** now does in a notebook with a running kernel
   (see `graph.useKernel`), reading the computed frame's real values — but the
   details and data panels still describe the file, and every panel falls back to
-  it when there is no kernel.
+  it when there is no kernel. A frame built in memory can be graphed from the
+  kernel but has no details or data panel, and with no kernel it has nothing.
 - **Rows are read from parquet and CSV only.** Arrow IPC would mean decoding its
   record batches, and Delta and Iceberg mean paging across the list of files
   behind one table; both are pages by another name and neither is written yet.

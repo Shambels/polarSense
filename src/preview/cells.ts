@@ -60,3 +60,35 @@ export function lastStatementOffset(source: string): number | undefined {
   }
   return undefined;
 }
+
+/**
+ * The variable a cell printed, when its last statement is nothing but a name.
+ *
+ * This is the kernel's second address for a frame that has no file behind it —
+ * `_oh[n]` is the first, and misses when the kernel restarted or the cell ended
+ * in `display(df)` rather than `df`. Only a bare name is taken: `df.head()` is
+ * not `df`, and reading `df` in its place would draw more than the cell printed.
+ *
+ * A name that is really the tail of a longer statement — the last line of a
+ * bracketed call, or after a backslash — is refused rather than guessed at. The
+ * bracket count is naive about strings, which only ever errs towards refusing.
+ */
+export function lastStatementName(source: string): string | undefined {
+  const offset = lastStatementOffset(source);
+  if (offset === undefined) return undefined;
+  // The line the statement starts on, less a trailing comment: anything after
+  // it is blanks and comments, which is how the offset was chosen.
+  const name = source.slice(offset).split('\n')[0].replace(/#.*$/, '').trim();
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return undefined;
+
+  const before = source.slice(0, offset);
+  if (/\\\s*$/.test(before)) return undefined;
+  let depth = 0;
+  for (const line of before.split('\n')) {
+    for (const ch of line.replace(/#.*$/, '')) {
+      if (ch === '(' || ch === '[' || ch === '{') depth += 1;
+      else if (ch === ')' || ch === ']' || ch === '}') depth -= 1;
+    }
+  }
+  return depth === 0 ? name : undefined;
+}

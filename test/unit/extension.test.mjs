@@ -9,7 +9,9 @@ import {
   makeVscode, installVscodeStub, makeDocument, makeNotebook, noCancel, setSetting,
   unregisterSetting
 } from '../vscode-stub.mjs';
-import { looksLikeFrame, lastStatementOffset, dtypeClass } from '../harness.mjs';
+import {
+  looksLikeFrame, lastStatementOffset, lastStatementName, dtypeClass, MARKER
+} from '../harness.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const DATA = path.join(ROOT, 'test', 'fixtures', 'data');
@@ -1308,14 +1310,28 @@ test('the frame a cell printed is its last statement, past blanks and comments',
   assert.equal(lastStatementOffset('\n\n# nothing here\n'), undefined);
 });
 
+test('the variable a cell printed is its last statement only when that is a bare name', () => {
+  assert.equal(lastStatementName('import polars as pl\ndf = pl.DataFrame({"a": [1]})\ndf\n'), 'df');
+  assert.equal(lastStatementName('df  # the frame\n\n# done\n'), 'df');
+  // A method call on the name is a different frame from the name.
+  assert.equal(lastStatementName('df.head()\n'), undefined);
+  assert.equal(lastStatementName('display(df)\n'), undefined);
+  // A name that is only the tail of a longer statement is not what was printed.
+  assert.equal(lastStatementName('out = pl.concat([\n    a,\n    b\n'), undefined);
+  assert.equal(lastStatementName('total = a + \\\n    b\n'), undefined);
+  assert.equal(lastStatementName('# nothing\n'), undefined);
+});
+
 /**
  * A click under an output, end to end: the renderer posts, the host finds the
  * cell, and the panel opens on the frame that cell built.
  */
-async function clickButton(command, sources, { outputId, focus } = {}) {
-  const { notebook, editor, documents, focus: focusOn } =
+async function clickButton(command, sources, { outputId, focus, executed } = {}) {
+  const { notebook, editor, documents, cells, focus: focusOn } =
     makeNotebook(sources, path.join(DATA, 'analysis.ipynb'));
   if (focus !== undefined) focusOn(focus);
+  // A cell that has run carries its execution count, which keys `_oh[n]`.
+  if (executed) cells.forEach((cell, i) => { cell.executionSummary = { executionOrder: i + 1 }; });
   vscode.workspace.notebookDocuments.push(notebook);
   vscode.workspace.textDocuments.push(...documents);
   vscode._registered.info = undefined;
@@ -1389,6 +1405,150 @@ test('a cell whose frame has no file behind it says so instead of opening', asyn
   ], { outputId: 'out-1' });
   assert.match(message ?? '', /no file behind it/);
   assert.equal(vscode._registered.webviews.length, before, 'a panel was opened anyway');
+});
+
+/**
+ * A running kernel holding one frame, answering both snippets the way the real
+ * ones print: the schema read with names and dtypes, the chart read with the
+ * values of just the columns it asked for.
+ */
+function kernelHolding(columns, { error } = {}) {
+  const encoder = new TextEncoder();
+  const say = (answer) => (async function* () {
+    yield {
+      items: [{
+        mime: 'application/vnd.code.notebook.stdout',
+        data: encoder.encode(`${MARKER}${JSON.stringify(answer)}${MARKER}\n`)
+      }]
+    };
+  })();
+  const rows = columns[0]?.values.length ?? 0;
+  return {
+    executeCode(code) {
+      if (error) return say({ error });
+      if (code.includes('collect_schema')) {
+        return say({ schema: columns.map(({ name, dtype }) => ({ name, dtype })), rowCount: rows });
+      }
+      const wanted = JSON.parse(JSON.parse(code.match(/_cols = _ps_json\.loads\((.*)\)$/m)[1]));
+      return say({
+        columns: columns
+          .filter((column) => wanted.includes(column.name))
+          .map(({ name, family, values }) => ({ name, family, values })),
+        rowCount: rows,
+        complete: true
+      });
+    }
+  };
+}
+
+const IN_MEMORY = [
+  'import polars as pl\ndf = pl.DataFrame({"city": ["a", "b", "a"], "sales": [1, 2, 3]})\n',
+  'df\n'
+];
+
+const CITY_SALES = [
+  { name: 'city', dtype: 'str', family: 'category', values: ['a', 'b', 'a'] },
+  { name: 'sales', dtype: 'i64', family: 'number', values: [1, 2, 3] },
+  { name: 'tags', dtype: 'list[str]', family: 'category', values: ['x', 'y', 'z'] }
+];
+
+/** Run `body` with a kernel parked, then take it away again whatever happened. */
+async function withKernel(kernel, body) {
+  vscode._registered.kernel = kernel;
+  vscode._registered.kernelRuns.length = 0;
+  try {
+    return await body();
+  } finally {
+    vscode._registered.kernel = undefined;
+  }
+}
+
+test('the graph button draws a frame built in memory from the running kernel', async () => {
+  await withKernel(kernelHolding(CITY_SALES), async () => {
+    const { message } = await clickButton('showGraph', IN_MEMORY, { outputId: 'out-1', executed: true });
+    assert.equal(message, undefined, `the panel said: ${message}`);
+
+    const panel = vscode._registered.webviews.find((p) => p.viewType === 'polarsense.graph');
+    assert.equal(panel.title, 'df');
+    panel.messages.length = 0;
+    await panel.receive({ type: 'ready' });
+    const payload = panel.messages.at(-1);
+
+    // The pickers come from the kernel's schema, less what cannot be drawn.
+    assert.deepEqual(payload.columns.map((c) => c.name), ['city', 'sales']);
+    assert.equal(payload.x, 'sales');
+    assert.ok(payload.points.length > 0, 'nothing was drawn');
+    // Named after the notebook and the variable, and honest about where from.
+    assert.equal(payload.file, 'analysis.ipynb');
+    assert.equal(payload.symbol, 'df');
+    assert.deepEqual(payload.facts, ['3 rows', '3 columns', 'in memory', 'from the kernel']);
+    assert.equal(payload.error, undefined);
+
+    // The printed output is the first address, the bare name the fallback.
+    const [schemaRead] = vscode._registered.kernelRuns;
+    assert.match(schemaRead, /_ref = 2/);
+    assert.match(schemaRead, /_sym = "df"/);
+
+    // And an axis change reads the kernel again, not a file there is none of.
+    await panel.receive({ x: 'city', y: 'sales' });
+    const bar = panel.messages.at(-1);
+    assert.equal(bar.kind, 'bar');
+    assert.deepEqual(bar.points.map((p) => p.label).sort(), ['a', 'b']);
+  });
+});
+
+test('a frame built in memory with no kernel running says how to get a graph of it', async () => {
+  const graph = vscode._registered.webviews.find((p) => p.viewType === 'polarsense.graph');
+  if (graph) graph.title = 'untouched';
+  const { message } = await clickButton('showGraph', IN_MEMORY, { outputId: 'out-1', executed: true });
+  assert.match(message ?? '', /no file behind it/);
+  assert.match(message ?? '', /Run the notebook/);
+  if (graph) assert.equal(graph.title, 'untouched', 'a panel was opened anyway');
+});
+
+test('with graph.useKernel off, a frame built in memory never reaches the kernel', async () => {
+  setSetting(vscode, 'graph.useKernel', false);
+  try {
+    await withKernel(kernelHolding(CITY_SALES), async () => {
+      const { message } = await clickButton('showGraph', IN_MEMORY, { outputId: 'out-1', executed: true });
+      assert.match(message ?? '', /graph\.useKernel/);
+      assert.equal(vscode._registered.kernelRuns.length, 0, 'the kernel was asked anyway');
+    });
+  } finally {
+    setSetting(vscode, 'graph.useKernel', true);
+  }
+});
+
+test('a frame with no file and no address in the kernel is not guessed at', async () => {
+  // Never run, so no `_oh[n]`; and `df.head()` is not `df`, so no name either.
+  // Reading `df` in its place would draw rows the cell did not print.
+  await withKernel(kernelHolding(CITY_SALES), async () => {
+    const { message } = await clickButton('showGraph', [IN_MEMORY[0], 'df.head()\n'], { outputId: 'out-1' });
+    assert.match(message ?? '', /no file behind it/);
+    assert.equal(vscode._registered.kernelRuns.length, 0, 'the kernel was asked anyway');
+  });
+});
+
+test('a kernel that holds something other than a polars frame says so', async () => {
+  await withKernel(kernelHolding([], { error: 'not-a-frame' }), async () => {
+    const { message } = await clickButton('showGraph', IN_MEMORY, { outputId: 'out-1', executed: true });
+    assert.match(message ?? '', /not a polars DataFrame/);
+  });
+});
+
+test('a frame with a file behind it still draws the file, running kernel or not', async () => {
+  await withKernel(kernelHolding(CITY_SALES), async () => {
+    const { message } = await clickButton('showGraph', [
+      'import polars as pl\ndf = pl.scan_parquet("values.parquet")\n',
+      'df\n'
+    ], { outputId: 'out-1', executed: true });
+    assert.equal(message, undefined, `the panel said: ${message}`);
+    const panel = vscode._registered.webviews.find((p) => p.viewType === 'polarsense.graph');
+    panel.messages.length = 0;
+    await panel.receive({ type: 'ready' });
+    assert.equal(panel.messages.at(-1).file, 'values.parquet');
+    assert.equal(vscode._registered.kernelRuns.length, 0, 'an untransformed file frame asked the kernel');
+  });
 });
 
 test('the graph button opens the third panel on the frame that cell printed', async () => {

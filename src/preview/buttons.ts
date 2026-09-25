@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import type { PolarSenseApi } from '../api.js';
 import { readSettings } from '../config.js';
 import { trace } from '../log.js';
-import { lastStatementOffset } from './cells.js';
+import { lastStatementName, lastStatementOffset } from './cells.js';
 import { showDetails } from './details.js';
 import { showData } from './table.js';
 import { showGraph } from './graph.js';
@@ -111,7 +111,8 @@ function cellTarget(cell: vscode.NotebookCell): FrameTarget | undefined {
     // execution count that keys its printed result in IPython's history.
     notebook: {
       uri: cell.notebook.uri,
-      executionOrder: cell.executionSummary?.executionOrder
+      executionOrder: cell.executionSummary?.executionOrder,
+      symbol: lastStatementName(source)
     }
   };
 }

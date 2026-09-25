@@ -1,6 +1,9 @@
 import * as vscode from 'vscode';
 import type { SeriesRead } from '../schema/series.js';
-import { chartFetchSnippet, parseChartJson, type KernelTarget } from '../schema/kernelSeries.js';
+import {
+  chartFetchSnippet, parseChartJson, schemaFetchSnippet, parseSchemaJson,
+  type KernelSchema, type KernelTarget
+} from '../schema/kernelSeries.js';
 import { trace } from '../log.js';
 
 /**
@@ -54,10 +57,54 @@ export async function readChartFromKernel(
   columns: string[],
   maxRows: number
 ): Promise<KernelReadResult> {
+  const ran = await run(notebookUri, chartFetchSnippet(target, columns, maxRows));
+  if ('miss' in ran) return ran;
+
+  const parsed = parseChartJson(ran.text);
+  if ('error' in parsed) {
+    trace(`graph: kernel returned no frame — ${parsed.error}`);
+    return { miss: parsed.error };
+  }
+  return { read: parsed.read };
+}
+
+export interface KernelSchemaResult {
+  schema?: KernelSchema;
+  miss?: string;
+}
+
+/**
+ * The names and dtypes of the frame `target` addresses, and its height when it
+ * is eager — what a graph offers in its pickers when there is no file to read
+ * them from. No values are read.
+ */
+export async function readSchemaFromKernel(
+  notebookUri: vscode.Uri,
+  target: KernelTarget
+): Promise<KernelSchemaResult> {
+  const ran = await run(notebookUri, schemaFetchSnippet(target));
+  if ('miss' in ran) return ran;
+
+  const parsed = parseSchemaJson(ran.text);
+  if ('error' in parsed) {
+    trace(`graph: kernel returned no schema — ${parsed.error}`);
+    return { miss: parsed.error };
+  }
+  return { schema: parsed.schema };
+}
+
+/**
+ * Run one of the snippets and collect what it printed. Every failure is a
+ * `miss`: an error mime means the run itself failed — the snippets are written
+ * never to raise — so there is nothing to parse and the caller falls back.
+ */
+async function run(
+  notebookUri: vscode.Uri,
+  code: string
+): Promise<{ text: string } | { miss: string }> {
   const kernel = await getKernel(notebookUri);
   if (!kernel) return { miss: 'no-kernel' };
 
-  const code = chartFetchSnippet(target, columns, maxRows);
   const canceller = new vscode.CancellationTokenSource();
   const timer = setTimeout(() => canceller.cancel(), TIMEOUT_MS);
   const decoder = new TextDecoder();
@@ -66,9 +113,7 @@ export async function readChartFromKernel(
     for await (const output of kernel.executeCode(code, canceller.token)) {
       for (const item of output.items) {
         // The snippet prints its answer, so stdout (and text/plain, where a
-        // kernel routes a print there) is where it is. An error mime means the
-        // run itself failed — the snippet is written never to raise — so there
-        // is nothing to parse and the file is the better answer.
+        // kernel routes a print there) is where it is.
         if (item.mime.includes('stdout') || item.mime === 'text/plain') {
           text += decoder.decode(item.data);
         } else if (item.mime.startsWith('application/vnd.code.notebook.error')) {
@@ -83,13 +128,7 @@ export async function readChartFromKernel(
     clearTimeout(timer);
     canceller.dispose();
   }
-
-  const parsed = parseChartJson(text);
-  if ('error' in parsed) {
-    trace(`graph: kernel returned no frame — ${parsed.error}`);
-    return { miss: parsed.error };
-  }
-  return { read: parsed.read };
+  return { text };
 }
 
 /**

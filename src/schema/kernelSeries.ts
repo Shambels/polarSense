@@ -53,46 +53,20 @@ export function chartFetchSnippet(
 ): string {
   const cols = JSON.stringify(JSON.stringify(columns));
   const n = Math.max(1, Math.floor(maxRows) || 1);
-  const ref = typeof target.outputRef === 'number' && Number.isInteger(target.outputRef)
-    ? String(target.outputRef)
-    : 'None';
-  const sym = target.symbol && IDENT.test(target.symbol)
-    ? JSON.stringify(target.symbol)
-    : 'None';
 
   // Kept deliberately flat and defensive: it runs in someone else's session and
   // must never raise, because a traceback is a worse answer than the file.
   return [
     'import json as _ps_json',
     'def _ps_fetch():',
-    '    try:',
-    '        import polars as _ps_pl',
-    '    except Exception:',
-    '        return {"error": "no-polars"}',
+    ...lookup(target),
     `    _cols = _ps_json.loads(${cols})`,
     `    _n = ${n}`,
-    '    _tgt = None',
-    '    _oh = globals().get("_oh") or {}',
-    `    _ref = ${ref}`,
-    '    if _ref is not None:',
-    '        try:',
-    '            _tgt = _oh.get(_ref)',
-    '        except Exception:',
-    '            _tgt = None',
-    '    if _tgt is None:',
-    `        _sym = ${sym}`,
-    '        if _sym is not None:',
-    '            _tgt = globals().get(_sym)',
-    '    if _tgt is None:',
-    '        return {"error": "no-target"}',
-    '    _df = _tgt',
     '    if isinstance(_df, _ps_pl.LazyFrame):',
     '        try:',
     '            _df = _df.collect()',
     '        except Exception:',
     '            return {"error": "collect-failed"}',
-    '    if not isinstance(_df, _ps_pl.DataFrame):',
-    '        return {"error": "not-a-frame"}',
     '    _total = int(_df.height)',
     '    _have = [c for c in _cols if c in _df.columns]',
     '    _df = _df.select(_have) if _have else _df.head(0)',
@@ -127,8 +101,93 @@ export function chartFetchSnippet(
     '            _vals = [None if _v is None else str(_v) for _v in _s.to_list()]',
     '        _out.append({"name": _name, "family": _family, "values": _vals})',
     '    return {"columns": _out, "rowCount": _total, "complete": _total <= _n}',
-    `print(${JSON.stringify(MARKER)} + _ps_json.dumps(_ps_fetch(), default=str) + ${JSON.stringify(MARKER)})`
+    printAnswer()
   ].join('\n');
+}
+
+/**
+ * The read-only Python that reports the addressed frame's schema — names and
+ * polars dtypes — and, for an eager frame, its height. No values cross.
+ *
+ * This is what opens a graph on a frame that has no file behind it: the columns
+ * a picker offers normally come from the file's footer, and a
+ * `pl.DataFrame({...})` has no footer, so the kernel is asked for the same list
+ * instead. A `LazyFrame` answers through `collect_schema()` and is not collected
+ * here — its height is left unknown rather than paid for twice, since drawing it
+ * collects it anyway.
+ *
+ * The dtype is polars' own short spelling (`i64`, `datetime[μs]`) where the
+ * installed version has one, which is the spelling every file reader here
+ * already produces, and its `str()` otherwise — `familyOf` reads both.
+ */
+export function schemaFetchSnippet(target: KernelTarget): string {
+  return [
+    'import json as _ps_json',
+    'def _ps_fetch():',
+    ...lookup(target),
+    '    _rows = None',
+    '    try:',
+    '        if isinstance(_df, _ps_pl.LazyFrame):',
+    '            try:',
+    '                _schema = _df.collect_schema()',
+    '            except AttributeError:',
+    '                _schema = _df.schema',
+    '        else:',
+    '            _schema = _df.schema',
+    '            _rows = int(_df.height)',
+    '    except Exception:',
+    '        return {"error": "schema-failed"}',
+    '    _out = []',
+    '    for _name, _dt in _schema.items():',
+    '        try:',
+    '            _shown = _dt._string_repr()',
+    '        except Exception:',
+    '            _shown = str(_dt)',
+    '        _out.append({"name": str(_name), "dtype": str(_shown)})',
+    '    return {"schema": _out, "rowCount": _rows}',
+    printAnswer()
+  ].join('\n');
+}
+
+/**
+ * The body both snippets open with: import polars, find the addressed object —
+ * `_oh[n]` first, then the variable — and refuse anything that is not a polars
+ * frame. Leaves it bound to `_df`, eager or lazy, or returns a named miss.
+ */
+function lookup(target: KernelTarget): string[] {
+  const ref = typeof target.outputRef === 'number' && Number.isInteger(target.outputRef)
+    ? String(target.outputRef)
+    : 'None';
+  const sym = target.symbol && IDENT.test(target.symbol)
+    ? JSON.stringify(target.symbol)
+    : 'None';
+  return [
+    '    try:',
+    '        import polars as _ps_pl',
+    '    except Exception:',
+    '        return {"error": "no-polars"}',
+    '    _tgt = None',
+    '    _oh = globals().get("_oh") or {}',
+    `    _ref = ${ref}`,
+    '    if _ref is not None:',
+    '        try:',
+    '            _tgt = _oh.get(_ref)',
+    '        except Exception:',
+    '            _tgt = None',
+    '    if _tgt is None:',
+    `        _sym = ${sym}`,
+    '        if _sym is not None:',
+    '            _tgt = globals().get(_sym)',
+    '    if _tgt is None:',
+    '        return {"error": "no-target"}',
+    '    _df = _tgt',
+    '    if not isinstance(_df, (_ps_pl.DataFrame, _ps_pl.LazyFrame)):',
+    '        return {"error": "not-a-frame"}'
+  ];
+}
+
+function printAnswer(): string {
+  return `print(${JSON.stringify(MARKER)} + _ps_json.dumps(_ps_fetch(), default=str) + ${JSON.stringify(MARKER)})`;
 }
 
 /** What a family reported by the snippet means to the chart's dtype-driven code. */
@@ -156,20 +215,7 @@ export type KernelParse = { read: SeriesRead } | { error: string };
  * treats as "the kernel could not answer", never a throw.
  */
 export function parseChartJson(text: string): KernelParse {
-  const start = text.indexOf(MARKER);
-  const end = text.lastIndexOf(MARKER);
-  if (start === -1 || end <= start) return { error: 'no-output' };
-  const json = text.slice(start + MARKER.length, end);
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(json);
-  } catch {
-    return { error: 'bad-json' };
-  }
-  if (!parsed || typeof parsed !== 'object') return { error: 'bad-json' };
-
-  const record = parsed as Record<string, unknown>;
+  const record = unwrap(text);
   if (typeof record.error === 'string') return { error: record.error };
   if (!Array.isArray(record.columns)) return { error: 'no-columns' };
 
@@ -200,4 +246,45 @@ export function parseChartJson(text: string): KernelParse {
       complete: record.complete === true
     }
   };
+}
+
+export interface KernelSchema {
+  columns: { name: string; dtype: string }[];
+  /** Absent for a lazy frame, whose height is not known until it is collected. */
+  rowCount?: number;
+}
+
+export type KernelSchemaParse = { schema: KernelSchema } | { error: string };
+
+/** What `schemaFetchSnippet` printed, or why there is nothing to read in it. */
+export function parseSchemaJson(text: string): KernelSchemaParse {
+  const record = unwrap(text);
+  if (typeof record.error === 'string') return { error: record.error };
+  if (!Array.isArray(record.schema)) return { error: 'no-columns' };
+
+  const columns: { name: string; dtype: string }[] = [];
+  for (const raw of record.schema as { name?: unknown; dtype?: unknown }[]) {
+    if (!raw || typeof raw.name !== 'string') return { error: 'bad-column' };
+    columns.push({ name: raw.name, dtype: typeof raw.dtype === 'string' ? raw.dtype : '' });
+  }
+  const rowCount = typeof record.rowCount === 'number' ? record.rowCount : undefined;
+  return { schema: { columns, rowCount } };
+}
+
+/**
+ * The JSON between the sentinels as a record, or `{ error }` naming what was
+ * wrong with it — so each parser only has to check the shape it asked for.
+ */
+function unwrap(text: string): Record<string, unknown> {
+  const start = text.indexOf(MARKER);
+  const end = text.lastIndexOf(MARKER);
+  if (start === -1 || end <= start) return { error: 'no-output' };
+  try {
+    const parsed: unknown = JSON.parse(text.slice(start + MARKER.length, end));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : { error: 'bad-json' };
+  } catch {
+    return { error: 'bad-json' };
+  }
 }
