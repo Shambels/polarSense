@@ -118,7 +118,8 @@ export interface PolarSenseApi {
    */
   readRows(frame: ResolvedFrame, request: RowRequest): Promise<RowsResult>;
   /**
-   * The shape of one or two of that file's columns: a histogram, a bar of
+   * The shape of one or two of that file's columns — split by a third where the
+   * request names one: a histogram, a bar of
    * counts, a line, a scatter — chosen from the dtypes unless `kind` says
    * otherwise, and computed here.
    *

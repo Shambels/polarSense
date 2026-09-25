@@ -3,5 +3,6 @@ name = "polarsense"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
+    "ipykernel>=7.3.0",
     "polars>=1.44.0",
 ]

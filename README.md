@@ -276,7 +276,29 @@ legend. A date column also carries a `by` picker — year, month, week, day, hou
 minute, second — which moves every row to the start of its period before grouping,
 so `sum revenue by month` is two picks. Periods are cut on UTC and a week starts on
 Monday. A numeric column with a dozen values
-or fewer is drawn as bars rather than binned. The two pickers sit above the plot and
+or fewer is drawn as bars rather than binned. A text column that holds nothing but
+ISO dates — `"2023-01-01 12:00:00"`, as a frame built from literals or a CSV read
+without dtype inference carries them — is drawn as the dates it holds, on UTC where
+the text names no zone; anything looser, like `03/04/2026`, stays text.
+
+The **per group** menu holds two lists. *Aggregate* is what each group is measured
+by. *Split by* is any other column of the frame: pick one and the chart becomes a
+line, a bar or a colour per value of it, with a legend. `price` over `datetime`
+split by `category` is one line per category; labels against a number become bars
+side by side in each slot, measured per series; one column of labels becomes rows
+counted per pair; a histogram shares its bins across the series; a scatter colours
+its points; and a `by month` line or bar splits each month the same way. Up to six
+series are drawn — the six values with the most rows, since the theme has six chart
+colours — and the panel says how many were left out. Picking a column of labels as
+y already splits the chart by it, so the menu offers no second split then.
+
+**Hover a mark for its exact value.** On a bar the whole slot is the target, and the
+readout lists every series in it with the one under the pointer marked. On a line,
+a hairline snaps to the nearest x and lists every series there. On a scatter, the
+nearest point within reach answers. An aggregate says how many rows it was taken
+over — a mean of three is not a mean of three thousand — and values are shown to
+every significant digit, not the four the axis rounds to. The chart takes keyboard
+focus, and the arrow keys walk the same readout from left to right. The two pickers sit above the plot and
 the chart type sits at the other end of the same row — a row of icons, one per
 chart, of which only the ones those columns can actually be are shown — so a
 default that is wrong costs one click.
@@ -292,10 +314,11 @@ are what the panel says *about* the frame, not part of the chart.
 
 **The rows never reach the panel.** Bins are counted in the extension and a
 histogram of four million rows is thirty numbers, which is what crosses. It reads
-at most `polarsense.graph.maxRows` rows of the one or two columns being drawn, and
-says so in a note above the plot when that was less than the file. There is no filter,
-no grouping by more than one column, and no second series: this answers *what does
-this column look like*, and a question past that one is a query you should write.
+at most `polarsense.graph.maxRows` rows of the columns being drawn — a third when
+the chart is split — and says so in a note above the plot when that was less than
+the file. There is no filter and no grouping by more than one column plus a split:
+this answers *what does this column look like*, and a question past that one is a
+query you should write.
 
 When a graph is opened on a frame a notebook cell **computed** — a `group_by`, a
 join, a new column — the values it draws come from that cell's running kernel
@@ -548,9 +571,9 @@ reshapes are beyond what static reading can predict.
   behind one table; both are pages by another name and neither is written yet.
   Their schemas still work everywhere else, and the panel says which half is
   missing rather than showing an empty grid.
-- **A graph is one or two columns, not a query.** One column groups the rows and
-  one aggregate measures them, or one splits them into lines; there is no
-  filtering, no third column, no trend line — and
+- **A graph is at most three columns, not a query.** One column groups the rows,
+  one aggregate measures them, and one splits them into up to six series; there
+  is no filtering, no stacked bars, no trend line, no second y axis — and
   where a chart would need more rows than `graph.maxRows`, it draws the ones it
   read and says it is a sample rather than pretending to the whole file. List
   and struct columns are not offered as axes: a chart of a list is a chart of

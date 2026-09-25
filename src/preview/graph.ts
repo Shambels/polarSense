@@ -72,6 +72,12 @@ interface View {
    * per month is a question about the data, not about which columns are shown.
    */
   grain?: Grain;
+  /**
+   * The column each line, bar or colour is split by. It survives a change of x
+   * or y for the same reason the aggregate does — "per category" is a question
+   * about the data — unless the new axis *is* that column.
+   */
+  split?: string;
 }
 
 export async function showGraph(api: PolarSenseApi, at?: FrameTarget): Promise<void> {
@@ -250,6 +256,8 @@ interface Intent {
   kind?: ChartKind;
   agg?: Agg;
   grain?: Grain;
+  /** A column name to split by, or empty for no split. */
+  split?: string;
   /** Set on an `export`: the drawn chart, rasterized by the page, base64 PNG. */
   png?: string;
 }
@@ -277,12 +285,23 @@ async function onMessage(api: PolarSenseApi, message: Intent): Promise<void> {
     // numbers is not a scatter once one of them is a month.
     view.kind = undefined;
     if (view.y === view.x) view.y = undefined;
+    if (view.split === view.x) view.split = undefined;
   }
   if (typeof message?.y === 'string') {
     const wanted = message.y === '' || message.y === view.x ? undefined : message.y;
     if (wanted !== view.y && (wanted === undefined || known(wanted))) {
       view.y = wanted;
       view.kind = undefined;
+      if (view.split === view.y) view.split = undefined;
+    }
+  }
+  if (typeof message?.split === 'string') {
+    // Empty is "not split", the menu's own first entry. A name that is not one
+    // of the offered columns, or is already on an axis, changes nothing.
+    const wanted = message.split || undefined;
+    if (wanted === undefined ||
+        (known(wanted) && wanted !== view.x && wanted !== view.y)) {
+      view.split = wanted;
     }
   }
   if (typeof message?.kind === 'string') view.kind = message.kind;
@@ -315,7 +334,10 @@ async function savePng(png: string | undefined): Promise<void> {
   const stem = view.frame
     ? path.basename(view.frame.uri).replace(/\.[^.]+$/, '') || 'chart'
     : view.memory?.name ?? 'chart';
-  const name = [stem, view.x, view.y]
+  // The split the chart applied, not the one asked for: a label y is the split
+  // then, and the one in the view was set aside.
+  const applied = (last as Payload | undefined)?.split;
+  const name = [stem, view.x, view.y, applied && `by-${applied}`]
     .filter((part): part is string => !!part)
     .join('-')
     .replace(/[^\w.-]+/g, '_') + '.png';
@@ -349,6 +371,7 @@ async function update(api: PolarSenseApi): Promise<void> {
     kind: current.kind,
     agg: current.agg,
     grain: current.grain,
+    split: current.split,
     maxRows: readSettings().graphMaxRows
   };
 
@@ -356,7 +379,8 @@ async function update(api: PolarSenseApi): Promise<void> {
     // Only the one or two columns on screen are read, capped the same way the
     // file read is: the kernel serializes those and nothing else, so a chart of
     // a computed frame costs the same message as a chart of a file.
-    const columns = [current.x, current.y].filter((name): name is string => !!name);
+    const columns = [...new Set([current.x, current.y, current.split]
+      .filter((name): name is string => !!name))];
     const result = await readChartFromKernel(
       current.kernel.notebookUri, current.kernel.target, columns, request.maxRows
     );
@@ -404,6 +428,13 @@ interface Payload {
   agg: Agg | '';
   aggs: Agg[];
   seriesNames: string[];
+  /** The column the chart is split by, or empty. */
+  split: string;
+  /**
+   * The columns a split can be asked for by — every drawable one but the two on
+   * the axes — or empty where the chart cannot take a split.
+   */
+  splits: { name: string; dtype: string }[];
   grain: Grain | '';
   grains: Grain[];
   xLabel: string;
@@ -411,7 +442,7 @@ interface Payload {
   xNumeric: boolean;
   domain?: [number, number];
   ticks: { x: number; label: string }[];
-  points: { x: number; y: number; label: string; series?: string }[];
+  points: { x: number; y: number; label: string; series?: string; n?: number }[];
   empty?: string;
   error?: string;
 }
@@ -454,6 +485,10 @@ function payload(
     agg: chart?.agg ?? '',
     aggs: chart?.aggs ?? [],
     seriesNames: chart?.seriesNames ?? [],
+    split: chart?.split ?? '',
+    splits: chart?.splittable
+      ? current.columns.filter((column) => column.name !== chart.x && column.name !== chart.y)
+      : [],
     grain: chart?.grain ?? '',
     grains: chart?.grains ?? [],
     xLabel: chart?.xLabel ?? '',

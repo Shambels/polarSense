@@ -54,6 +54,12 @@ export interface ChartRequest {
   agg?: Agg;
   /** The period a temporal x is grouped into. Ignored where x is not a date. */
   grain?: Grain;
+  /**
+   * A third column whose values each get a line, a bar or a colour of their
+   * own. Ignored where y already holds labels — that column is the split then —
+   * and where it names x or y.
+   */
+  split?: string;
   maxRows: number;
 }
 
@@ -64,6 +70,11 @@ export interface ChartPoint {
   label: string;
   /** Which line this point belongs to, where the chart was split into several. */
   series?: string;
+  /**
+   * The rows behind an aggregated value — a mean of three is not a mean of
+   * three thousand, and the hover is where that difference gets said.
+   */
+  n?: number;
 }
 
 export interface Chart {
@@ -75,6 +86,14 @@ export interface Chart {
   aggs: Agg[];
   /** One name per line, in drawing order. Empty for a chart that is one line. */
   seriesNames: string[];
+  /** The column the chart was split by, when a split was asked for and applied. */
+  split?: string;
+  /**
+   * Whether a split column can be asked for at all. False where the y column
+   * holds labels, because then it already is the split — offering a second one
+   * would be offering a third dimension the chart has nowhere to put.
+   */
+  splittable: boolean;
   /** The period the rows were grouped into, and the choices — empty where x is not a date. */
   grain?: Grain;
   grains: Grain[];
@@ -211,7 +230,11 @@ export function defaultAxis(
 export function buildChart(read: SeriesRead, request: ChartRequest): Chart {
   const chart = computeChart(read, request);
   const ySeries = chart.y ? read.series.find((series) => series.name === chart.y) : undefined;
-  return ySeries && isDuration(ySeries.dtype) ? { ...chart, yDuration: true } : chart;
+  // A count of rows is a count whatever column it was taken over: formatting
+  // it as a span would print three rows as 3µs.
+  return ySeries && isDuration(ySeries.dtype) && chart.yLabel !== 'rows'
+    ? { ...chart, yDuration: true }
+    : chart;
 }
 
 /** A duration dtype, however its unit is spelled — `duration[μs]`, `duration[ns]`. */
@@ -227,8 +250,10 @@ export function isDuration(dtype: string): boolean {
  * tested against a column of values rather than against a file.
  */
 function computeChart(read: SeriesRead, request: ChartRequest): Chart {
-  const xSeries = read.series.find((series) => series.name === request.x);
-  const ySeries = request.y ? read.series.find((series) => series.name === request.y) : undefined;
+  const find = (name: string | undefined) =>
+    name === undefined ? undefined : read.series.find((series) => series.name === name);
+  const xSeries = find(request.x);
+  const ySeries = find(request.y);
 
   const base = {
     kinds: [] as ChartKind[],
@@ -239,6 +264,7 @@ function computeChart(read: SeriesRead, request: ChartRequest): Chart {
     xNumeric: false,
     aggs: [] as Agg[],
     seriesNames: [] as string[],
+    splittable: false,
     grains: [] as Grain[],
     ticks: [] as { x: number; label: string }[],
     points: [] as ChartPoint[],
@@ -255,8 +281,8 @@ function computeChart(read: SeriesRead, request: ChartRequest): Chart {
   // A pair whose x is a number and whose y is not is the same chart the other
   // way round, and swapping beats refusing: nobody picks two columns in the
   // order the lookup table happens to want them.
-  let first = xSeries;
-  let second = ySeries;
+  let first = textDates(xSeries);
+  let second = ySeries && textDates(ySeries);
   let xFamily = familyOf(first.dtype, first.values);
   let yFamily = second ? familyOf(second.dtype, second.values) : undefined;
   if (second && yFamily && xFamily === 'number' && yFamily !== 'number') {
@@ -272,6 +298,25 @@ function computeChart(read: SeriesRead, request: ChartRequest): Chart {
         'dates or labels.'
     };
   }
+
+  // A label on the measured axis is not a measurement: it says *which line this
+  // row belongs to*, which is the only reading of it that draws anything. So it
+  // is the split, and asking for another one on top is not offered — the chart
+  // has an x, a y and a colour, and the colour is taken.
+  const labelled = !!second && yFamily !== 'number';
+  const value = labelled ? undefined : second;
+  let by = labelled ? second : undefined;
+  if (!labelled && request.split !== undefined &&
+      request.split !== first.name && request.split !== second?.name) {
+    const asked = find(request.split);
+    if (asked && familyOf(asked.dtype, asked.values) !== 'nested') by = textDates(asked);
+  }
+  const splitBase = {
+    ...base,
+    splittable: !labelled,
+    split: !labelled && by ? by.name : undefined
+  };
+
   // A date grouped into periods: the rows counted per month, or a numeric column
   // measured per month, and split into a line each where a label column says so.
   // It is the same grouping the split already does, with the period as its key.
@@ -282,19 +327,15 @@ function computeChart(read: SeriesRead, request: ChartRequest): Chart {
     ? request.grain
     : undefined;
   if (grain) {
-    const by = second && yFamily !== 'number' ? second : undefined;
-    const value = second && yFamily === 'number' ? second : undefined;
     const periods = grouped(first, grain);
     const drawn = split(periods, 'temporal', by, value, request.agg);
-    // Bars are a fair reading of one count per month; two lines of bars are not,
-    // so they are offered only where there is a single line to draw.
+    // Bars stand side by side per period when the chart is split, so they are a
+    // fair reading of one line or of six.
     const names = drawn.seriesNames ?? [];
-    const lines: ChartKind[] = names.length > 1
-      ? ['line', 'scatter']
-      : ['line', 'bar', 'scatter'];
+    const lines: ChartKind[] = ['line', 'bar', 'scatter'];
     const chosen = request.kind && lines.includes(request.kind) ? request.kind : 'line';
     return {
-      ...base,
+      ...splitBase,
       kinds: lines,
       kind: chosen,
       x: first.name,
@@ -317,36 +358,28 @@ function computeChart(read: SeriesRead, request: ChartRequest): Chart {
     };
   }
 
-  if (second && yFamily !== 'number') {
-    if (xFamily === 'category') {
-      // Labels against labels is a cross-tabulation, a table rather than a chart.
-      return {
-        ...base,
-        kind: 'bar',
-        empty: `${first.name} and ${second.name} both hold labels, so there is nothing ` +
-          'to measure. Drop one of them to count it instead.'
-      };
-    }
-    // Dates against labels: one line per label, counting the rows at each point
-    // of the axis. The second column is not a measurement here — it says *which
-    // line this row belongs to*, which is the only reading of a categorical y
-    // that draws anything at all.
-    const lines: ChartKind[] = ['line', 'scatter'];
-    const drawn = split(first, xFamily, second);
+  if (by) {
+    const drawn = splitChart(first, xFamily, value, by, request);
+    const xNumeric = drawn.kind !== 'bar';
+    const domain = xNumeric
+      ? drawn.domain ?? extent(drawn.points.map((point) => point.x))
+      : undefined;
     return {
-      ...base,
-      kinds: lines,
-      kind: request.kind && lines.includes(request.kind) ? request.kind : 'line',
+      ...splitBase,
+      kinds: drawn.kinds,
+      kind: drawn.kind,
       x: first.name,
-      y: second.name,
+      y: second?.name,
       xLabel: first.name,
-      xNumeric: true,
-      domain: drawn.domain,
-      ticks: drawn.domain ? axisTicks(drawn.domain, first.dtype, xFamily) : [],
-      points: drawn.points,
-      yLabel: drawn.yLabel,
+      xNumeric,
+      agg: drawn.agg,
+      aggs: drawn.aggs ?? [],
       seriesNames: drawn.seriesNames ?? [],
       grains,
+      domain,
+      ticks: domain ? axisTicks(domain, first.dtype, xFamily) : [],
+      points: drawn.points,
+      yLabel: drawn.yLabel,
       empty: drawn.empty,
       notes: [...base.notes, ...drawn.notes]
     };
@@ -368,7 +401,7 @@ function computeChart(read: SeriesRead, request: ChartRequest): Chart {
     : undefined;
 
   return {
-    ...base,
+    ...splitBase,
     kinds,
     kind: chosen,
     x: first.name,
@@ -528,10 +561,11 @@ function paired(
     }
     const agg = wanted && AGGS.includes(wanted) ? wanted : 'mean';
     const ordered = [...groups.entries()]
-      .map(([label, values]) => [label, apply(agg, values)] as const)
+      .map(([label, values]) => [label, apply(agg, values), values.length] as const)
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
     return {
-      points: ordered.slice(0, MAX_BARS).map(([label, value], i) => ({ x: i, y: value, label })),
+      points: ordered.slice(0, MAX_BARS)
+        .map(([label, value, n], i) => ({ x: i, y: value, label, n })),
       // Said on the axis rather than in a footnote: a bar of means and a bar of
       // totals look identical and answer different questions.
       yLabel: agg === 'count' ? 'rows' : `${agg} ${second.name}`,
@@ -648,7 +682,12 @@ function split(
   }
 
   const missing = dropped ? [skipped(dropped, 'a value missing from one of them')] : [];
-  if (!xs.length) return { points: [], yLabel: 'rows', notes: missing, empty: nothing(by ?? x) };
+  if (!xs.length) {
+    return {
+      points: [], yLabel: 'rows', notes: missing,
+      empty: by || value ? nothingAcross([x, value, by]) : nothing(x)
+    };
+  }
 
   // The busiest labels get the lines: six, because that is how many chart
   // colours the theme has, and a seventh line would have to repeat one.
@@ -686,8 +725,13 @@ function split(
       points.push({
         x: at(key),
         y: agg ? apply(agg, rows) : rows.length,
-        label: axisValue(at(key), x.dtype, family),
-        series: by ? label : undefined
+        // A bucket is a range, and the hover is where its edges get read.
+        label: width
+          ? `${axisValue(min + width * key, binDtype(x.dtype, family, width), family)} – ` +
+            `${axisValue(min + width * (key + 1), binDtype(x.dtype, family, width), family)}`
+          : axisValue(at(key), x.dtype, family),
+        series: by ? label : undefined,
+        n: rows.length
       });
     }
   }
@@ -698,11 +742,14 @@ function split(
     agg,
     aggs: value ? AGGS : [],
     seriesNames: by ? kept : [],
-    domain: [min, width ? max + width : max],
+    // The buckets already end at max: running the axis a bucket further would
+    // put a value on its last tick that is not in the data.
+    domain: [min, max],
     notes: [
       ...(width
         ? [`${x.name} holds more distinct values than a line has points, so the rows are ` +
-           `counted in ${BINS} buckets across its range rather than one per value.`]
+           `${value ? 'grouped into' : 'counted in'} ${BINS} buckets across its range ` +
+           'rather than one per value.']
         : []),
       ...(by && ordered.length > SERIES
         ? [`${by.name} has ${fmt(ordered.length)} values; the ${SERIES} with the most rows ` +
@@ -711,6 +758,323 @@ function split(
       ...missing
     ]
   };
+}
+
+interface SplitDrawn extends Drawn {
+  kind: ChartKind;
+  kinds: ChartKind[];
+}
+
+/**
+ * The chart, split by a third column: a line, a bar or a colour per value of it.
+ *
+ * Which chart that is follows from x the way the unsplit table does, with one
+ * change — every kind on offer has to be able to show several series at once.
+ * Bars stand side by side in their slot rather than on top of each other,
+ * because a stack of means adds up to nothing; a histogram shares its bins
+ * across the series so the bars of one bin are comparable; a scatter colours
+ * its points and draws them as they are; a line measures each series per x.
+ */
+function splitChart(
+  x: Series,
+  family: Family,
+  value: Series | undefined,
+  by: Series,
+  request: ChartRequest
+): SplitDrawn {
+  const kinds: ChartKind[] =
+    family === 'category' ? ['bar']
+    : family === 'number' ? (value ? ['scatter', 'line', 'bar'] : ['histogram', 'bar', 'line'])
+    // Counts over time are a line per label — a histogram of dates is the same
+    // line in buckets, and the period picker is the better way to ask for that.
+    : value ? ['line', 'scatter', 'bar'] : ['line', 'scatter'];
+  const kind = request.kind && kinds.includes(request.kind)
+    ? request.kind
+    : family === 'number' && !value ? preferred(kinds, x, family) : kinds[0];
+
+  const drawn =
+    kind === 'bar' ? dodged(x, family, value, by, request.agg)
+    : kind === 'histogram' ? splitHistogram(x, family, by)
+    : kind === 'scatter' && value ? splitScatter(x, family, value, by)
+    : split(x, family, by, value, request.agg);
+  return { ...drawn, kind, kinds };
+}
+
+/** A row's split label, or undefined where the row has none to give. */
+function splitLabel(raw: unknown, by: Series): string | undefined {
+  if (raw === null || raw === undefined || raw === '') return undefined;
+  return labelOf(raw, by.dtype);
+}
+
+/**
+ * Why a chart of several columns drew nothing: the column that is empty, where
+ * one is — blaming x for a column of nulls in the split sends the reader to the
+ * wrong select — and otherwise that no row has all of them at once.
+ */
+function nothingAcross(columns: (Series | undefined)[]): string {
+  const present = columns.filter((column): column is Series => !!column);
+  const empty = present.find((column) =>
+    !column.values.some((raw) => raw !== null && raw !== undefined && raw !== ''));
+  if (empty) return nothing(empty);
+  return `No row read has a value in all of ${present.map((column) => column.name).join(', ')} ` +
+    'at once, so there is nothing to draw.';
+}
+
+/**
+ * The labels worth a series of their own: the six with the most rows, busiest
+ * first, because the theme has six chart colours and a seventh line would have
+ * to repeat one. Ties go alphabetically so the order — and so the colours —
+ * does not move between two reads of the same file.
+ */
+function busiest(labels: Iterable<string>): { kept: string[]; distinct: number } {
+  const totals = new Map<string, number>();
+  for (const label of labels) totals.set(label, (totals.get(label) ?? 0) + 1);
+  const ordered = [...totals.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  return { kept: ordered.slice(0, SERIES).map(([label]) => label), distinct: ordered.length };
+}
+
+function leftOut(by: Series, distinct: number): string[] {
+  return distinct > SERIES
+    ? [`${by.name} has ${fmt(distinct)} values; the ${SERIES} with the most rows are drawn.`]
+    : [];
+}
+
+/**
+ * Bars side by side: one slot per x value, one bar per series in it.
+ *
+ * Labels are ordered the way the unsplit bar orders them — the biggest measure
+ * first, taken over every row of the slot — so splitting a chart does not
+ * reshuffle it. Numbers and dates keep their own order instead, because a row
+ * of months sorted by size is a puzzle rather than a timeline.
+ */
+function dodged(
+  x: Series,
+  family: Family,
+  value: Series | undefined,
+  by: Series,
+  wanted?: Agg
+): Drawn {
+  const agg: Agg = value ? (wanted && AGGS.includes(wanted) ? wanted : 'mean') : 'count';
+  const measure = (values: number[]) => apply(agg, values);
+  const slots = new Map<string, { at: number; all: number[]; lines: Map<string, number[]> }>();
+  const labels: string[] = [];
+  let dropped = 0;
+
+  for (let i = 0; i < x.values.length; i++) {
+    const raw = x.values[i];
+    const name = splitLabel(by.values[i], by);
+    const m = value ? toNumber(value.values[i], 'number') : 1;
+    const at = family === 'category' ? 0 : toNumber(raw, family);
+    if (raw === null || raw === undefined || raw === '' || name === undefined ||
+        !Number.isFinite(m) || !Number.isFinite(at)) {
+      dropped++;
+      continue;
+    }
+    const key = labelOf(raw, x.dtype);
+    const slot = slots.get(key) ?? { at, all: [], lines: new Map<string, number[]>() };
+    slot.all.push(m);
+    const line = slot.lines.get(name);
+    if (line) line.push(m);
+    else slot.lines.set(name, [m]);
+    slots.set(key, slot);
+    labels.push(name);
+  }
+
+  const missing = dropped ? [skipped(dropped, 'a value missing from one of them')] : [];
+  if (!slots.size) {
+    return {
+      points: [], yLabel: 'rows', aggs: value ? AGGS : [], notes: missing, empty: nothingAcross([x, value, by])
+    };
+  }
+
+  const { kept, distinct } = busiest(labels);
+  // A slot whose rows all belong to series left out has no bar to draw, and
+  // counting it among the ones drawn would make the note claim bars that are
+  // not there.
+  const ordered = [...slots.entries()]
+    .filter(([, slot]) => kept.some((name) => slot.lines.has(name)))
+    .map(([label, slot]) => ({ label, slot, overall: measure(slot.all) }))
+    .sort((a, b) => family === 'category'
+      ? b.overall - a.overall || a.label.localeCompare(b.label)
+      : a.slot.at - b.slot.at);
+  const shown = ordered.slice(0, MAX_BARS);
+
+  const points: ChartPoint[] = [];
+  shown.forEach(({ label, slot }, i) => {
+    for (const name of kept) {
+      const rows = slot.lines.get(name);
+      if (rows) points.push({ x: i, y: measure(rows), label, series: name, n: rows.length });
+    }
+  });
+
+  const cut = ordered.length > MAX_BARS
+    ? [family === 'category'
+        ? `${x.name} has ${fmt(ordered.length)} distinct values; the ${MAX_BARS} with the ` +
+          `highest ${agg === 'count' ? 'row counts' : agg} are drawn.`
+        : `${x.name} has ${fmt(ordered.length)} distinct values; the first ${MAX_BARS} are ` +
+          'drawn' + (family === 'temporal' ? ' — group it by a period to see all of it.' : '.')]
+    : [];
+  return {
+    points,
+    yLabel: agg === 'count' ? 'rows' : `${agg} ${value?.name ?? ''}`,
+    agg: value ? agg : undefined,
+    aggs: value ? AGGS : [],
+    seriesNames: kept,
+    notes: [...cut, ...leftOut(by, distinct), ...missing]
+  };
+}
+
+/**
+ * One histogram per series, over bins they share. Every bin is sent for every
+ * series, zeros included: the page lays bins out by position, and a bin one
+ * series skipped would shift the others' bars out from under the axis.
+ */
+function splitHistogram(x: Series, family: Family, by: Series): Drawn {
+  const numbers: number[] = [];
+  const labels: string[] = [];
+  let dropped = 0;
+  for (let i = 0; i < x.values.length; i++) {
+    const n = toNumber(x.values[i], family);
+    const name = splitLabel(by.values[i], by);
+    if (!Number.isFinite(n) || name === undefined) { dropped++; continue; }
+    numbers.push(n);
+    labels.push(name);
+  }
+  const missing = dropped ? [skipped(dropped, 'a value missing from one of them')] : [];
+  if (!numbers.length) {
+    return { points: [], yLabel: 'rows', notes: missing, empty: nothingAcross([x, by]) };
+  }
+
+  const { kept, distinct } = busiest(labels);
+  const keeping = new Set(kept);
+  const drawn = numbers.filter((_, i) => keeping.has(labels[i]));
+  const [min, max] = extent(drawn) as [number, number];
+  const bins = min === max ? 1 : BINS;
+  const width = (max - min) / bins;
+  const labelled = binDtype(x.dtype, family, width);
+  const counts = new Map(kept.map((name) => [name, new Array<number>(bins).fill(0)]));
+  numbers.forEach((n, i) => {
+    const line = counts.get(labels[i]);
+    if (line) line[width ? Math.min(bins - 1, Math.floor((n - min) / width)) : 0] += 1;
+  });
+
+  const points: ChartPoint[] = [];
+  for (let bin = 0; bin < bins; bin++) {
+    const label = width
+      ? `${axisValue(min + width * bin, labelled, family)} – ` +
+        `${axisValue(min + width * (bin + 1), labelled, family)}`
+      : axisValue(min, x.dtype, family);
+    for (const name of kept) {
+      points.push({
+        x: width ? min + width * (bin + 0.5) : min,
+        y: counts.get(name)![bin],
+        label,
+        series: name
+      });
+    }
+  }
+  return {
+    points,
+    domain: [min, max],
+    yLabel: 'rows',
+    seriesNames: kept,
+    notes: [...leftOut(by, distinct), ...missing]
+  };
+}
+
+/**
+ * The rows themselves, coloured by series. Nothing is aggregated, so the
+ * aggregate is not offered; what is capped is the number of points, taken every
+ * nth row across all of them so one series is not drawn at the others' expense.
+ */
+function splitScatter(x: Series, family: Family, value: Series, by: Series): Drawn {
+  const rows: { x: number; y: number; label: string; series: string }[] = [];
+  let dropped = 0;
+  for (let i = 0; i < x.values.length; i++) {
+    const raw = x.values[i];
+    const n = toNumber(raw, family);
+    const y = toNumber(value.values[i], 'number');
+    const name = splitLabel(by.values[i], by);
+    if (!Number.isFinite(n) || !Number.isFinite(y) || name === undefined) { dropped++; continue; }
+    rows.push({ x: n, y, label: labelOf(raw, x.dtype), series: name });
+  }
+  const missing = dropped ? [skipped(dropped, 'a value missing from one of them')] : [];
+  if (!rows.length) {
+    return { points: [], yLabel: value.name, notes: missing, empty: nothingAcross([x, value, by]) };
+  }
+
+  const { kept, distinct } = busiest(rows.map((row) => row.series));
+  const keeping = new Set(kept);
+  const points = rows.filter((row) => keeping.has(row.series));
+  const notes = [...leftOut(by, distinct), ...missing];
+  let drawn = points;
+  if (points.length > MAX_POINTS) {
+    const stride = Math.ceil(points.length / MAX_POINTS);
+    drawn = points.filter((_, i) => i % stride === 0);
+    notes.push(
+      `Every ${fmt(stride)} row${stride === 1 ? '' : 's'} of the ${fmt(points.length)} read ` +
+      `is one of the ${fmt(drawn.length)} points drawn.`
+    );
+  }
+  return { points: drawn, yLabel: value.name, seriesNames: kept, notes };
+}
+
+/**
+ * ISO 8601 written as text: a date, or a date and a time, with an optional zone.
+ * Nothing looser — `03/04/2026` is a different day on each side of the Atlantic,
+ * and a guess about which one is a guess the chart would draw as a fact.
+ */
+const ISO_TEXT = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}(?::?\d{2})?)?)?$/;
+
+/**
+ * An ISO date written as text, as epoch milliseconds — on UTC where it names
+ * no zone, which is the clock every other date on the panel is printed on.
+ * `Date.parse` reads `2026-01-01 12:00` on the local clock and `2026-01-01` on
+ * UTC, and one column should not be both.
+ */
+export function parseIsoText(text: string): number {
+  const t = text.trim();
+  if (!ISO_TEXT.test(t)) return NaN;
+  // A day the month does not have is not a date: Date.parse rolls 30 February
+  // into March, and the chart would draw it there.
+  const [year, month, day] = t.slice(0, 10).split('-').map(Number);
+  if (month < 1 || month > 12 || day < 1 ||
+      day > new Date(Date.UTC(year, month, 0)).getUTCDate()) return NaN;
+  if (t.length === 10) return Date.parse(t);
+  let iso = t.replace(' ', 'T').replace(/(\.\d{3})\d+/, '$1');
+  if (!/(?:Z|[+-]\d{2}(?::?\d{2})?)$/.test(iso.slice(10))) iso += 'Z';
+  // `+02` is how Postgres writes a zone; Date.parse wants the minutes too.
+  else iso = iso.replace(/([+-]\d{2})$/, '$1:00');
+  return Date.parse(iso);
+}
+
+/**
+ * A text column that holds nothing but ISO dates, read as the dates it holds.
+ *
+ * A frame built in a notebook from literals, and a CSV read without dtype
+ * inference, both carry their timestamps as strings — and a string column is a
+ * row of labels, so a price over `"2023-01-01 12:00:00"` was a bar per
+ * timestamp rather than a line over time. Every non-empty value has to be one,
+ * or the column is left as the labels it says it is.
+ */
+export function textDates(series: Series): Series {
+  const dtype = series.dtype.trim().toLowerCase();
+  if (dtype && !/^(str|utf8|string)/.test(dtype)) return series;
+  // Every value, not a sample: one "unknown" after the first few hundred would
+  // otherwise become a null the chart then counts as a row with nothing in it.
+  const values: (Date | null)[] = [];
+  let seen = false;
+  let dateOnly = true;
+  for (const value of series.values) {
+    if (value === null || value === undefined || value === '') { values.push(null); continue; }
+    const ms = typeof value === 'string' ? parseIsoText(value) : NaN;
+    if (!Number.isFinite(ms)) return series;
+    if ((value as string).trim().length !== 10) dateOnly = false;
+    seen = true;
+    values.push(new Date(ms));
+  }
+  if (!seen) return series;
+  return { name: series.name, dtype: dateOnly ? 'date' : 'datetime[ms]', values };
 }
 
 /**
@@ -751,6 +1115,7 @@ function histogram(
   }
 
   const width = (max - min) / BINS;
+  dtype = binDtype(dtype, family, width);
   const counts = new Array<number>(BINS).fill(0);
   for (const n of numbers) {
     counts[Math.min(BINS - 1, Math.floor((n - min) / width))] += 1;
@@ -783,6 +1148,8 @@ export function toNumber(value: unknown, family: Family): number {
     // becomes a spike at zero. This check is what stops that.
     if (!text) return NaN;
     if (family === 'temporal') {
+      const iso = parseIsoText(text);
+      if (Number.isFinite(iso)) return iso;
       const parsed = Date.parse(text);
       return Number.isFinite(parsed) ? parsed : NaN;
     }
@@ -793,12 +1160,35 @@ export function toNumber(value: unknown, family: Family): number {
 
 /** A value as it will be read: the formatter the grid and the hover already share. */
 function labelOf(value: unknown, dtype: string): string {
-  return formatValue(value, dtype, { maxLength: 28 }) ?? 'null';
+  const label = formatValue(value, dtype, { maxLength: 28 }) ?? 'null';
+  return value instanceof Date ? wholeSeconds(label) : label;
+}
+
+/**
+ * `12:00:00.000` is `12:00:00`: milliseconds are printed only where there are
+ * some. The grid keeps them, since it lines values up; a chart's label and its
+ * hover are read one at a time, and three zeros are only noise there.
+ */
+function wholeSeconds(label: string): string {
+  return label.replace(/(\d{2}:\d{2}:\d{2})\.000$/, '$1');
+}
+
+/**
+ * The dtype a bin's edges are printed in. A bin of a date column narrower than
+ * a day has edges inside a day, and printing them as dates labels three bins
+ * `2026-01-01 – 2026-01-01`; the time of day is what tells them apart.
+ */
+function binDtype(dtype: string, family: Family, width: number): string {
+  return family === 'temporal' && dtype === 'date' && width > 0 && width < 86_400_000
+    ? 'datetime[ms]'
+    : dtype;
 }
 
 /** A number on an axis: a date where the column is one, four digits otherwise. */
 function axisValue(n: number, dtype: string, family: Family): string {
-  if (family === 'temporal') return formatValue(new Date(n), dtype, { maxLength: 28 }) ?? '';
+  if (family === 'temporal') {
+    return wholeSeconds(formatValue(new Date(n), dtype, { maxLength: 28 }) ?? '');
+  }
   return String(Number(n.toPrecision(4)));
 }
 

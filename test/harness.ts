@@ -16,7 +16,9 @@ export { readExcelSchema } from '../src/schema/excel.js';
 export { readParquetValues } from '../src/schema/values.js';
 export { readParquetRows, readCsvRows } from '../src/schema/rows.js';
 export { readParquetSeries, readCsvSeries } from '../src/schema/series.js';
-export { buildChart, kindsFor, familyOf, defaultAxis, truncate } from '../src/schema/chart.js';
+export {
+  buildChart, kindsFor, familyOf, defaultAxis, truncate, parseIsoText
+} from '../src/schema/chart.js';
 export {
   chartFetchSnippet, parseChartJson, schemaFetchSnippet, parseSchemaJson, MARKER
 } from '../src/schema/kernelSeries.js';

@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   buildChart, kindsFor, familyOf, defaultAxis, truncate, readParquetSeries, readCsvSeries,
-  formatValue, localStorage
+  formatValue, localStorage, parseIsoText
 } from '../harness.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -279,8 +279,8 @@ test('a period groups the other column too: a line each, or a measurement', () =
   assert.deepEqual(split.seriesNames, ['EU', 'US']);
   assert.deepEqual(split.points.filter((p) => p.series === 'EU').map((p) => [p.label, p.y]),
     [['2026-01-01', 1], ['2026-02-01', 2]]);
-  // Two lines of bars would interleave, so bars are not offered for a split.
-  assert.deepEqual(split.kinds, ['line', 'scatter']);
+  // Bars stand side by side per period now, so a split month is bars too.
+  assert.deepEqual(split.kinds, ['line', 'bar', 'scatter']);
 
   // With a number to measure, the aggregate picker means something again.
   const measured = chart([
@@ -322,11 +322,20 @@ test('a split draws the six busiest labels and says how many it left out', () =>
     drawn.notes.join(' | '));
 });
 
-test('labels against labels is still a table rather than a chart', () => {
+test('labels against labels count the rows of one, split by the other', () => {
+  // A label on the measured axis is the split, as it is against dates: the
+  // cross-tabulation drawn as bars side by side, not refused as a table.
   const drawn = chart([
-    col('region', 'str', ['EU']), col('notes', 'str', ['a'])
-  ], { x: 'region', y: 'notes' });
-  assert.match(drawn.empty, /both hold labels/);
+    col('region', 'str', ['EU', 'EU', 'US']), col('channel', 'str', ['web', 'shop', 'web'])
+  ], { x: 'region', y: 'channel' });
+  assert.equal(drawn.empty, undefined);
+  assert.equal(drawn.kind, 'bar');
+  assert.deepEqual(drawn.seriesNames, ['web', 'shop']);
+  assert.deepEqual(drawn.points.map((p) => [p.label, p.series, p.y]),
+    [['EU', 'web', 1], ['EU', 'shop', 1], ['US', 'web', 1]]);
+  assert.equal(drawn.yLabel, 'rows');
+  // y already splits it, so a second split is not on offer.
+  assert.equal(drawn.splittable, false);
 });
 
 test('two numbers are a scatter, and the override picks another kind from the list', () => {
@@ -476,4 +485,309 @@ test('a duration reads as a span of time, not a count of microseconds', () => {
     col('n', 'i64', [3, 5])
   ]), { x: 'g', y: 'n', maxRows: 100 });
   assert.equal(bars.yDuration, undefined);
+});
+/**
+ * Splitting a chart by a third column: a line, a bar or a colour per value of
+ * it. The notebook in test/fixtures/example.ipynb is the case it was asked for —
+ * a price over a timestamp that polars holds as text, one line per category.
+ */
+const EXAMPLE = [
+  col('id', 'i64', [1, 2, 3, 4]),
+  col('category', 'str', ['a', 'b', 'a', 'a']),
+  col('price', 'i64', [43, 52, 67, 34]),
+  col('quantity', 'i64', [10, 11, 12, 13]),
+  col('datetime', 'str', [
+    '2023-01-01 12:00:00', '2023-01-02 12:00:00', '2023-01-03 12:00:00', '2023-01-04 12:00:00'
+  ])
+];
+
+test('a price over time split by category is a line per category', () => {
+  const drawn = chart(EXAMPLE, { x: 'datetime', y: 'price', split: 'category' });
+  assert.equal(drawn.kind, 'line');
+  assert.equal(drawn.split, 'category');
+  assert.equal(drawn.splittable, true);
+  assert.deepEqual(drawn.seriesNames, ['a', 'b']);
+  // Text that is nothing but ISO timestamps is a time axis, on the UTC clock
+  // the panel prints — not a bar per string.
+  assert.equal(drawn.xNumeric, true);
+  const per = (name) => drawn.points.filter((p) => p.series === name).map((p) => [p.label, p.y]);
+  assert.deepEqual(per('a'), [
+    ['2023-01-01 12:00:00', 43], ['2023-01-03 12:00:00', 67], ['2023-01-04 12:00:00', 34]
+  ]);
+  assert.deepEqual(per('b'), [['2023-01-02 12:00:00', 52]]);
+  // Milliseconds are printed only where there are some.
+  assert.ok(drawn.ticks.every((tick) => !tick.label.endsWith('.000')), drawn.ticks[0].label);
+  assert.equal(drawn.points[0].x, Date.UTC(2023, 0, 1, 12));
+  assert.equal(drawn.yLabel, 'mean price');
+  assert.ok(drawn.aggs.includes('sum'), 'a measured split offers the aggregate');
+  // And the other readings of the same three columns are a click away.
+  assert.deepEqual(drawn.kinds, ['line', 'scatter', 'bar']);
+});
+
+test('the same split as a scatter draws the rows, and as bars stands them side by side', () => {
+  const dots = chart(EXAMPLE, { x: 'datetime', y: 'price', split: 'category', kind: 'scatter' });
+  assert.equal(dots.points.length, 4);
+  assert.deepEqual(dots.aggs, [], 'a scatter aggregates nothing, so offers nothing');
+  assert.deepEqual(dots.points.map((p) => p.series), ['a', 'b', 'a', 'a']);
+
+  const bars = chart(EXAMPLE, { x: 'datetime', y: 'price', split: 'category', kind: 'bar' });
+  assert.equal(bars.xNumeric, false);
+  // Dates keep their own order as bars: a timeline sorted by size is a puzzle.
+  assert.deepEqual(bars.points.map((p) => [p.x, p.series, p.y]),
+    [[0, 'a', 43], [1, 'b', 52], [2, 'a', 67], [3, 'a', 34]]);
+});
+
+test('a split on a period groups each series into it', () => {
+  const drawn = chart(EXAMPLE, {
+    x: 'datetime', y: 'price', split: 'category', grain: 'month', agg: 'sum'
+  });
+  assert.equal(drawn.grain, 'month');
+  assert.deepEqual(drawn.points.map((p) => [p.label, p.series, p.y, p.n]),
+    [['2023-01-01', 'a', 144, 3], ['2023-01-01', 'b', 52, 1]]);
+  assert.equal(drawn.yLabel, 'sum price');
+});
+
+test('text is read as dates only when every value is one, and never guessed at', () => {
+  // A date written the American way is a different day in Europe: left as text.
+  const us = chart([col('day', 'str', ['03/04/2026', '03/05/2026'])], { x: 'day' });
+  assert.equal(us.kind, 'bar');
+  assert.deepEqual(us.grains, []);
+  // One value that is not a date keeps the column as the labels it says it is.
+  const mixed = chart([col('when', 'str', ['2026-01-01', 'soon'])], { x: 'when' });
+  assert.deepEqual(mixed.grains, []);
+  // A column of plain dates is a calendar, so the periods are offered.
+  const days = chart([col('day', 'str', ['2026-01-01', '2026-02-01', null])], { x: 'day' });
+  assert.equal(days.grains.length, 7);
+  // A string that names its zone keeps it; one that names none is UTC.
+  const zoned = chart([
+    col('at', 'str', ['2026-01-01T12:00:00+02:00', '2026-01-01T12:00:00']),
+    col('v', 'f64', [1, 2])
+  ], { x: 'at', y: 'v' });
+  assert.deepEqual(zoned.points.map((p) => p.x),
+    [Date.UTC(2026, 0, 1, 10), Date.UTC(2026, 0, 1, 12)]);
+  // A dtype that is not text is never second-guessed from its values.
+  const cat = chart([col('d', 'cat', ['2026-01-01', '2026-01-02'])], { x: 'd' });
+  assert.deepEqual(cat.grains, []);
+});
+
+test('labels against a number, split: bars side by side, measured per series', () => {
+  const columns = [
+    col('region', 'str', ['EU', 'EU', 'US', 'US', 'US', 'APAC']),
+    col('channel', 'str', ['web', 'shop', 'web', 'web', 'shop', 'web']),
+    col('revenue', 'f64', [10, 30, 5, 7, 100, 1])
+  ];
+  const drawn = chart(columns, { x: 'region', y: 'revenue', split: 'channel' });
+  assert.equal(drawn.kind, 'bar');
+  assert.deepEqual(drawn.kinds, ['bar']);
+  assert.deepEqual(drawn.seriesNames, ['web', 'shop']);
+  // Slots in the order the unsplit bar would put them — the highest mean over
+  // every row of the slot first — so splitting does not reshuffle the chart.
+  const slots = [...new Set(drawn.points.map((p) => p.label))];
+  assert.deepEqual(slots, ['US', 'EU', 'APAC']);
+  assert.deepEqual(drawn.points.map((p) => [p.label, p.series, p.y, p.n]), [
+    ['US', 'web', 6, 2], ['US', 'shop', 100, 1],
+    ['EU', 'web', 10, 1], ['EU', 'shop', 30, 1],
+    ['APAC', 'web', 1, 1]
+  ]);
+  // Each bar of a slot shares its x: the slot is the position, the series the colour.
+  assert.deepEqual(drawn.points.map((p) => p.x), [0, 0, 1, 1, 2]);
+  assert.equal(drawn.yLabel, 'mean revenue');
+
+  const summed = chart(columns, { x: 'region', y: 'revenue', split: 'channel', agg: 'sum' });
+  assert.equal(summed.agg, 'sum');
+  assert.equal(summed.points.find((p) => p.label === 'US' && p.series === 'web').y, 12);
+});
+
+test('one column of labels, split: rows counted per pair, with nothing to aggregate', () => {
+  const drawn = chart([
+    col('region', 'str', ['EU', 'EU', 'US']),
+    col('channel', 'str', ['web', 'web', 'shop'])
+  ], { x: 'region', split: 'channel' });
+  assert.equal(drawn.yLabel, 'rows');
+  assert.deepEqual(drawn.aggs, []);
+  assert.deepEqual(drawn.points.map((p) => [p.label, p.series, p.y]),
+    [['EU', 'web', 2], ['US', 'shop', 1]]);
+});
+
+test('a histogram split by a column shares its bins, and sends every bin for every series', () => {
+  const n = 60;
+  const drawn = chart([
+    col('revenue', 'f64', Array.from({ length: n }, (_, i) => i)),
+    col('region', 'str', Array.from({ length: n }, (_, i) => (i < 40 ? 'EU' : 'US')))
+  ], { x: 'revenue', split: 'region' });
+  assert.equal(drawn.kind, 'histogram');
+  assert.deepEqual(drawn.kinds, ['histogram', 'bar', 'line']);
+  assert.deepEqual(drawn.seriesNames, ['EU', 'US']);
+  // Thirty bins, each once per series, zeros kept so the bins stay aligned.
+  assert.equal(drawn.points.length, 60);
+  const total = (name) => drawn.points.filter((p) => p.series === name)
+    .reduce((sum, p) => sum + p.y, 0);
+  assert.equal(total('EU'), 40);
+  assert.equal(total('US'), 20);
+  assert.ok(drawn.points.some((p) => p.series === 'US' && p.y === 0), 'the empty bins were dropped');
+  assert.deepEqual(drawn.domain, [0, 59]);
+  assert.match(drawn.points[0].label, / – /, 'a bin is read as its range');
+
+  // A number with a handful of values is still bars — now side by side.
+  const few = chart([
+    col('stars', 'i64', [1, 2, 2, 3]), col('region', 'str', ['EU', 'EU', 'US', 'US'])
+  ], { x: 'stars', split: 'region' });
+  assert.equal(few.kind, 'bar');
+  assert.deepEqual(few.points.map((p) => [p.label, p.series, p.y]),
+    [['1', 'EU', 1], ['2', 'EU', 1], ['2', 'US', 1], ['3', 'US', 1]]);
+});
+
+test('two numbers split by a column: coloured points, or a line measured per x', () => {
+  const columns = [
+    col('units', 'i64', [1, 1, 2, 2, 3]),
+    col('revenue', 'f64', [10, 20, 30, 40, 50]),
+    col('region', 'str', ['EU', 'EU', 'EU', 'US', 'US'])
+  ];
+  const dots = chart(columns, { x: 'units', y: 'revenue', split: 'region' });
+  assert.equal(dots.kind, 'scatter');
+  assert.deepEqual(dots.points.map((p) => [p.x, p.y, p.series]),
+    [[1, 10, 'EU'], [1, 20, 'EU'], [2, 30, 'EU'], [2, 40, 'US'], [3, 50, 'US']]);
+
+  const line = chart(columns, { x: 'units', y: 'revenue', split: 'region', kind: 'line' });
+  assert.deepEqual(line.points.filter((p) => p.series === 'EU').map((p) => [p.x, p.y, p.n]),
+    [[1, 15, 2], [2, 30, 1]]);
+  assert.ok(line.aggs.includes('median'));
+});
+
+test('a split never takes an axis column, a list, or a place a label y already holds', () => {
+  const columns = [
+    col('region', 'str', ['EU', 'US']),
+    col('revenue', 'f64', [1, 2]),
+    col('tags', 'list[str]', [['a'], ['b']]),
+    col('channel', 'str', ['web', 'shop'])
+  ];
+  const onAxis = chart(columns, { x: 'region', y: 'revenue', split: 'region' });
+  assert.equal(onAxis.split, undefined);
+  assert.deepEqual(onAxis.seriesNames, []);
+  const nested = chart(columns, { x: 'region', y: 'revenue', split: 'tags' });
+  assert.equal(nested.split, undefined);
+  assert.equal(nested.empty, undefined, 'a split it cannot use broke the chart');
+  const missing = chart(columns, { x: 'region', y: 'revenue', split: 'nope' });
+  assert.equal(missing.split, undefined);
+  // y holds labels, so it is the split, and a second one is ignored.
+  const labelled = chart(columns, { x: 'region', y: 'channel', split: 'revenue' });
+  assert.equal(labelled.splittable, false);
+  assert.equal(labelled.split, undefined);
+  assert.deepEqual(labelled.seriesNames, ['shop', 'web']);
+  // Every other chart can take one.
+  assert.equal(chart(columns, { x: 'revenue' }).splittable, true);
+  assert.equal(chart(columns, { x: 'region', y: 'revenue' }).splittable, true);
+});
+
+test('a split keeps the six busiest values, skips rows with none, and says both', () => {
+  const n = 90;
+  const drawn = chart([
+    col('region', 'str', Array.from({ length: n }, (_, i) => `r${i % 3}`)),
+    col('channel', 'str', Array.from({ length: n }, (_, i) => (i === 0 ? null : `c${i % 9}`)))
+  ], { x: 'region', split: 'channel' });
+  assert.equal(drawn.seriesNames.length, 6);
+  assert.ok(drawn.notes.some((note) => /channel has 9 values; the 6 with the most rows/.test(note)),
+    drawn.notes.join(' | '));
+  assert.ok(drawn.notes.some((note) => /^1 row skipped/.test(note)), drawn.notes.join(' | '));
+  assert.ok(drawn.points.every((p) => drawn.seriesNames.includes(p.series)));
+});
+
+test('too many dates as split bars are cut to the first ones, with the period suggested', () => {
+  const n = 40;
+  const drawn = chart([
+    col('day', 'date', Array.from({ length: n }, (_, i) => new Date(Date.UTC(2026, 0, 1 + i)))),
+    col('units', 'i64', Array.from({ length: n }, () => 1)),
+    col('region', 'str', Array.from({ length: n }, (_, i) => (i % 2 ? 'EU' : 'US')))
+  ], { x: 'day', y: 'units', split: 'region', kind: 'bar' });
+  assert.equal(new Set(drawn.points.map((p) => p.x)).size, 24);
+  assert.equal(drawn.points[0].label, '2026-01-01', 'the first dates, not the busiest');
+  assert.ok(drawn.notes.some((note) => /first 24 are drawn — group it by a period/.test(note)),
+    drawn.notes.join(' | '));
+});
+
+test('an aggregated value carries the rows behind it, for the hover to say', () => {
+  const drawn = chart([
+    col('region', 'str', ['EU', 'EU', 'US']), col('revenue', 'f64', [1, 3, 5])
+  ], { x: 'region', y: 'revenue' });
+  assert.deepEqual(drawn.points.map((p) => [p.label, p.y, p.n]), [['US', 5, 1], ['EU', 2, 2]]);
+  // An unsplit chart is the chart it always was: no series on its points.
+  assert.ok(drawn.points.every((p) => p.series === undefined));
+});
+
+test('a split column with nothing in it is named as the reason nothing is drawn', () => {
+  const columns = [
+    col('region', 'str', ['EU', 'US']),
+    col('revenue', 'f64', [1, 2]),
+    col('channel', 'str', [null, ''])
+  ];
+  for (const request of [
+    { x: 'region', y: 'revenue', split: 'channel' },
+    { x: 'revenue', split: 'channel' },
+    { x: 'revenue', y: 'revenue', split: 'channel' }
+  ]) {
+    assert.match(chart(columns, request).empty ?? '', /^channel has nothing in it/, JSON.stringify(request));
+  }
+});
+
+test('ISO text is read to the letter: zones as written, and only days the month has', () => {
+  assert.equal(parseIsoText('2026-01-01 12:00:00+02'), Date.UTC(2026, 0, 1, 10));
+  assert.equal(parseIsoText('2026-01-01T12:00-05'), Date.UTC(2026, 0, 1, 17));
+  assert.equal(parseIsoText('2026-01-01T12:00:00+0200'), Date.UTC(2026, 0, 1, 10));
+  assert.equal(parseIsoText('2026-01-01T12:00:00.123456Z'), Date.UTC(2026, 0, 1, 12, 0, 0, 123));
+  assert.equal(parseIsoText('2026-01-01'), Date.UTC(2026, 0, 1));
+  assert.equal(parseIsoText('2024-02-29'), Date.UTC(2024, 1, 29));
+  assert.ok(Number.isNaN(parseIsoText('2026-02-29')), 'a leap day in a year without one');
+  assert.ok(Number.isNaN(parseIsoText('2026-02-30')));
+  assert.ok(Number.isNaN(parseIsoText('2026-13-01')));
+  // A column with one impossible day in it stays the text it is.
+  assert.deepEqual(chart([col('d', 'str', ['2026-02-28', '2026-02-30'])], { x: 'd' }).grains, []);
+  // So does one whose odd value comes long after the first few hundred.
+  const late = [...Array.from({ length: 500 }, () => '2026-01-01'), 'unknown'];
+  assert.deepEqual(chart([col('d', 'str', late)], { x: 'd' }).grains, []);
+});
+
+test('a split with nothing to draw names the column that is empty, or says none line up', () => {
+  const emptyY = chart([
+    col('cat', 'str', ['a', 'b']), col('v', 'f64', [null, null]), col('g', 'str', ['x', 'y'])
+  ], { x: 'cat', y: 'v', split: 'g' });
+  assert.match(emptyY.empty ?? '', /^v has nothing in it/);
+  const apart = chart([
+    col('cat', 'str', ['a', null]), col('g', 'str', [null, 'y'])
+  ], { x: 'cat', split: 'g' });
+  assert.match(apart.empty ?? '', /No row read has a value in all of cat, g/);
+});
+
+test('split bars count only the slots that have a bar, in the note too', () => {
+  // 30 slots; the six busiest split values only reach the first six of them.
+  const x = [];
+  const g = [];
+  for (let i = 0; i < 6; i++) for (let r = 0; r < 10; r++) { x.push(`s${i}`); g.push(`g${i}`); }
+  for (let i = 6; i < 30; i++) { x.push(`s${i}`); g.push(`rare${i}`); }
+  const drawn = chart([col('x', 'str', x), col('g', 'str', g)], { x: 'x', split: 'g' });
+  assert.equal(new Set(drawn.points.map((p) => p.label)).size, 6);
+  assert.ok(!drawn.notes.some((note) => /are drawn\.$/.test(note) && /^x has/.test(note)),
+    drawn.notes.join(' | '));
+});
+
+test('a count over a duration column is a count, not a span of time', () => {
+  const columns = [
+    col('stage', 'str', ['a', 'a', 'b']),
+    col('took', 'duration[μs]', [1_000_000, 2_000_000, 3_000_000])
+  ];
+  assert.equal(chart(columns, { x: 'stage', y: 'took' }).yDuration, true);
+  assert.equal(chart(columns, { x: 'stage', y: 'took', agg: 'count' }).yDuration, undefined);
+});
+
+test('a bucketed axis ends at the data, and narrow date bins print the time', () => {
+  const n = 400;
+  const line = chart([
+    col('x', 'f64', Array.from({ length: n }, (_, i) => i)),
+    col('g', 'str', Array.from({ length: n }, (_, i) => (i % 2 ? 'a' : 'b')))
+  ], { x: 'x', split: 'g', kind: 'line' });
+  assert.deepEqual(line.domain, [0, 399]);
+  assert.match(line.points[0].label, / – /, 'a bucket is read as its range');
+
+  const days = chart([col('d', 'date', [new Date(Date.UTC(2026, 0, 1)), new Date(Date.UTC(2026, 0, 3))])],
+    { x: 'd', kind: 'histogram' });
+  assert.match(days.points[0].label, /^2026-01-01 00:00:00 – 2026-01-01 01:36:00$/);
 });

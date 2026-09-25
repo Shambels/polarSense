@@ -1253,6 +1253,66 @@ test('changing the axes changes the chart, and the kind follows the columns', as
   assert.equal(elsewhere.kind, 'bar', 'a new pair of columns picks its own default');
 });
 
+test('a graph splits by a third column, offered from every column not on an axis', async () => {
+  const { payload, nav } = await openGraph(
+    'import polars as pl\nd|f = pl.scan_parquet("sales.parquet")\n'
+  );
+  const names = (list) => list.map((column) => column.name);
+  // Offered before one is chosen, without the column on x and without a list.
+  assert.ok(names(payload.splits).includes('region'));
+  assert.ok(!names(payload.splits).includes(payload.x), 'the x column was offered as its own split');
+  assert.ok(!names(payload.splits).includes('tags'));
+  assert.equal(payload.split, '');
+
+  await nav({ x: 'region', y: 'revenue' });
+  const split = await nav({ split: 'is_active' });
+  assert.equal(split.split, 'is_active');
+  assert.ok(split.seriesNames.length > 0, 'nothing was split');
+  assert.ok(split.points.every((point) => point.series !== undefined));
+  assert.ok(!names(split.splits).includes('region') && !names(split.splits).includes('revenue'));
+  // The file read took the third column too: its values are what the series are.
+  assert.ok(split.seriesNames.every((name) => name === 'true' || name === 'false'),
+    split.seriesNames.join(', '));
+
+  // A name on an axis, or no column at all, changes nothing.
+  assert.equal((await nav({ split: 'region' })).split, 'is_active');
+  assert.equal((await nav({ split: 'nope' })).split, 'is_active');
+
+  // It survives a change of the measured column, like the aggregate does...
+  const kept = await nav({ y: 'units' });
+  assert.equal(kept.split, 'is_active');
+  // ...and goes when that column is put on an axis itself.
+  const moved = await nav({ x: 'is_active' });
+  assert.equal(moved.split, '');
+  assert.deepEqual(moved.seriesNames, []);
+
+  // Empty is "not split", the menu's own first entry.
+  await nav({ x: 'region', y: 'revenue', split: 'is_active' });
+  const cleared = await nav({ split: '' });
+  assert.equal(cleared.split, '');
+  assert.deepEqual(cleared.seriesNames, []);
+});
+
+test('a label on y is already the split, so no other one is offered', async () => {
+  const { nav } = await openGraph(
+    'import polars as pl\nd|f = pl.scan_parquet("sales.parquet")\n'
+  );
+  const labelled = await nav({ x: 'created_at', y: 'region', split: 'is_active' });
+  assert.deepEqual(labelled.splits, []);
+  assert.equal(labelled.split, '');
+  assert.ok(labelled.seriesNames.length > 0, 'the label y did not split the chart');
+});
+
+test('a split chart saved as a PNG says what it was split by in its name', async () => {
+  const { panel, nav } = await openGraph(VALUES_PARQUET);
+  await nav({ x: 'revenue', y: '', split: 'region' });
+  const registered = vscode._registered;
+  registered.saveTo = undefined;
+  await panel.receive({ type: 'export', png: Buffer.from('x').toString('base64') });
+  assert.match(registered.saveDialog.defaultUri.fsPath, /values-revenue-by-region\.png$/);
+  await panel.receive({ split: '' });
+});
+
 test('a format whose values are not read yet says so instead of drawing nothing', async () => {
   const { payload } = await openGraph('import polars as pl\nd|f = pl.scan_ipc("sales.arrow")\n');
   assert.match(payload.error ?? '', /ipc/);
@@ -1494,6 +1554,20 @@ test('the graph button draws a frame built in memory from the running kernel', a
     const bar = panel.messages.at(-1);
     assert.equal(bar.kind, 'bar');
     assert.deepEqual(bar.points.map((p) => p.label).sort(), ['a', 'b']);
+  });
+});
+
+test('a split of a frame built in memory reads the third column from the kernel', async () => {
+  await withKernel(kernelHolding(CITY_SALES), async () => {
+    await clickButton('showGraph', IN_MEMORY, { outputId: 'out-1', executed: true });
+    const panel = vscode._registered.webviews.find((p) => p.viewType === 'polarsense.graph');
+    await panel.receive({ type: 'ready' });
+    const split = await (async () => { await panel.receive({ split: 'city' }); return panel.messages.at(-1); })();
+    // Only the columns drawn cross, and the split is one of them.
+    assert.match(vscode._registered.kernelRuns.at(-1), /_ps_json\.loads\("\[\\"sales\\",\\"city\\"\]"\)/);
+    assert.deepEqual(split.seriesNames, ['a', 'b']);
+    assert.equal(split.split, 'city');
+    await panel.receive({ split: '' });
   });
 });
 

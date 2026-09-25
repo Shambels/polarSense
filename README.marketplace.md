@@ -131,6 +131,11 @@ rows never reach the panel: bins are counted in the extension, so a histogram of
 four million rows is thirty numbers. A download button writes the chart to a PNG at
 twice its drawn size, on the panel's own background.
 
+**Split by a column** from the same *per group* menu: `price` over `datetime`, split
+by `category`, is one coloured line per category — or bars side by side, a shared
+histogram, a coloured scatter. **Hover** any bar, line or point for its exact value,
+every series at that x, and how many rows an aggregate was taken over.
+
 In a notebook, all three are a click away from the output itself:
 
 ```

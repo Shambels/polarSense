@@ -187,7 +187,7 @@
         "polarsense.graph.maxRows": {
           "type": "number",
           "default": 100000,
-          "description": "How many rows to read when drawing a graph. Only the one or two columns being drawn are read, and the bins and counts are computed in the extension — no rows are sent to the panel. A chart of fewer rows than the file holds says it is a sample. The same cap applies to a graph read from a notebook kernel."
+          "description": "How many rows to read when drawing a graph. Only the columns being drawn are read — one or two, and a third when the chart is split by a column — and the bins and counts are computed in the extension — no rows are sent to the panel. A chart of fewer rows than the file holds says it is a sample. The same cap applies to a graph read from a notebook kernel."
         },
         "polarsense.graph.useKernel": {
           "type": "boolean",
