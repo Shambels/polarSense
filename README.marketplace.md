@@ -143,7 +143,9 @@ In a notebook, all three are a click away from the output itself:
 ```
 
 No kernel needed to find the frame — the buttons work on a notebook you've opened
-but never run, on a frame defined eight cells earlier.
+but never run, on a frame defined eight cells earlier. And a frame with no file
+at all, built with `pl.DataFrame({...})`, still gets a **Graph**: with the
+notebook's kernel running, its columns and values are read from there.
 
 ## Or just open the file
 

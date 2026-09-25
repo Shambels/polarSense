@@ -17,7 +17,9 @@ export { readParquetValues } from '../src/schema/values.js';
 export { readParquetRows, readCsvRows } from '../src/schema/rows.js';
 export { readParquetSeries, readCsvSeries } from '../src/schema/series.js';
 export { buildChart, kindsFor, familyOf, defaultAxis, truncate } from '../src/schema/chart.js';
-export { chartFetchSnippet, parseChartJson, MARKER } from '../src/schema/kernelSeries.js';
+export {
+  chartFetchSnippet, parseChartJson, schemaFetchSnippet, parseSchemaJson, MARKER
+} from '../src/schema/kernelSeries.js';
 export { formatValue } from '../src/schema/format.js';
 export { SchemaService } from '../src/schema/index.js';
 export { localStorage } from '../src/storage/local.js';
@@ -34,7 +36,7 @@ export { resolveFrame, framesSources } from '../src/core/frame.js';
 export { evaluateFrame, structFields } from '../src/core/schemaEval.js';
 export { exprNames } from '../src/core/exprNames.js';
 export { nearest } from '../src/core/nearest.js';
-export { looksLikeFrame, lastStatementOffset } from '../src/preview/cells.js';
+export { looksLikeFrame, lastStatementOffset, lastStatementName } from '../src/preview/cells.js';
 export { dtypeClass } from '../src/preview/facts.js';
 
 import { initParser } from '../src/core/parser.js';

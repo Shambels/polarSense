@@ -5,9 +5,9 @@ import { familyOf, defaultAxis, buildChart } from '../schema/chart.js';
 import type { PolarSenseApi, ResolvedFrame, RowsFailure } from '../api.js';
 import { readSettings } from '../config.js';
 import { trace } from '../log.js';
-import { frameFacts, frameNotes } from './facts.js';
+import { fmt, frameFacts, frameNotes } from './facts.js';
 import { cursorTarget, NO_PYTHON, type FrameTarget } from './target.js';
-import { readChartFromKernel, kernelAvailable } from './kernel.js';
+import { readChartFromKernel, readSchemaFromKernel, kernelAvailable } from './kernel.js';
 import type { KernelTarget } from '../schema/kernelSeries.js';
 import { shell } from './graph.page.js';
 
@@ -30,12 +30,28 @@ let view: View | undefined;
 let last: unknown;
 
 interface View {
-  frame: ResolvedFrame;
+  /**
+   * The file behind the frame. Absent for a frame that exists only in the
+   * kernel — built with `pl.DataFrame({...})`, or read from somewhere this
+   * analysis cannot follow — which is then drawn from the kernel or not at all.
+   */
+  frame?: ResolvedFrame;
+  /** Set exactly when `frame` is not: what the header and a saved PNG call it. */
+  memory?: {
+    notebookPath: string;
+    /** The variable the cell printed, or `Out[n]` when it printed an expression. */
+    name: string;
+    /** Rows in the frame, when it is eager; a lazy one is not collected to count. */
+    rowCount?: number;
+    /** Every column, drawable or not — the header counts the frame, not the picker. */
+    columnCount: number;
+  };
   /**
    * Where the drawn values come from. `file` is the source behind the frame,
    * read directly — the path that always exists. `kernel` is the frame the
    * notebook cell actually computed, read from its running kernel, which is the
-   * only way a transform's result reaches the chart.
+   * only way a transform's result reaches the chart — and, for a frame with no
+   * file behind it, the only way it reaches the chart at all.
    */
   source: 'file' | 'kernel';
   /** Set only when `source` is `kernel`: how to reach the computed frame. */
@@ -67,7 +83,7 @@ export async function showGraph(api: PolarSenseApi, at?: FrameTarget): Promise<v
 
   const frame = await api.resolveFrameAt(target.uri, target.position);
   if (!frame) {
-    vscode.window.showInformationMessage(target.missing);
+    await showInMemory(api, target);
     return;
   }
 
@@ -110,6 +126,80 @@ export async function showGraphFor(
     ? frame.columns
     : frame.transformed ? frame.sourceColumns : frame.columns;
 
+  open(api, { frame, source: kernel ? 'kernel' : 'file', kernel }, offer);
+}
+
+/**
+ * A graph of a frame the resolver found no file for — the cell built it in
+ * memory, or read it from a path that only exists once the code runs.
+ *
+ * The file path's answer here was "nothing to draw", and it was the wrong one
+ * whenever the frame was sitting in a running kernel: the table under the cell
+ * is proof it exists. So the kernel is asked for the frame's schema, which is
+ * what the pickers need before a single value is read, and from then on the
+ * panel is the same kernel-backed panel a computed frame gets.
+ *
+ * It stays behind the same gate as the rest of the kernel path —
+ * `graph.useKernel`, a kernel already running, an address to find the frame by
+ * — and each miss says which of those it was, because "no file behind it" alone
+ * tells someone looking at the table nothing about how to get a chart of it.
+ */
+async function showInMemory(api: PolarSenseApi, target: FrameTarget): Promise<void> {
+  const note = target.notebook;
+  const address: KernelTarget | undefined =
+    note && (note.executionOrder !== undefined || note.symbol)
+      ? { outputRef: note.executionOrder, symbol: note.symbol }
+      : undefined;
+  if (!note || !address) {
+    vscode.window.showInformationMessage(target.missing);
+    return;
+  }
+  if (!readSettings().graphUseKernel) {
+    vscode.window.showInformationMessage(
+      `${target.missing} Turn on polarsense.graph.useKernel to graph it from the ` +
+      'notebook’s running kernel instead.'
+    );
+    return;
+  }
+
+  const read = await readSchemaFromKernel(note.uri, address);
+  if (!read.schema) {
+    vscode.window.showInformationMessage(inMemoryMiss(target.missing, read.miss));
+    return;
+  }
+
+  const name = note.symbol ?? `Out[${note.executionOrder}]`;
+  open(api, {
+    memory: {
+      notebookPath: note.uri.fsPath,
+      name,
+      rowCount: read.schema.rowCount,
+      columnCount: read.schema.columns.length
+    },
+    source: 'kernel',
+    kernel: { notebookUri: note.uri, target: address }
+  }, read.schema.columns);
+}
+
+function inMemoryMiss(missing: string, miss: string | undefined): string {
+  if (miss === 'no-kernel') {
+    return `${missing} Run the notebook and the graph can draw it from the kernel.`;
+  }
+  const why =
+    miss === 'no-target' ? 'it does not hold what this cell printed any more — run the cell again'
+    : miss === 'not-a-frame' ? 'what this cell printed is not a polars DataFrame or LazyFrame'
+    : miss === 'no-polars' ? 'polars cannot be imported there'
+    : 'the log has the detail';
+  return 'PolarSense: this cell’s frame has no file behind it, and the notebook’s ' +
+    `kernel could not hand it over either: ${why}.`;
+}
+
+/** Open (or reuse) the panel on a view, offering `offer` minus what cannot be drawn. */
+function open(
+  api: PolarSenseApi,
+  init: Pick<View, 'frame' | 'memory' | 'source' | 'kernel'>,
+  offer: readonly { name: string; dtype: string }[]
+): void {
   // A list or struct column has no shape to draw, so it is not offered — an
   // option that can only produce a refusal is worse than no option.
   const columns = offer
@@ -125,19 +215,13 @@ export async function showGraphFor(
     return;
   }
 
-  view = {
-    frame,
-    source: kernel ? 'kernel' : 'file',
-    kernel,
-    columns,
-    x,
-    y: undefined,
-    kind: undefined
-  };
+  view = { ...init, columns, x, y: undefined, kind: undefined };
   last = undefined;
 
   const current = ensurePanel(api);
-  current.title = path.basename(frame.uri) || 'PolarSense';
+  current.title = init.frame
+    ? path.basename(init.frame.uri) || 'PolarSense'
+    : init.memory?.name ?? 'PolarSense';
   current.webview.html = shell(current.webview.cspSource);
   current.reveal(vscode.ViewColumn.Beside, true);
 }
@@ -227,14 +311,17 @@ async function savePng(png: string | undefined): Promise<void> {
     return;
   }
 
-  const stem = path.basename(view.frame.uri).replace(/\.[^.]+$/, '') || 'chart';
+  const origin = view.frame?.uri ?? view.memory?.notebookPath ?? '';
+  const stem = view.frame
+    ? path.basename(view.frame.uri).replace(/\.[^.]+$/, '') || 'chart'
+    : view.memory?.name ?? 'chart';
   const name = [stem, view.x, view.y]
     .filter((part): part is string => !!part)
     .join('-')
     .replace(/[^\w.-]+/g, '_') + '.png';
   // A frame read over https has no directory to offer; the dialog opens
   // wherever VS Code would open it rather than somewhere invented.
-  const dir = path.dirname(view.frame.uri);
+  const dir = path.dirname(origin);
   const target = await vscode.window.showSaveDialog({
     defaultUri: path.isAbsolute(dir) ? vscode.Uri.file(path.join(dir, name)) : undefined,
     filters: { 'PNG image': ['png'] },
@@ -279,7 +366,7 @@ async function update(api: PolarSenseApi): Promise<void> {
     last = result.read
       ? payload(current, buildChart(result.read, request), undefined)
       : kernelMiss(current);
-  } else {
+  } else if (current.frame) {
     const result = await api.readChart(current.frame, request);
     last = payload(current, result.chart, result.error);
   }
@@ -289,11 +376,15 @@ async function update(api: PolarSenseApi): Promise<void> {
 
 /** What the panel shows when the kernel it opened against can no longer answer. */
 function kernelMiss(current: View): Payload {
+  const then = current.frame
+    ? 'Close the graph and open it again to draw the source file instead.'
+    // No file to fall back to, so the only way forward is the kernel again.
+    : 'This frame has no file behind it to draw instead: run its cell again and ' +
+      'reopen the graph.';
   return {
     ...payload(current, undefined, undefined),
     empty: 'PolarSense could not read this frame from the kernel just now — it may ' +
-      'have been restarted, or the variable is gone. Close the graph and open it ' +
-      'again to draw the source file instead.'
+      `have been restarted, or the variable is gone. ${then}`
   };
 }
 
@@ -334,18 +425,25 @@ function payload(
   // On the kernel path the transforms have been applied, so the file-path
   // caveats — the "transforms not applied" fact and its note — would be false.
   // Drop them, and say instead where these numbers came from.
-  const facts = frameFacts(current.frame)
-    .filter((fact) => !kernelBacked || fact !== 'transforms not applied');
+  const facts = current.frame
+    ? frameFacts(current.frame)
+        .filter((fact) => !kernelBacked || fact !== 'transforms not applied')
+    : memoryFacts(current);
   if (kernelBacked) facts.push('from the kernel');
 
-  const notes = frameNotes(current.frame)
-    .filter((note) => !kernelBacked || !note.startsWith('The frame here has transforms applied'));
+  const notes = current.frame
+    ? frameNotes(current.frame)
+        .filter((note) => !kernelBacked || !note.startsWith('The frame here has transforms applied'))
+    : [];
   for (const note of chart?.notes ?? []) notes.push(note);
 
+  // A frame with no file is named after the notebook that holds it and the
+  // variable it printed — the same two things a file frame's header shows.
+  const origin = current.frame?.uri ?? current.memory?.notebookPath ?? '';
   return {
-    file: path.basename(current.frame.uri),
-    uri: current.frame.uri,
-    symbol: current.frame.symbol,
+    file: path.basename(origin),
+    uri: origin,
+    symbol: current.frame?.symbol ?? current.memory?.name,
     facts,
     notes,
     columns: current.columns,
@@ -370,8 +468,19 @@ function payload(
     // note, and a count that only ever confirmed the file was read whole was a
     // line of chrome above the plot rather than a fact about it.
     empty: chart?.empty,
-    error: error && explain(error, current.frame.kind)
+    error: error && explain(error, current.frame?.kind ?? 'in memory')
   };
+}
+
+/** The header of a frame with no file: what the kernel said about its shape. */
+function memoryFacts(current: View): string[] {
+  const rows = current.memory?.rowCount;
+  const count = current.memory?.columnCount ?? current.columns.length;
+  return [
+    rows === undefined ? undefined : `${fmt(rows)} row${rows === 1 ? '' : 's'}`,
+    `${fmt(count)} column${count === 1 ? '' : 's'}`,
+    'in memory'
+  ].filter((fact): fact is string => !!fact);
 }
 
 function explain(error: RowsFailure, kind: string): string {

@@ -1,6 +1,34 @@
 # Changelog
 
-## 1.11.4
+## Unreleased
+
+### Added
+
+- **The Graph button draws frames that have no file behind them.** A notebook
+  cell that builds its frame in memory — `pl.DataFrame({...})`, a
+  `pl.from_dicts(...)`, a path only known once the code runs — used to answer
+  the Graph button with "no file behind it", right under the table that proved
+  the frame existed. With the notebook's kernel running, the graph now asks the
+  kernel for that frame instead: first its schema, so the axis pickers have
+  names and dtypes to offer, then only the one or two columns on screen, capped
+  at `graph.maxRows` like any other graph. The header names the notebook and the
+  variable, says `in memory · from the kernel`, and a saved PNG is named after
+  the variable.
+
+  It finds the frame the way the kernel path already did: the cell's printed
+  output (`_oh[n]`) first, so nothing re-runs, and the variable as a fallback —
+  but only when the cell's last line is a bare name. `df.head()` is not `df`,
+  and drawing `df` in its place would draw rows the cell never printed, so a cell
+  that ends in an expression and has not been run is left alone rather than
+  guessed at. A lazy frame's schema is read without collecting it.
+
+  It sits behind the same gate as the rest of the kernel reading:
+  `polarsense.graph.useKernel`, a kernel you have already started, and the
+  Jupyter extension's consent prompt. When one of those is missing the message
+  now says which, instead of only "no file behind it". The Details and Data
+  panels still need a file, the command palette still resolves frames
+  statically, and a pandas frame printed by a cell is not converted — the
+  kernel read is polars-only and says so.
 
 ### Changed
 

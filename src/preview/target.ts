@@ -27,6 +27,11 @@ export interface FrameTarget {
   notebook?: {
     uri: vscode.Uri;
     executionOrder?: number;
+    /**
+     * The variable the cell printed, when its last statement is a bare name —
+     * the kernel's fallback address for a frame the resolver found no file for.
+     */
+    symbol?: string;
   };
 }
 
