@@ -1,5 +1,71 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Split a graph by a column.** The *per group* control is now a menu with two
+  lists: *Aggregate* — `count`, `sum`, `mean` and the rest, as before — and
+  *Split by*, which offers every other column of the frame. Pick one and the
+  chart becomes a line, a bar or a colour per value of it, with a legend: a
+  price over time split by category is a line per category; labels against a
+  number are bars side by side in each slot, each measured on its own; one
+  column of labels is rows counted per pair; a histogram shares its bins across
+  the series so a bin's bars can be compared; a scatter colours its points
+  rather than aggregating them; and a `by month` chart splits each month the
+  same way, as lines or as bars. Bars stand side by side rather than stacked,
+  because a stack of means adds up to nothing. The split survives a change of
+  y, like the aggregate does, and goes when its column is put on an axis.
+
+  At most six series are drawn — the six values with the most rows, ties
+  alphabetical so the colours do not move between reads — because the theme
+  has six chart colours, and the panel says how many were left out. Rows with
+  no value in the split column are skipped and counted in a note. Choosing a
+  column of labels as y already splits the chart by it, so no second split is
+  offered then; the same rule means labels against labels, which used to be
+  refused as "a table rather than a chart", is now drawn as rows counted per
+  pair. The split is one more column read under the same `graph.maxRows` cap,
+  from the file or from the kernel. There is still no filter, no stacking, no
+  "other" series for what was left out, and no second y axis.
+
+- **Hover a graph for the exact values.** On a bar chart the whole slot is the
+  target, not the painted bar — a short bar is still a full-height column of
+  pointer — and the readout lists every series in the slot with the hovered one
+  marked. On a line a hairline snaps to the nearest x and lists every series
+  there, since nobody can aim at a two-pixel stroke. On a scatter the nearest
+  point within 24px answers, and empty space does not. Values are printed to
+  every significant digit rather than the four the axis rounds to, an aggregate
+  says how many rows it was taken over, and a histogram bin reads as its range.
+  The chart also takes keyboard focus: the arrow keys walk the same readout,
+  Escape clears it. The browser's own `<title>` tooltips this replaces showed
+  only on the dots of a line, after a delay; the hover never reaches an
+  exported PNG.
+
+- **Text columns of ISO dates are drawn as dates.** A frame built from string
+  literals, or a CSV read without dtype inference, holds its timestamps as text,
+  so a price over `"2023-01-01 12:00:00"` was a bar per string. When every
+  non-empty value is an ISO 8601 date or timestamp — with a zone like `+02` or
+  `+02:00` or none, and a day the month actually has — the
+  chart reads the column as the dates it holds — a time axis, and the period
+  picker — on UTC where the text names no zone. Anything looser stays text:
+  `03/04/2026` is a different day on each side of the Atlantic.
+
+### Changed
+
+- **Timestamps on a chart drop `.000`.** Axis ticks, labels and the hover print
+  milliseconds only where there are some. The data panel keeps them, since it
+  lines values up.
+
+### Fixed
+
+- **A count of a duration column is a count.** With `count` chosen over a
+  duration y, the axis printed three rows as `3µs`; it now prints `3`.
+- **A bucketed x axis ends where the data does.** A split line over more
+  distinct values than it has points ran its axis one bucket past the largest
+  value, and its last tick named a value that was not in the data.
+- **Bins narrower than a day are labelled with the time.** A histogram of a
+  short run of dates labelled several bins `2026-01-01 – 2026-01-01`.
+
 ## 1.12.0
 
 ### Added

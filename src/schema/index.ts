@@ -270,7 +270,10 @@ export class SchemaService {
     }
 
     const read: SeriesRequest = {
-      columns: request.y ? [request.x, request.y] : [request.x],
+      // The split is a third column read the same bounded way: it is one more
+      // array of the same length, not a second pass over the file.
+      columns: [...new Set([request.x, request.y, request.split]
+        .filter((name): name is string => !!name))],
       maxRows: Math.max(1, request.maxRows)
     };
 
