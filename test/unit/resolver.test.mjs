@@ -87,7 +87,20 @@ const CASES = [
   // --- half-written code, which is the normal case ---
   ['unterminated string', `${HEAD}df = pl.scan_parquet("a.parquet")\nout = df.select(pl.col("|`, 'a.parquet'],
   ['unterminated with prefix typed', `${HEAD}df = pl.scan_parquet("a.parquet")\nout = df.select(pl.col("re|`, 'a.parquet'],
-  ['empty string, quotes auto-closed', `${HEAD}df = pl.scan_parquet("a.parquet")\nout = df.select(pl.col("|"))`, 'a.parquet']
+  ['empty string, quotes auto-closed', `${HEAD}df = pl.scan_parquet("a.parquet")\nout = df.select(pl.col("|"))`, 'a.parquet'],
+
+  // --- frames built from literal data: the path is the constructor's label ---
+  ['pl.DataFrame dict literal', `${HEAD}df = pl.DataFrame({"a": [1], "b": [2]})\ndf.select(pl.col("|"))`, 'pl.DataFrame(…)'],
+  ['pl.LazyFrame dict literal', `${HEAD}lf = pl.LazyFrame({"a": [1]})\nlf.select("|")`, 'pl.LazyFrame(…)'],
+  ['pl.DataFrame data= keyword', `${HEAD}df = pl.DataFrame(data={"a": [1]})\ndf.select("|")`, 'pl.DataFrame(…)'],
+  ['pl.from_dict', `${HEAD}df = pl.from_dict({"a": [1]})\ndf.select("|")`, 'pl.from_dict(…)'],
+  ['pl.from_dicts', `${HEAD}df = pl.from_dicts([{"a": 1}])\ndf.select("|")`, 'pl.from_dicts(…)'],
+  ['a literal chained directly', `${HEAD}pl.DataFrame({"a": [1]}).filter(pl.col("|"))`, 'pl.DataFrame(…)'],
+  ['data bound to a name first', `${HEAD}data = {"a": [1]}\ndf = pl.DataFrame(data)\ndf.select("|")`, 'pl.DataFrame(…)'],
+  ['list of lists with schema=', `${HEAD}df = pl.DataFrame([[1, 2]], schema=["a", "b"])\ndf.select("|")`, 'pl.DataFrame(…)'],
+  ['from polars import DataFrame', `from polars import DataFrame, col\ndf = DataFrame({"a": [1]})\ndf.select(col("|"))`, 'DataFrame(…)'],
+  ['pandas DataFrame literal', `import pandas as pd\ndf = pd.DataFrame({"a": [1]})\ndf["|"]`, 'pd.DataFrame(…)'],
+  ['joined in as the right frame', `${HEAD}a = pl.read_parquet("a.parquet")\nb = pl.DataFrame({"k": [1]})\na.join(b, right_on="|")`, 'pl.DataFrame(…)']
 ];
 
 for (const [name, snippet, expected] of CASES) {
@@ -125,7 +138,18 @@ const NEGATIVE = [
   ['a selector call with no selectors import', `${HEAD}df = pl.scan_parquet("a.parquet")\ndf.select(cs.by_name("|"))`],
   // A regex is a pattern, not a name — nothing to complete and nothing to check.
   ['cs.matches takes a pattern', `${CS}df = pl.scan_parquet("a.parquet")\ndf.select(cs.matches("|"))`],
-  ['the object being subscripted', `${HEAD}frames = {}\nframes["|"]["b"]`]
+  ['the object being subscripted', `${HEAD}frames = {}\nframes["|"]["b"]`],
+  // Literal data that does not say what its columns are called. polars names a
+  // list of lists `column_0…` or reads it as rows depending on `orient` — a
+  // guess, so no answer.
+  ['a list of lists with no schema', `${HEAD}df = pl.DataFrame([[1, 2], [3, 4]])\ndf.select("|")`],
+  ['a dict comprehension', `${HEAD}df = pl.DataFrame({k: [1] for k in names})\ndf.select("|")`],
+  ['an empty constructor', `${HEAD}df = pl.DataFrame()\ndf.select("|")`],
+  // A class called DataFrame that is not polars' or pandas'.
+  ['some other library\'s DataFrame', `${HEAD}df = spark.DataFrame({"a": [1]})\ndf.select("|")`],
+  ['a bare DataFrame never imported', `${HEAD}df = DataFrame({"a": [1]})\ndf.select("|")`],
+  // The keys of the dict being built are not columns of anything yet.
+  ['a key inside the literal itself', `${HEAD}df = pl.DataFrame({"|": [1]})`]
 ];
 
 for (const [name, snippet] of NEGATIVE) {

@@ -1,6 +1,9 @@
 /** Shared vocabulary for the analysis + schema layers. Nothing here imports vscode. */
 
-export type SourceKind = 'parquet' | 'csv' | 'ipc' | 'delta' | 'iceberg' | 'json' | 'excel';
+export type SourceKind =
+  | 'parquet' | 'csv' | 'ipc' | 'delta' | 'iceberg' | 'json' | 'excel'
+  /** A frame built from data written in the source: `pl.DataFrame({...})`. */
+  | 'inline';
 
 /** Where a frame's columns come from, as read off the call site. */
 export interface SourceRef {
@@ -11,6 +14,16 @@ export interface SourceRef {
   kwargs: Record<string, string | number | boolean | string[] | null>;
   /** Variable this was bound to, for logging and the status bar. */
   symbol?: string;
+  /**
+   * Set when `kind` is `inline`: the columns the constructor call states, read
+   * off the source itself. `path` is then a label, never something to open.
+   */
+  inline?: {
+    columns: Column[];
+    /** False when part of the call could not be read — a `**splat`, a computed key. */
+    certain: boolean;
+    rowCount?: number;
+  };
 }
 
 /** What the file's own metadata says about a column, when it says anything. */

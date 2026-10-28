@@ -1,6 +1,34 @@
 # Changelog
 
-## 1.13.0
+## Unreleased
+
+### Added
+
+- **Frames built from literal data complete their columns.** `pl.DataFrame({"id":
+  [1, 2], "price": [43, 52]})` used to offer nothing, because a frame's columns
+  always came from a file behind it and this one has none. The call states its
+  schema as plainly as a parquet footer does, so it is now read as one: the
+  dict's keys are the columns, in order, and everything downstream works as it
+  does for a file — narrowing through `select` and `with_columns`, `right_on=`
+  of a join, hover, and the unknown-column warning. `pl.LazyFrame`,
+  `pl.from_dict`, `pl.from_dicts` (the union of the row dicts' keys),
+  `pd.DataFrame` and `pd.DataFrame.from_dict` are read the same way, as is the
+  common shape where the dict is bound to a name first (`data = {…}` then
+  `pl.DataFrame(data)`). `schema=` wins over the data's own names, as it does
+  in polars, and a dict of `pl.Int64`-style dtypes, a list of names or a list of
+  `(name, dtype)` pairs all read; `schema_overrides=` applies on top. Dtypes are
+  inferred only where polars' answer is not in doubt — a list of ints is `i64`,
+  ints mixed with floats are `f64`, strings are `str` — and the hover gives the
+  row count when every column is a list of the same length.
+
+  No Python is run to get any of this. A key that is neither a literal nor a
+  module constant, or a `**splat` in the dict, keeps the columns that can be read
+  and marks the answer a guess, so the typo warning stays quiet. A list of lists
+  with no `schema=` offers nothing at all: polars names those `column_0…` or
+  reads them as rows depending on `orient`, and that is a guess this does not
+  make. The Details and Data panels still need a file, so a literal frame is
+  graphed from the running kernel exactly as before.
+
 
 ### Added
 

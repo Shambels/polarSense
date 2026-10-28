@@ -198,6 +198,10 @@ Hive partition columns are exact and free — `region=EU/` *is* the value.
 | JSON / NDJSON | The first 50 objects of a bounded prefix; nested objects keep their fields |
 | Excel | The header row, out of the `.xlsx` zip |
 
+A frame built from **literal data** — `pl.DataFrame({"id": [...], "price": [...]})`,
+`pl.from_dicts`, `pd.DataFrame` — needs no file: the dict's keys (or `schema=`)
+are the schema, read straight from the code without running any of it.
+
 Rows and graphs come from parquet and CSV; values from parquet plus hive
 partition names. Schemas are read when a file opens rather than when you first ask,
 so the first completion is a cache hit, and a rewritten file invalidates itself.
@@ -256,6 +260,8 @@ switches the typo warning off entirely.
 - **The data panel views** — it pages, steps columns, filters the column list and
   sorts by one column, capped at `sort.maxRows` and honest when it hits the cap.
   No row filter, no grouping, no editing: the query engine is polars, in your code.
+- **Literal data with no names** — a list of lists with no `schema=` — offers
+  nothing; polars' `column_0…` naming depends on `orient`, so it is not guessed.
 - **pyarrow is not supported.**
 
 ## Privacy

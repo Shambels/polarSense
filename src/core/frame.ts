@@ -3,6 +3,7 @@ import type { SourceRef } from './types.js';
 import { callArguments, dottedName, methodName, stringValue } from './ast.js';
 import type { BindingTable, Definition } from './bindings.js';
 import { SQL_FUNCS, sqlSource } from './sql.js';
+import { frameConstructor } from './literal.js';
 
 /**
  * A frame as an *expression*, not a file: the source it started from plus every
@@ -158,6 +159,9 @@ function callFrame(call: Node, ctx: FrameContext, depth: number): FrameExpr | nu
   // A reader call is where every chain ends.
   const asSource = table.resolve(call);
   if (short && asSource && isReader(short)) return { kind: 'source', source: asSource };
+  // As is a frame built from literal data — checked on this call, not on what
+  // `resolve` found, which for `pl.DataFrame({…}).select(…)` is the same source.
+  if (asSource?.inline && frameConstructor(call, table)) return { kind: 'source', source: asSource };
 
   // So is a SQL statement naming a file — but only when it really does, or
   // `df.sql("SELECT * FROM self")` would throw away everything done to `df`.

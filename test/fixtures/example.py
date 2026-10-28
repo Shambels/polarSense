@@ -66,7 +66,7 @@ nested.select(pl.col("address").struct.field(""))  # <- city, geo
 
 # --- Excel: the tab, not the part number ----------------------------------
 excel = pl.read_excel("data/sales.xlsx")
-excel.select("")  # <- gaps in the header row are named, not closed up
+excel.select(pl.col())  # <- gaps in the header row are named, not closed up
 
 q2 = pl.read_excel("data/sheets.xlsx", sheet_name="Q2")
 q2.select("")  # <- q2_col, though Q2 is stored in sheet1.xml
