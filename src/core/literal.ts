@@ -69,6 +69,7 @@ interface Shape {
   columns: Column[];
   certain: boolean;
   rowCount?: number;
+  values?: Record<string, string[]>;
 }
 
 function polarsShape(call: Node, table: BindingTable): Shape | null {
@@ -84,6 +85,16 @@ function polarsShape(call: Node, table: BindingTable): Shape | null {
   let shape: Shape | null;
   if (fromSchema) {
     shape = { ...fromSchema, rowCount: fromData?.rowCount };
+    // The renaming is positional, so the values travel with the position too.
+    const dataValues = fromData?.values;
+    if (dataValues && fromData.columns.length === fromSchema.columns.length) {
+      const values: Record<string, string[]> = {};
+      fromSchema.columns.forEach((c, i) => {
+        const found = dataValues[fromData.columns[i].name];
+        if (found) values[c.name] = found;
+      });
+      shape.values = values;
+    }
     if (fromData && fromSchema.columns.every((c) => !c.dtype)) {
       // A bare list of names keeps the dtypes the data implied, by position.
       shape.columns = fromSchema.columns.map((c, i) => ({
@@ -111,6 +122,13 @@ function polarsShape(call: Node, table: BindingTable): Shape | null {
     shape.columns = shape.columns.map((c) =>
       byName.has(c.name) ? { ...c, dtype: byName.get(c.name)! } : c);
   }
+  // Cast to a number by `schema=` or `schema_overrides=`, the strings written
+  // in the code are not what the column holds.
+  if (shape.values) {
+    for (const column of shape.columns) {
+      if (column.dtype && !STRING_DTYPES.has(column.dtype)) delete shape.values[column.name];
+    }
+  }
   return shape;
 }
 
@@ -127,7 +145,15 @@ function pandasShape(call: Node, table: BindingTable): Shape | null {
   const fromData = data ? dataShape(follow(data, table), table, false) : null;
   if (columnsArg) {
     const names = nameList(follow(columnsArg, table), table);
-    if (names) return { columns: names.map((name) => ({ name, dtype: '' })), certain: true, rowCount: fromData?.rowCount };
+    // pandas picks dict keys by name here, so the values stay with their names.
+    if (names) {
+      return {
+        columns: names.map((name) => ({ name, dtype: '' })),
+        certain: true,
+        rowCount: fromData?.rowCount,
+        values: fromData?.values
+      };
+    }
     return fromData ? { ...fromData, certain: false } : null;
   }
   return fromData;
@@ -139,6 +165,7 @@ function dataShape(node: Node, table: BindingTable, typed: boolean): Shape | nul
     const columns: Column[] = [];
     let certain = true;
     const lengths = new Set<number>();
+    const tallies = new Map<string, Tally | null>();
     for (const pair of node.namedChildren) {
       if (!pair || pair.type === 'comment') continue;
       // `{**base, "x": …}` — whatever base holds is a column we cannot name.
@@ -152,9 +179,11 @@ function dataShape(node: Node, table: BindingTable, typed: boolean): Shape | nul
         lengths.add(-1);
       }
       upsert(columns, { name, dtype: typed && value ? valuesDtype(value) : '' });
+      // A repeated key replaces the column, so it replaces the values too.
+      tallies.set(name, value ? tally(value) : null);
     }
     const rowCount = lengths.size === 1 && !lengths.has(-1) ? [...lengths][0] : undefined;
-    return { columns, certain, rowCount };
+    return { columns, certain, rowCount, values: ranked(tallies) };
   }
 
   if (node.type === 'list' || node.type === 'tuple') {
@@ -166,13 +195,25 @@ function dataShape(node: Node, table: BindingTable, typed: boolean): Shape | nul
     if (!rows.every((r) => r.type === 'dictionary')) return null;
     const columns: Column[] = [];
     let certain = true;
+    const tallies = new Map<string, Tally | null>();
     for (const row of rows) {
       const shape = dataShape(row, table, false);
       if (!shape) continue;
       certain &&= shape.certain;
       for (const column of shape.columns) upsert(columns, column);
+      // Each row holds one value per key: tally them across the rows.
+      for (const pair of row.namedChildren) {
+        if (pair?.type !== 'pair') continue;
+        const name = keyName(pair.childForFieldName('key'), table);
+        const value = pair.childForFieldName('value');
+        if (name === null) continue;
+        const seen = tallies.get(name);
+        if (seen === null) continue;
+        const one = value ? tally(value) : null;
+        tallies.set(name, one && merge(seen ?? new Map(), one));
+      }
     }
-    return { columns, certain, rowCount: rows.length };
+    return { columns, certain, rowCount: rows.length, values: ranked(tallies) };
   }
 
   return null;
@@ -211,6 +252,47 @@ function schemaShape(node: Node, table: BindingTable): Shape | null {
   }
   return null;
 }
+
+/** Occurrences of each string value in a column. */
+type Tally = Map<string, number>;
+
+/**
+ * The string literals a column is written as, counted — or null when anything
+ * in it is not one. `None` is skipped: it is a missing value, not a value.
+ * A single string is a scalar polars broadcasts, and counts once.
+ */
+function tally(node: Node): Tally | null {
+  const items = node.type === 'list' || node.type === 'tuple'
+    ? node.namedChildren.filter((c): c is Node => !!c && c.type !== 'comment')
+    : [node];
+  const out: Tally = new Map();
+  for (const item of items) {
+    if (item.type === 'none') continue;
+    const value = stringValue(item);
+    if (value === null) return null;
+    out.set(value, (out.get(value) ?? 0) + 1);
+  }
+  return out;
+}
+
+function merge(into: Tally, from: Tally): Tally {
+  for (const [value, n] of from) into.set(value, (into.get(value) ?? 0) + n);
+  return into;
+}
+
+/** Most common first, ties alphabetical — the order the parquet reader uses. */
+function ranked(tallies: Map<string, Tally | null>): Record<string, string[]> | undefined {
+  const out: Record<string, string[]> = {};
+  for (const [name, counts] of tallies) {
+    if (!counts?.size) continue;
+    out[name] = [...counts]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([value]) => value);
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+const STRING_DTYPES = new Set(['str', 'cat', 'enum']);
 
 function nameList(node: Node, table: BindingTable): string[] | null {
   if (node.type !== 'list' && node.type !== 'tuple') return null;

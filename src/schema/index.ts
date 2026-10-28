@@ -326,6 +326,14 @@ export class SchemaService {
    * keystroke — and a rewritten file drops the values with the schema.
    */
   async values(source: SourceRef, ctx: PathContext, column: string): Promise<ValueSet | null> {
+    // A literal frame's values are in the code, already read with it. The
+    // setting guards reading the user's data files; nothing is read here, so
+    // it does not apply. The distinct cap still does — it is about the list.
+    if (source.inline) {
+      const values = source.inline.values?.[column];
+      if (!values || values.length > this.options.valueMaxDistinct) return null;
+      return { values, complete: true };
+    }
     if (!this.options.valuesEnabled) return null;
 
     const result = await this.get(source, ctx);

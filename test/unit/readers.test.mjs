@@ -837,3 +837,28 @@ test('rows: a CSV sorts the prefix it can reach, and its numbers are numbers', a
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+
+/** A literal frame as the binding table builds it: columns and values, no file. */
+const INLINE_SOURCE = {
+  kind: 'inline', path: 'pl.DataFrame(…)', kwargs: {},
+  inline: {
+    columns: [{ name: 'category', dtype: 'str' }, { name: 'n', dtype: 'i64' }],
+    certain: true,
+    values: { category: ['a', 'b', 'c'] }
+  }
+};
+
+test('service: a literal frame answers its values with the setting off — nothing is read', async () => {
+  const service = valueService({ valuesEnabled: false });
+  assert.deepEqual(
+    await service.values(INLINE_SOURCE, VALUE_CTX, 'category'),
+    { values: ['a', 'b', 'c'], complete: true }
+  );
+  assert.equal(await service.values(INLINE_SOURCE, VALUE_CTX, 'n'), null);
+});
+
+test('service: a literal frame still honours the distinct cap', async () => {
+  const service = valueService({ valueMaxDistinct: 2 });
+  assert.equal(await service.values(INLINE_SOURCE, VALUE_CTX, 'category'), null);
+});

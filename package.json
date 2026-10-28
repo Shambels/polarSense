@@ -166,7 +166,7 @@
         "polarsense.values.enable": {
           "type": "boolean",
           "default": false,
-          "description": "Offer real values from your data where a column is compared against one — pl.col(\"region\") == \"…\". This is the one feature that reads the rows of a file rather than only its metadata: it reads a single column of the first values.maxRows rows of the parquet file behind the frame. Off by default so nothing reads your data unasked.",
+          "description": "Offer real values from your data where a column is compared against one — pl.col(\"region\") == \"…\". This is the one feature that reads the rows of a file rather than only its metadata: it reads a single column of the first values.maxRows rows of the parquet file behind the frame. Off by default so nothing reads your data unasked. Values written in the code itself — the string literals of a pl.DataFrame({...}) — are offered whether or not this is on, since nothing is read for them.",
           "scope": "machine"
         },
         "polarsense.values.maxRows": {
