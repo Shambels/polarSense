@@ -33,6 +33,8 @@ export async function resolvePath(
   source: SourceRef,
   ctx: PathContext
 ): Promise<ResolvedPath | null> {
+  // An inline frame's `path` is a label; there is no file behind it to find.
+  if (source.kind === 'inline') return null;
   const raw = source.path;
   if (!raw) return null;
 

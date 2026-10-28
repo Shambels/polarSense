@@ -154,6 +154,11 @@ export function createApi(
       const analysis = analyzer.get(assembled.key, assembled.source, moduleSet);
       const found = frameAtOffset(analysis.tree, analysis.table, assembled.offset);
       if (!found) return undefined;
+      // `pl.DataFrame({…})` has columns but no file, and everything that asks
+      // this question wants the file: the previews read its rows, and a frame
+      // with none is what the running kernel is asked about instead.
+      const read = found.frame ? framesSources(found.frame) : [found.source];
+      if (read.some((s) => s.kind === 'inline')) return undefined;
 
       const ctx: PathContext = {
         documentDir: assembled.documentDir,

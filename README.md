@@ -464,6 +464,18 @@ segments are added as hive partition columns, the way polars adds them.
 | JSON / NDJSON | The first 50 objects of a bounded prefix read; keys unioned in first-seen order, dtypes from the values themselves, nested objects keep their fields |
 | Excel | The header row, out of the `.xlsx` zip — `sheet_name=`/`sheet_id=` resolved through `workbook.xml`, shared strings resolved, skipped cells named rather than closed up |
 
+A frame built from **literal data** needs no file at all. `pl.DataFrame({...})`,
+`pl.LazyFrame`, `pl.from_dict`, `pl.from_dicts` and `pd.DataFrame` state their
+columns in the call — the dict's keys, the union of a list of row dicts' keys, or
+`schema=` / `columns=` when given, which win as they do at runtime — and those
+are the schema. A dict bound to a name first (`data = {…}`, then
+`pl.DataFrame(data)`) is followed. Dtypes come from `schema=` and
+`schema_overrides=` when written there, and otherwise only where polars' own
+inference is beyond doubt: a list of ints is `i64`, ints and floats `f64`,
+strings `str`, booleans `bool`; anything else is left blank rather than guessed.
+Nothing is evaluated, so a computed key or a `**splat` keeps what can be read and
+marks the answer uncertain.
+
 Values — when `values.enable` is on — come from parquet only, plus hive partition
 directory names. Rows and graphs come from parquet and CSV. Opening a data file as a
 table is offered for `.parquet` and `.pq` alone — the two extensions where rows
@@ -552,6 +564,11 @@ reshapes are beyond what static reading can predict.
   away, or one whose module lives outside the workspace, still gets nothing —
   and only module-level `def`s are read, so `Loader().load()` needs an instance
   this analysis cannot follow.
+- **Literal data with no names is not named.** `pl.DataFrame([[1, 2], [3, 4]])`
+  gets `column_0…` or is read as rows, depending on `orient` and on the data —
+  so without a `schema=` it offers nothing rather than guess which. A dict
+  comprehension, or data handed in as another object (a numpy array, a frame from
+  elsewhere), is the same: nothing in the call says what the columns are called.
 - **Frames from function parameters or config objects need to be told.** A type
   annotation carries no path, so `def load(source): return pl.scan_parquet(source)`
   finds the frame but not the file — that is what the pragma comment is for.

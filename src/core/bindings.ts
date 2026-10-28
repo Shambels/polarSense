@@ -4,6 +4,7 @@ import { callArguments, dottedName, lastSegment, stringValue } from './ast.js';
 import { collectConstants, constEval } from './constEval.js';
 import { SQL_FUNCS, sqlSource, sqlTables, sqlText } from './sql.js';
 import { collectPragmas, parameterPragma, pragmaFor, type Pragma } from './pragma.js';
+import { inlineSource } from './literal.js';
 
 /** polars entry points that open a file, and the format each one implies. */
 export const SOURCE_FUNCS: Record<string, SourceKind> = {
@@ -353,6 +354,9 @@ export function buildBindingTable(tree: Tree, loader?: ModuleLoader): BindingTab
         if (short && SOURCE_FUNCS[short]) {
           return buildSourceRef(node, SOURCE_FUNCS[short]);
         }
+        // `pl.DataFrame({"a": [...]})` — the call is its own schema.
+        const literal = inlineSource(node, table);
+        if (literal) return literal;
         // `duckdb.sql("SELECT * FROM 'sales.parquet'")` — the path is in the SQL.
         if (short && SQL_FUNCS.has(short)) {
           const fromSql = sqlSource(node);
@@ -457,9 +461,19 @@ export function buildBindingTable(tree: Tree, loader?: ModuleLoader): BindingTab
   table.sourceSites.sort((a, b) => a.start - b.start);
 
   const seen = new Set<string>();
+  // An inline frame's `path` is a label two different literals can share, so
+  // they are told apart by which call made them — and a frame derived from one
+  // (`b = a.filter(…)`) resolves to that same call, and is offered once.
+  const seenInline = new Set<SourceRef['inline']>();
   for (const binding of bindings) {
     const source = resolve(binding.expr);
     if (!source?.path) continue;
+    if (source.inline) {
+      if (seenInline.has(source.inline)) continue;
+      seenInline.add(source.inline);
+      table.allSources.push({ ...source, symbol: binding.name });
+      continue;
+    }
     const key = `${source.kind}:${source.path}`;
     if (seen.has(key)) continue;
     seen.add(key);

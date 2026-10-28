@@ -46,7 +46,8 @@ export function evaluateFrame(
   switch (expr.kind) {
     case 'source': {
       const columns = lookup(expr.source);
-      return columns ? { columns, certain: true } : null;
+      // A literal with a `**splat` in it is a source that already admits a gap.
+      return columns ? { columns, certain: expr.source.inline?.certain ?? true } : null;
     }
 
     case 'transform': {

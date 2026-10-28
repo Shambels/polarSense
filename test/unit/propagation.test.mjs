@@ -274,3 +274,90 @@ test('closer candidates come first, and the list is capped', () => {
 test('an exact match suggests nothing — it is not a typo', () => {
   assert.deepEqual(nearest('region', COLUMNS), []);
 });
+
+
+/**
+ * Frames built from literal data. The columns come from the call itself, so the
+ * lookup reads them off the source rather than from a fixed list — which is
+ * also what the schema service does.
+ */
+async function literalAt(marked) {
+  const offset = marked.indexOf('|');
+  const source = marked.slice(0, offset) + marked.slice(offset + 1);
+  const parser = await initParser(ROOT);
+  const tree = parse(parser, source);
+  const table = buildBindingTable(tree);
+  const res = resolveAtOffset(tree, table, offset);
+  if (!res.frame) return null;
+  const evaluated = evaluateFrame(res.frame, (s) => s.inline?.columns, table);
+  return evaluated && {
+    names: evaluated.columns.map((c) => c.name),
+    dtypes: evaluated.columns.map((c) => c.dtype),
+    certain: evaluated.certain,
+    rows: res.source?.inline?.rowCount
+  };
+}
+
+const PL = 'import polars as pl\n';
+
+test('a dict literal: names, dtypes and row count, as polars would infer them', async () => {
+  const got = await literalAt(`${PL}df = pl.DataFrame(
+    {
+        "id": [1, 2, 3, 4],
+        "category": ["a", "b", "a", "a"],
+        "price": [43, 52.5, 67, 34],
+        "ok": [True, None, False, True],
+        "when": [date(2024, 1, 1), None, None, None],
+    }
+)
+df.select(pl.col("|"))`);
+  assert.deepEqual(got, {
+    names: ['id', 'category', 'price', 'ok', 'when'],
+    // A call is not a literal: the dtype is left blank rather than guessed.
+    dtypes: ['i64', 'str', 'f64', 'bool', ''],
+    certain: true,
+    rows: 4
+  });
+});
+
+const LITERAL_CASES = [
+  ['select narrows a literal', `${PL}df = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).select("a", "c")\ndf.select("|")`, ['a', 'c'], true],
+  ['with_columns adds to a literal', `${PL}df = pl.LazyFrame({"a": [1]}).with_columns(t=pl.col("a") * 2)\ndf.select("|")`, ['a', 't'], true],
+  ['a list of row dicts is the union of their keys', `${PL}df = pl.from_dicts([{"a": 1}, {"a": 2, "b": 3}])\ndf.select("|")`, ['a', 'b'], true],
+  ['schema= names win over the data keys', `${PL}df = pl.DataFrame({"a": [1], "b": [2]}, schema=["x", "y"])\ndf.select("|")`, ['x', 'y'], true],
+  ['a constant key folds', `${PL}KEY = "region"\ndf = pl.DataFrame({KEY: ["EU"], "n": [1]})\ndf.select("|")`, ['region', 'n'], true],
+  ['a repeated key is one column', `${PL}df = pl.DataFrame({"a": [1], "a": [2]})\ndf.select("|")`, ['a'], true],
+  ['pandas columns= picks and orders', `import pandas as pd\ndf = pd.DataFrame({"a": [1], "b": [2]}, columns=["b"])\ndf["|"]`, ['b'], true],
+  // The bias, applied to literals: keep what can be read, admit what cannot.
+  ['a **splat is a gap', `${PL}df = pl.DataFrame({**base, "a": [1]})\ndf.select("|")`, ['a'], false],
+  ['a computed key is a gap', `${PL}df = pl.DataFrame({name: [1], "a": [2]})\ndf.select("|")`, ['a'], false],
+  ['an unreadable schema= may rename everything', `${PL}df = pl.DataFrame({"a": [1]}, schema=my_schema)\ndf.select("|")`, ['a'], false]
+];
+
+for (const [name, snippet, expected, certain] of LITERAL_CASES) {
+  test(`literal data: ${name}`, async () => {
+    const got = await literalAt(snippet);
+    assert.deepEqual(got && { names: got.names, certain: got.certain }, { names: expected, certain });
+  });
+}
+
+test('literal data: schema= dtypes are read, and schema_overrides applies on top', async () => {
+  const got = await literalAt(
+    `${PL}df = pl.DataFrame([[1, "x"]], schema={"n": pl.Int32, "s": pl.Utf8, "t": pl.Datetime("ms")},` +
+    ` schema_overrides={"n": pl.UInt8})\ndf.select("|")`
+  );
+  assert.deepEqual(got?.dtypes, ['u8', 'str', '']);
+});
+
+test('literal data: two literals are two sources, and a derived frame is not a third', async () => {
+  const parser = await initParser(ROOT);
+  const tree = parse(parser,
+    `${PL}a = pl.DataFrame({"x": [1]})\nb = pl.DataFrame({"y": [1]})\nc = a.filter(pl.col("x") > 0)\n`);
+  const table = buildBindingTable(tree);
+  assert.deepEqual(
+    table.allSources.map((s) => [s.symbol, s.inline?.columns.map((c) => c.name)]),
+    [['a', ['x']], ['b', ['y']]]
+  );
+  // Nothing to link: the label is not a path anyone can open.
+  assert.equal(table.sourceSites.length, 0);
+});

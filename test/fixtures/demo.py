@@ -17,3 +17,22 @@ picked = df.get_column("")               # <- same
 pair   = df[["", ""]]                    # <- list form works
 cfg    = {"path": "data/sales.parquet"}
 never  = cfg[""]                         # <- a dict: deliberately offers nothing
+
+
+df = pl.DataFrame(
+    {
+        "id": [1, 2, 3, 4],
+        "category": ["a", "b", "a", "a"],
+        "price": [43, 52, 67, 34],
+        "quantity": [10, 11, 12, 13],
+        "datetime": [
+            "2023-01-01 12:00:00",
+            "2023-01-02 12:00:00",
+            "2023-01-03 12:00:00",
+            "2023-01-04 12:00:00",
+        ]
+    }
+)
+df
+
+df.select(pl.col())

@@ -84,6 +84,7 @@ export class SchemaService {
 
   /** A previously read schema for this source, if we have one. Synchronous. */
   peek(source: SourceRef, ctx: PathContext): SchemaResult | undefined {
+    if (source.inline) return inlineResult(source);
     return this.lastKnown.get(sourceKey(source, ctx));
   }
 
@@ -104,6 +105,9 @@ export class SchemaService {
   }
 
   async get(source: SourceRef, ctx: PathContext): Promise<SchemaResult> {
+    // Nothing to read and nothing to cache: the columns came with the source,
+    // and keying them by label would let two literals answer for each other.
+    if (source.inline) return inlineResult(source);
     const key = sourceKey(source, ctx);
     const existing = this.inFlight.get(key);
     if (existing) return existing;
@@ -179,6 +183,9 @@ export class SchemaService {
       case 'excel':
         columns = await readExcelSchema(storage, resolved.uri, source.kwargs);
         break;
+      case 'inline':
+        // Answered in `get` before any of this; here only to keep the switch whole.
+        return inlineResult(source);
     }
 
     if (!columns.length) return { error: 'read-failed', uri: resolved.uri };
@@ -212,6 +219,9 @@ export class SchemaService {
    * memory long after the panel that asked for them was closed.
    */
   async rows(source: SourceRef, ctx: PathContext, request: RowRequest): Promise<RowResult> {
+    // The rows of an inline frame are in the code, not in a file. Reading them
+    // would mean evaluating Python, which this extension never does.
+    if (source.kind === 'inline') return { error: 'unsupported-format' };
     const resolved = await resolvePath(source, ctx);
     if (!resolved) return { error: 'file-not-found' };
 
@@ -258,6 +268,7 @@ export class SchemaService {
    * are somebody's values and they should not outlive the panel that asked.
    */
   async chart(source: SourceRef, ctx: PathContext, request: ChartRequest): Promise<ChartResult> {
+    if (source.kind === 'inline') return { error: 'unsupported-format' };
     const resolved = await resolvePath(source, ctx);
     if (!resolved) return { error: 'file-not-found' };
 
@@ -404,6 +415,13 @@ export class SchemaService {
     this.lastKnown.clear();
     this.inFlightValues.clear();
   }
+}
+
+function inlineResult(source: SourceRef): SchemaResult {
+  const inline = source.inline!;
+  return {
+    schema: { columns: inline.columns, rowCount: inline.rowCount, origin: source.path ?? 'DataFrame(…)' }
+  };
 }
 
 function sourceKey(source: SourceRef, ctx: PathContext): string {
