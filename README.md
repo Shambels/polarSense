@@ -81,6 +81,13 @@ It stays quiet more often than it speaks, on purpose:
   arrives as a pattern that means something else — take those as a starting point
   to trim, not a finished argument.
 
+A frame built from **literal data** answers without the setting: in
+`pl.DataFrame({"category": ["a", "b", "a"]})` the values are already in your code,
+so `pl.col("category") == "␣"` offers `a` and `b` with nothing read at all. Only a
+column written entirely as string literals answers (`None` is skipped); a number,
+a call or a variable anywhere in it, or a `schema=` cast to a non-string dtype,
+and it stays quiet. `values.maxDistinct` still applies.
+
 Values are never typo-checked and never hovered. They're data; the file has no
 opinion about which of them you meant to type.
 
@@ -501,7 +508,7 @@ so a frame defined in cell 1 completes in cell 8.
 | `polarsense.followImports` | `true` | Follow imports into other files in the workspace |
 | `polarsense.https.enabled` | `false` | Allow reading schemas over `https://` |
 | `polarsense.cacheSize` | `200` | File schemas held in memory |
-| `polarsense.values.enable` | `false` | Offer real values from your data. **Reads rows, not just metadata** |
+| `polarsense.values.enable` | `false` | Offer real values from your data. **Reads rows, not just metadata**. Values written in the code, in a `pl.DataFrame({...})`, are offered either way |
 | `polarsense.values.maxRows` | `10000` | Rows of one column to read when offering values |
 | `polarsense.values.maxDistinct` | `50` | Above this many distinct values, offer none |
 | `polarsense.sort.maxRows` | `100000` | Rows to read when a column header is clicked to sort. A bigger file is sorted over its first `sort.maxRows` rows, and the panel says so |

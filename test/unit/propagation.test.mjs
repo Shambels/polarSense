@@ -361,3 +361,45 @@ test('literal data: two literals are two sources, and a derived frame is not a t
   // Nothing to link: the label is not a path anyone can open.
   assert.equal(table.sourceSites.length, 0);
 });
+
+
+/** The value site at the cursor, and the values its literal frame holds for that column. */
+async function literalValuesAt(marked) {
+  const offset = marked.indexOf('|');
+  const source = marked.slice(0, offset) + marked.slice(offset + 1);
+  const parser = await initParser(ROOT);
+  const tree = parse(parser, source);
+  const res = resolveAtOffset(tree, buildBindingTable(tree), offset);
+  const column = res.valueSite?.column;
+  return column === undefined ? undefined : res.source?.inline?.values?.[column] ?? null;
+}
+
+const VALUE_CASES = [
+  // Most common first, ties alphabetical — the order the parquet reader uses.
+  ['a compared column', `${PL}df = pl.DataFrame({"category": ["b", "a", "a", "c"], "n": [1, 2, 3, 4]})\ndf.filter(pl.col("category") == "|")`, ['a', 'b', 'c']],
+  ['is_in', `${PL}df = pl.DataFrame({"category": ["a", "b"]})\ndf.filter(pl.col("category").is_in(["|"]))`, ['a', 'b']],
+  ['a constraint keyword', `${PL}df = pl.DataFrame({"category": ["a", "b"]})\ndf.filter(category="|")`, ['a', 'b']],
+  ['None is a missing value, not a value', `${PL}df = pl.DataFrame({"c": ["a", None, "a"]})\ndf.filter(pl.col("c") == "|")`, ['a']],
+  ['row dicts are tallied across rows', `${PL}df = pl.from_dicts([{"c": "x"}, {"c": "y"}, {"c": "y"}])\ndf.filter(pl.col("c") == "|")`, ['y', 'x']],
+  ['through a bound dict and a transform', `${PL}data = {"c": ["a", "b"]}\ndf = pl.DataFrame(data).sort("c")\ndf.filter(pl.col("c") == "|")`, ['a', 'b']],
+  ['schema= renames carry values by position', `${PL}df = pl.DataFrame({"a": ["x"]}, schema=["kind"])\ndf.filter(pl.col("kind") == "|")`, ['x']],
+  // Silence: the column's values are not all strings written in the code.
+  ['a numeric column', `${PL}df = pl.DataFrame({"n": [1, 2]})\ndf.filter(pl.col("n") == "|")`, null],
+  ['a column with a name in it', `${PL}df = pl.DataFrame({"c": ["a", other]})\ndf.filter(pl.col("c") == "|")`, null],
+  ['a column cast away from strings', `${PL}df = pl.DataFrame({"c": ["1"]}, schema_overrides={"c": pl.Int64})\ndf.filter(pl.col("c") == "|")`, null],
+  ['a column the literal does not have', `${PL}df = pl.DataFrame({"c": ["a"]})\ndf.filter(pl.col("zz") == "|")`, null]
+];
+
+for (const [name, snippet, expected] of VALUE_CASES) {
+  test(`literal values: ${name}`, async () => {
+    assert.deepEqual(await literalValuesAt(snippet), expected);
+  });
+}
+
+test('literal values: pandas columns= keeps the values with their names', async () => {
+  // pandas' own comparison is not a value site, so this reads the source directly.
+  const parser = await initParser(ROOT);
+  const tree = parse(parser, 'import pandas as pd\ndf = pd.DataFrame({"a": ["x"], "b": ["y"]}, columns=["b"])\ndf[""]');
+  const res = resolveAtOffset(tree, buildBindingTable(tree), tree.rootNode.text.length - 2);
+  assert.deepEqual(res.source?.inline?.values, { a: ['x'], b: ['y'] });
+});

@@ -29,6 +29,21 @@
   make. The Details and Data panels still need a file, so a literal frame is
   graphed from the running kernel exactly as before.
 
+- **Value completion for literal frames.** With `df = pl.DataFrame({"category":
+  ["a", "b", "a"]})`, the string in `pl.col("category") == "…"` — or
+  `.is_in(["…"])`, or `df.filter(category="…")` — now offers `a` and `b`, most
+  common first as for a file. The values are the string literals the call was
+  written with, so this works with `values.enable` off: that setting guards
+  reading your data files, and nothing is read here. `values.maxDistinct` still
+  applies. Row dicts are tallied across rows, `schema=` renames carry the values
+  by position, pandas' `columns=` keeps them by name, and `None` is skipped as a
+  missing value. A column offers nothing when any entry is not a string literal
+  — a number, a call, a variable — or when `schema=` or `schema_overrides=` cast
+  it to a non-string dtype, since the code's strings are then not what the
+  column holds. Like a file's values, these are read off the source column by
+  name: a column replaced by a `with_columns` further down the chain still
+  offers what the literal wrote.
+
 
 ### Added
 

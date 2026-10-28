@@ -83,7 +83,9 @@ export class ColumnCompletionProvider implements vscode.CompletionItemProvider {
     // feature you had to turn on may take a moment the first time.
     if (resolution.valueSite) {
       const { column } = resolution.valueSite;
-      if (!settings.valuesEnabled || !resolution.source) return undefined;
+      if (!resolution.source) return undefined;
+      // A literal frame's values are in the code; only a file's need the opt-in.
+      if (!settings.valuesEnabled && !resolution.source.inline) return undefined;
       const values = await this.schemas.values(resolution.source, ctx, column);
       if (token.isCancellationRequested || !values) {
         // Silence covers every "no": too many distinct values, a column whose

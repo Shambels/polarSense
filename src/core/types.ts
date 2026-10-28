@@ -23,6 +23,12 @@ export interface SourceRef {
     /** False when part of the call could not be read — a `**splat`, a computed key. */
     certain: boolean;
     rowCount?: number;
+    /**
+     * The distinct values of each column written entirely as string literals,
+     * most common first. A column with anything else in it — a number, a call,
+     * a name — has no entry: its values are not all in the code.
+     */
+    values?: Record<string, string[]>;
   };
 }
 

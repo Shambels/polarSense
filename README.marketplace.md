@@ -184,7 +184,9 @@ This is the only feature that reads the rows of your data file, which is why it 
 off until you turn it on. It stays quiet on purpose more often than it speaks:
 more than 50 distinct values offers **nothing** rather than a truncated list, and
 non-string columns offer nothing, because a value position is always inside quotes.
-Hive partition columns are exact and free — `region=EU/` *is* the value.
+Hive partition columns are exact and free — `region=EU/` *is* the value. And a
+frame built in code, `pl.DataFrame({"region": ["EU", "US"]})`, answers with the
+setting off: its values are already on the page, so nothing is read.
 
 ## Formats
 
@@ -215,7 +217,7 @@ so the first completion is a cache hit, and a rewritten file invalidates itself.
 | `polarsense.followImports` | `true` | Follow imports into other files in the workspace |
 | `polarsense.csv.inferDtypes` | `false` | Guess CSV dtypes from the first rows |
 | `polarsense.https.enabled` | `false` | Allow reading schemas over `https://` |
-| `polarsense.values.enable` | `false` | Offer real values from your data. **Reads rows, not just metadata** |
+| `polarsense.values.enable` | `false` | Offer real values from your data. **Reads rows, not just metadata**; literal `pl.DataFrame({...})` values are offered either way |
 | `polarsense.sort.maxRows` | `100000` | Rows read when a header is clicked to sort |
 | `polarsense.graph.maxRows` | `100000` | Rows to read when drawing a graph |
 | `polarsense.diagnostics.enable` | `true` | Warn about column names that don't exist |
